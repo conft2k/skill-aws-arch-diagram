@@ -331,6 +331,8 @@ class _Model:
         if axis == "y" and a.nid and b.gid:
             # a node's label stack above a box border: the label ↔ border clearance (QR 71)
             return min(mc.sibling_gap, K.LABEL_CLEAR), "label clear"
+        if axis == "y" and a.gid and b.nid:
+            return mc.box_node_gap, "box ↔ icon gap"
         return mc.sibling_gap, "sibling gap"
 
     def _sep(self, axis, a: _Item, b: _Item, owner):
@@ -463,6 +465,8 @@ class _Model:
                 own = f"group:{b.gid}"
                 self.add("y", (f"group:{a.gid}.B", 0), (f"group:{b.gid}.T", 0), gap,
                          f"az gap {fmt_num(gap)} {a.gid} | {b.gid}", own)
+                if not self.mc.az_gap_center:
+                    continue
                 for t in self.spec.rows[a.yr[1] + 1:b.yr[0]]:
                     self.add("y", (f"group:{a.gid}.B", 0), (f"row:{t.id}", 0), gap / 2,
                              f"az gap half {fmt_num(gap / 2)} {a.gid} → row {t.id}", own)
