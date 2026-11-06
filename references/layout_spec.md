@@ -65,7 +65,7 @@ out in list order at that pitch, centered in their parent (the regional services
 
 ## groups
 
-`{id, type, label?, cidr?, in?, per?, over?, span?, pad?, pad_top?, min_w?, min_h?, dash?, header?}`
+`{id, type, label?, cidr?, in?, per?, only?, over?, span?, pad?, pad_top?, pad_left?, pad_right?, min_w?, min_h?, dash?, header?}`
 
 | `type` | Default title | | `type` | Default title |
 |---|---|---|---|---|
@@ -86,7 +86,8 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   row, ids get `.1`, `.2`, `{n}` in text becomes the instance number. Any field but `id,
   type, in, per, only, over, span, header, on` may differ per instance: `cidr: {1: 10.0.0.0/24,
   2: 10.0.1.0/24}`. Nodes inside give `col:` only (the row is the instance's). One
-  template level only.
+  template level only. In a document the instances come out alike (same top and bottom
+  insets); on a slide each hugs its own content (an ASG header deepens only AZ 1's top).
 - `only: [1]` (or `only: 2`) on a group or node inside a template draws it in those
   instances only: the Aurora writer in AZ 1, a reader in AZ 2, a subnet one AZ lacks. A
   group's `only` leaves out everything inside it. `a.* -> b.*` then pairs the shared
@@ -98,8 +99,11 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   says where its title goes relative to the subnet titles it crosses.
 - A group covers the tracks of what it contains. `span: {cols: [pub, pub], rows: [a, b]}`
   stretches it over tracks with no node of its own (an empty public subnet).
-- `pad`, `pad_top`, `min_w`, `min_h` (px): extra room — `pad_top` sets the box top → first
-  icon distance (bedrock-dx 88: a bus above the endpoints); `min_h` grows the box down.
+- `pad`, `pad_top`, `pad_left`, `pad_right`, `min_w`, `min_h` (px): extra room — `pad_top`
+  sets the box top → first icon distance (bedrock-dx 88: a bus above the endpoints);
+  `pad_left` / `pad_right` replace `pad` on one side only (room for a label right of a
+  vertical line near the border; an ASG `pad_left: 64` puts its title left of the first
+  member without widening its right side); `min_h` grows the box down.
 
 ## nodes
 

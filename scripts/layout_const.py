@@ -151,6 +151,7 @@ class Mode:
     sibling_gap: float      # box ↔ box and box ↔ node side by side in one parent
     box_node_gap: float     # a box's bottom border ↔ the icon of a node below it in one parent
     az_gap_center: bool     # the rows between two AZ boxes sit at least az_gap / 2 from each box
+    even_instances: bool    # instances of a template on different rows get equal top / bottom insets
     peer_gap: float         # side-by-side Region / VPC boxes
     node_pitch: float       # neighbour node centers in one container and row
     az_gap: float           # bottom of the AZ (row) above ↔ top of the AZ below, when a node of the VPC
@@ -178,6 +179,7 @@ DOCUMENT = Mode(
     sibling_gap=16,         # DESIGN 4.4 (ex nfw subnets 16; alb 20, nlb 24, gwlb 32)
     box_node_gap=16,
     az_gap_center=True,
+    even_instances=True,    # ex documents: both AZ boxes alike (same height, icons at the same depth)
     peer_gap=32,            # DESIGN 4.4, QR 59 "24–40" (ex gwlb VPCs 32)
     node_pitch=100,         # QR 55 (ex alb/nlb EC2s 100)
     az_gap=110,             # QR 56 (ex alb 110, nlb 110, gwlb 118, nfw 132, nlb-mtls 162)
@@ -201,6 +203,7 @@ SLIDE = Mode(
     sibling_gap=12,         # ex slides alb/nfw subnets 12
     box_node_gap=8,         # ex slides: the AZ-gap row's icon top 8 below the AZ above (main = AZ.B + 32)
     az_gap_center=False,    # ex slides: the gap row hugs the AZ above, its label stack fills the rest
+    even_instances=False,   # ex slide gwlb: AZ 1 144 tall, AZ 2 152 (the ASG bottom); each AZ hugs its own
     peer_gap=24,            # QR 59
     node_pitch=92,          # DESIGN 4.4 (ex slide alb 96, nlb 92)
     az_gap=86,              # QR 56 (every slide example exactly 86)

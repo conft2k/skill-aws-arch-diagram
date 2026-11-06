@@ -553,6 +553,25 @@ class ConstraintTest(unittest.TestCase):
                 self.assertLessEqual(d, hi, between)
             self.assertEqual(check(spec, g), [], between)
 
+    def test_one_side_pad(self):
+        """pad_right widens a box on its right only; pad_left on its left only."""
+        def spec_with(**kw):
+            return build("pad", ["a"], ["r"],
+                         [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud"),
+                          dict(id="vpc", type="vpc", label="VPC", cidr="10.0.0.0/16", parent="region", **kw)],
+                         [dict(id="ec2", icon="service/Amazon-EC2", label="EC2", parent="vpc", col="a", row="r")])
+        base = LS.solve(spec_with(), [])
+        right = LS.solve(spec_with(pad_right=60), [])
+        left = LS.solve(spec_with(pad_left=60), [])
+        def gaps(g):
+            v, i = g.groups["vpc"].rect, g.nodes["ec2"].cx
+            return i - v.x0, v.x1 - i
+        bl, br = gaps(base)
+        self.assertEqual(gaps(right)[0], bl)                 # the left side keeps its pad
+        self.assertGreaterEqual(gaps(right)[1], 60 + 24)     # pad 60 + half the icon
+        self.assertGreaterEqual(gaps(left)[0], 60 + 24)
+        self.assertLess(gaps(left)[1], 60 + 24)              # the right side keeps its own pad
+
     def test_requirements_and_colspan(self):
         spec = nfw_spec()
         reqs = [Requirement("x", "node:igw", "node:inet", 48 + 24 + 4 + 24 + 4, "arrow 48 into inet", "edge:6"),

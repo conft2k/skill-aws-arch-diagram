@@ -166,6 +166,14 @@ class _Model:
         g = self.spec.groups[gid]
         return g.pad if g.pad is not None else self.mc.pad_node
 
+    def side_pad(self, gid, side, node=False):
+        """x padding on one side ("L" / "R"): pad_left / pad_right, else pad / the mode's."""
+        g = self.spec.groups[gid]
+        one = g.pad_left if side == "L" else g.pad_right
+        if one is not None:
+            return one
+        return self.pad_node(gid) if node else self.pad(gid)
+
     def rng(self, axis, first, last):
         idx = self.ci if axis == "x" else self.ri
         if first is None or first not in idx:
@@ -272,16 +280,19 @@ class _Model:
         cidr = bool(g.cidr)
         for cid in self.child_groups[gid]:
             if axis == "x":
-                self.add(axis, gl, (f"group:{cid}.L", 0), self.pad(gid), f"pad {fmt_num(self.pad(gid))} {gid} ⊃ {cid}", own)
+                p = self.side_pad(gid, "L")
+                self.add(axis, gl, (f"group:{cid}.L", 0), p, f"pad {fmt_num(p)} {gid} ⊃ {cid}", own)
             else:
                 top = max(K.top_inset(g.type, mc.name, "box", cidr), g.pad_top or 0)
                 self.add(axis, gl, (f"group:{cid}.T", 0), top, f"top inset {fmt_num(top)} {gid} ⊃ {cid}", own)
-            self.add(axis, (f"group:{cid}.{R}", 0), gr, self.pad(gid), f"pad {fmt_num(self.pad(gid))} {cid} ⊂ {gid}", own)
+            p = self.side_pad(gid, "R") if axis == "x" else self.pad(gid)
+            self.add(axis, (f"group:{cid}.{R}", 0), gr, p, f"pad {fmt_num(p)} {cid} ⊂ {gid}", own)
         for nid in self.child_nodes[gid]:
             it = self.item_node(nid)
             if axis == "x":
-                p = self.pad_node(gid)
+                p = self.side_pad(gid, "L", node=True)
                 self.add(axis, gl, self.lo(it, axis), p, f"pad {fmt_num(p)} {gid} ⊃ node {nid}", own)
+                p = self.side_pad(gid, "R", node=True)
                 self.add(axis, self.hi(it, axis), gr, p, f"pad {fmt_num(p)} node {nid} ⊂ {gid}", own)
             else:
                 top = max(K.top_inset(g.type, mc.name, "icon", cidr), g.pad_top or 0)
@@ -512,11 +523,11 @@ class _Model:
         mc, st, gid = self.mc, K.style(g.type), g.id
         own = f"group:{gid}"
         gl, gr = (f"group:{gid}.L", 0.0), (f"group:{gid}.R", 0.0)
-        pn = g.pad if g.pad is not None else mc.pad_node
+        pl, pr = self.side_pad(gid, "L", node=True), self.side_pad(gid, "R", node=True)
         for m in g.over:
             it = self.item_node(m)
-            self.add("x", gl, self.lo(it, "x"), pn, f"pad {fmt_num(pn)} {gid} ⊃ {m}", own)
-            self.add("x", self.hi(it, "x"), gr, pn, f"pad {fmt_num(pn)} {m} ⊂ {gid}", own)
+            self.add("x", gl, self.lo(it, "x"), pl, f"pad {fmt_num(pl)} {gid} ⊃ {m}", own)
+            self.add("x", self.hi(it, "x"), gr, pr, f"pad {fmt_num(pr)} {m} ⊂ {gid}", own)
         first = self._overlay_first(g)
         for s in self._overlay_subnets(g):
             sg = self.spec.groups[s]
@@ -594,8 +605,12 @@ class _Model:
                              f"badge clear {fmt_num(d)} {g.id} ⊃ {nid}", f"group:{g.id}")
 
     def even_insets(self, yv: Dict[str, float]) -> List[Requirement]:
-        """Template instances on different rows: equal top / bottom insets (DESIGN 2.2)."""
+        """Template instances on different rows: equal top / bottom insets (DESIGN 2.2) — in
+        documents; on slides each instance hugs its own content (an ASG header deepens only
+        AZ 1's top, its bottom only AZ 2's)."""
         out = []
+        if not self.mc.even_instances:
+            return out
         for ids in self.template_sets():
             refs = []
             for g in ids:

@@ -264,6 +264,8 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
  m. Group `pad_top` (spec key, px): box top → its first icon / nested box when larger than
     the type's header inset (room for a `points` bus above endpoints, bedrock-dx 88; DESIGN
     "no key for a subnet top inset"). `min_h` grows a box downward, not its top inset.
+    `pad_left` / `pad_right` replace `pad` on one side only (room for a label beside a line
+    on that side, an ASG title left of its first member).
  n. Router space plan() adds beyond DESIGN 4.3 #10 (W5, from the golden renders):
     a vertical leg at a node through the top border of the node's boxes the other end is
     outside of passes right of their header (hard: checker width + 5; soft: 0.6 em + 8;
@@ -377,6 +379,8 @@ class Group:
     span_rows: Optional[Tuple[str, str]] = None
     pad: Optional[float] = None     # px, overrides Mode.pad / pad_node for this group's children
     pad_top: Optional[float] = None  # px: box top → its first icon / nested box, when more than the type's header inset (decision m)
+    pad_left: Optional[float] = None   # px: overrides `pad` on the left side only (decision m)
+    pad_right: Optional[float] = None  # px: overrides `pad` on the right side only
     min_w: Optional[float] = None   # px
     min_h: Optional[float] = None   # px
     dash: Optional[str] = None      # resolved stroke-dasharray (style default or spec `dash`), None = solid
