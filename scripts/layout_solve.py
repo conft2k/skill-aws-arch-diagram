@@ -14,7 +14,7 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                (separated on the axis their track ranges are disjoint on; rows first for
                diagonal pairs), 3 neighbour pitch, 4 header and CIDR widths, 5 IGW/VGW pinned
                on the VPC border (mask kept MASK_CLEAR from borders), 6 the AZ gap row,
-               7 colspan (left side on the first track, right side on the last), 8 flow rows
+               7 colspan (reserved from its center for the span a first solve found), 8 flow rows
                (own x variables, pitch, centered in the parent afterwards) and flow columns
                (own y variables, pitch or label stack + stack gap, then top / centered /
                bottom in the parent's height; no row tracks), 9 overlays (ASG:
@@ -165,6 +165,9 @@ class _Model:
         self.aligned: set = set()
         self.warnings: List[str] = []
         self.no_hug: set = set()         # edges _hug leaves where the minimal solution put them
+        # colspan node → the b1 → b2 span its x reservation assumes (held as b2 − b1 ≥ it);
+        # empty on the first x solve, which reserves from both end tracks (solve())
+        self.span: Dict[str, float] = {}
 
     # ---- helpers --------------------------------------------------------------------
 
@@ -239,13 +242,17 @@ class _Model:
 
     def nref(self, nid, axis, side) -> Ref:
         """A node's center variable; side "lo" (left / as b) or "hi" (right / as a): a
-        colspan node uses its first track on the left and its last on the right."""
+        colspan node is its first track + span/2 on the left and its last − span/2 on the
+        right (with no span known yet: the end tracks themselves)."""
         n = self.spec.nodes[nid]
         if n.xy is not None or (axis == "x" and nid in self.flow) or (axis == "y" and nid in self.flowc):
             return (f"node:{nid}", 0.0)
         if axis == "x":
-            c = n.col2 if (side == "hi" and n.col2) else n.col
-            return (f"col:{c}", n.dx)
+            if n.col2:
+                # its center is X_b1 + s/2 = X_b2 − s/2 while the span stays s (≥ s holds)
+                s = self.span.get(nid, 0.0)
+                return (f"col:{n.col2}", n.dx - s / 2) if side == "hi" else (f"col:{n.col}", n.dx + s / 2)
+            return (f"col:{n.col}", n.dx)
         return (f"row:{n.row}", n.dy)
 
     def lo(self, it: _Item, axis) -> Ref:
@@ -294,6 +301,10 @@ class _Model:
                 self.add(axis, ref, v, 0, f"xy {txt}", f"node:{nid}")
                 self.add(axis, v, ref, 0, f"xy {txt}", f"node:{nid}")
         if axis == "x":
+            for nid, sp in sorted(self.span.items()):
+                n = spec.nodes[nid]
+                self.add("x", (f"col:{n.col}", 0), (f"col:{n.col2}", 0), sp,
+                         f"colspan {nid} centered (span {fmt_num(sp)})", f"node:{nid}")
             self._flows()
             if mc.badge_clear_x:
                 self._badge_clear_x()
@@ -413,7 +424,7 @@ class _Model:
         d = g
         why = f"{what} {fmt_num(g)} {a.key} | {b.key}"
         if axis == "x" and a.nid and b.nid:
-            # neighbour nodes: center pitch (3), on the conservative colspan sides
+            # neighbour nodes: center pitch (3), a colspan from its center
             (va, oa), (vb, ob) = self.nref(a.nid, "x", "hi"), self.nref(b.nid, "x", "lo")
             fa, fb = self.foot[a.nid], self.foot[b.nid]
             if self.spec.nodes[a.nid].parent == self.spec.nodes[b.nid].parent or a.border or b.border:
@@ -1030,8 +1041,22 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
         raise SolveError(probs)
 
     # ---- x ---------------------------------------------------------------------------
-    m.build("x")
-    xv, xpred, xcons = _solve_axis(m, "x", m.cons["x"] + mapped["x"])
+    # A colspan node's center (X_b1 + X_b2) / 2 is no single variable: the first solve
+    # reserves its half width from both end tracks (left of b1, right of b2), the next
+    # from its center for the span that solve found, held as b2 − b1 ≥ span (DESIGN 4.3 #7)
+    spans = [nid for nid, n in spec.nodes.items() if n.col2 and n.xy is None]
+    w0 = len(m.warnings)
+    for _ in range(4):
+        m.build("x")
+        xv, xpred, xcons = _solve_axis(m, "x", m.cons["x"] + mapped["x"])
+        got = {nid: round(xv[f"col:{spec.nodes[nid].col2}"] - xv[f"col:{spec.nodes[nid].col}"], 6) for nid in spans}
+        if not spans or all(abs(got[i] - m.span.get(i, 0.0)) <= _EPS for i in spans):
+            break
+        m.span = got
+        m.cons["x"], m.ties["x"], m.flow_rows = [], [], []
+        m.aligned = {k for k in m.aligned if k[0] != "x"}
+        del m.warnings[w0:]
+        mapped["x"] = [_map_req(m, r) for r in extra if r.axis == "x"]
     xbf, xv = xv, dict(xv)
     _hug(m, "x", xcons, xv)
     for parent, ids in m.flow_rows:

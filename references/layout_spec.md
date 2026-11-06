@@ -131,8 +131,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
 - `label` (required, 14px); `sub`: a string or a list of 12px grey lines under it.
   In a template, `label: {1: RDS Primary, 2: RDS Standby}`.
 - Position: `at: [col, row]`; `at: [b1..b2, main]` centers between two columns (a colspan
-  node, tgw `tgwb`); `col:` alone inside a `per` template or on a flow column; `row:`
-  alone on a flow row (`at: [col, flowrow]` pins one node of that row to a grid column:
+  node, tgw `tgwb`; its labels take room from that center, so a wide route table under two
+  spokes needs no column of its own); `col:` alone inside a `per` template or on a flow column;
+  `row:` alone on a flow row (`at: [col, flowrow]` pins one node of that row to a grid column:
   alb Route 53; `at: [flowcol, row]` pins one to a grid row).
 - `in: <group>` for containment; leave it out for things outside AWS (Users, Internet,
   Client) — the loader rejects Internet, Direct Connect and Site-to-Site VPN in the Cloud.

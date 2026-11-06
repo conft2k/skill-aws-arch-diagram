@@ -126,9 +126,11 @@ is two Requirements). Variable names (strings):
   "node:<nid>"                   the node's icon center on that axis (track center + dx/dy,
                                  a flow-row node's solved x, a flow-column node's solved y,
                                  a border node's border).
-W2 maps "node:<nid>" of a colspan node (center between X_b1 and X_b2) conservatively:
-as `a` it uses X_b2, as `b` it uses X_b1, so the requirement holds for any center in
-the span (DESIGN 4.3 #7). Node footprint widths are not variables: a requirer adds the
+W2 maps "node:<nid>" of a colspan node (center between X_b1 and X_b2) to its center: the
+first x solve is conservative (as `a` X_b2, as `b` X_b1, any center in the span), then W2
+re-solves with the span s it found held as X_b2 − X_b1 ≥ s and the center taken as
+X_b1 + s/2 (as `b`) / X_b2 − s/2 (as `a`), until the spans settle — so its footprint and
+requirements are reserved from its center, not from both end tracks (DESIGN 4.3 #7). Node footprint widths are not variables: a requirer adds the
 half widths it needs into d (icon edge = S/2 + END_GAP; labels by layout_text_width).
 
 Canvas (W2): every drawn thing ≥ canvas_margin from "origin" on both axes, and

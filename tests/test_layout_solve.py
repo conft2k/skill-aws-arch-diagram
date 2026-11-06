@@ -739,12 +739,36 @@ class ConstraintTest(unittest.TestCase):
         g = self.all_hold(spec, reqs)
         self.assertEqual(g.nodes["inet"].cx - g.nodes["igw"].cx, max(104, g.nodes["inet"].cx - g.nodes["igw"].cx))
         self.assertGreaterEqual(g.groups["az.2"].rect.y0 - g.groups["az.1"].rect.y1, 132)
-        # colspan: a node over two tracks sits between them; requirements use the safe side
+        # colspan: a node over two tracks sits between them; requirements hold at its center
         spec = mini_spec()
         spec.nodes["alb"].col, spec.nodes["alb"].col2 = "pub", "app"
         g = LS.solve(spec, [Requirement("x", "node:igw", "node:alb", 150, "arrow", "edge:0")])
         self.assertEqual(g.nodes["alb"].cx, (g.cols["pub"] + g.cols["app"]) / 2)
-        self.assertGreaterEqual(g.cols["pub"] - g.nodes["igw"].cx, 150)
+        self.assertGreaterEqual(g.nodes["alb"].cx - g.nodes["igw"].cx, 150)
+        self.assertLess(g.cols["pub"] - g.nodes["igw"].cx, 150)
+
+    def test_colspan_reserves_from_its_center(self):
+        """A colspan node's half width is reserved from its center (b1 + b2) / 2, not left
+        of b1 and right of b2 (slide tgw: TGW B RT's long route line under DR / Analytics
+        VPC no longer widens Region B by the span)."""
+        spec = build("span", ["b1", "b2"], ["top", "bot"],
+                     [dict(id="cloud", type="cloud"), dict(id="rb", type="region", label="Region", parent="cloud")],
+                     [dict(id="dr", icon="service/Amazon-Virtual-Private-Cloud", label="DR VPC", sub=["10.16.0.0/16"],
+                           parent="rb", col="b1", row="top"),
+                      dict(id="ana", icon="service/Amazon-Virtual-Private-Cloud", label="Analytics VPC",
+                           sub=["10.17.0.0/16"], parent="rb", col="b2", row="top"),
+                      dict(id="rtb", icon="resource/Amazon-Route-53_Route-Table", label="TGW B RT",
+                           sub=["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16"], parent="rb", col="b1", col2="b2",
+                           row="bot")], mode="slide")
+        g = LS.solve(spec, [])
+        rb, rtb = g.groups["rb"].rect, g.nodes["rtb"]
+        half = math.ceil(M.layout_text_width("10.0.0.0/13 · 192.168.0.0/16", 12) / 2)
+        self.assertEqual(rtb.cx, (g.cols["b1"] + g.cols["b2"]) / 2)
+        self.assertGreaterEqual(rtb.cx - half - rb.x0, 8)                  # pad from the center's footprint
+        self.assertGreaterEqual(rb.x1 - rtb.cx - half, 8)
+        self.assertLess(rb.x1 - rb.x0, 2 * half + 16 + (g.cols["b2"] - g.cols["b1"]))   # the old reservation
+        self.assertEqual(rb.x1 - rb.x0, 2 * half + 16)                      # nothing else is wider
+        self.assertEqual(check(spec, g), [])
 
     def test_pane_note_block(self):
         spec = nfw_spec()
