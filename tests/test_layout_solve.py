@@ -576,6 +576,40 @@ class ConstraintTest(unittest.TestCase):
                 self.assertGreater(icon.y0 - sn.y0, K.top_inset("private", mode, "icon"))
                 self.assertEqual(check(spec, g), [])
 
+    def test_short_overlay_title_above_a_member_not_at_its_box_top(self):
+        """A short ASG title goes beside its first member row only when that row is its
+        subnet's first: over a member below another node of the subnet (or a member in no
+        box) the title sits above the member and the box hugs it — it does not grow up over
+        the node above or out to the canvas edge (the full run, tests/test_layout_main.py,
+        then clears the label above by feedback)."""
+        st = K.style("asg")
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode, case="member below a non-member"):
+                spec = build("asg", ["c"], ["r1", "r2"],
+                             [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud"),
+                              dict(id="vpc", type="vpc", label="VPC", cidr="10.0.0.0/16", parent="region"),
+                              dict(id="sn", type="private", label="App subnet", parent="vpc"),
+                              dict(id="asg", type="asg", label="ASG", over=["b"])],
+                             [dict(id="a", icon="service/Amazon-EC2", label="Bastion", parent="sn", col="c", row="r1"),
+                              dict(id="b", icon="service/Amazon-EC2", label="Worker", parent="sn", col="c", row="r2")],
+                             mode=mode)
+                g = LS.solve(spec, [])
+                a, icon = g.groups["asg"].rect, g.nodes["b"].icon
+                self.assertGreater(a.y0, g.nodes["a"].icon.y0)
+                self.assertGreaterEqual(icon.y0 - a.y0, K.top_inset("asg", mode, "icon"))
+                self.assertLess(icon.y0 - a.y0, K.top_inset("asg", mode, "icon") + 8)
+                self.assertLess(icon.x0, a.x0 + st.title_dx)
+            with self.subTest(mode=mode, case="member in no box"):
+                spec = build("asg", ["c", "d"], ["r0", "r1"],
+                             [dict(id="asg", type="asg", label="ASG", over=["a"])],
+                             [dict(id="x", icon="resource/Users", label="Users", col="c", row="r0"),
+                              dict(id="a", icon="service/Amazon-EC2", label="A", col="d", row="r1")], mode=mode)
+                g = LS.solve(spec, [])
+                a, icon = g.groups["asg"].rect, g.nodes["a"].icon
+                self.assertGreaterEqual(icon.y0 - a.y0, K.top_inset("asg", mode, "icon"))
+                self.assertLess(icon.y0 - a.y0, K.top_inset("asg", mode, "icon") + 8)
+                self.assertLess(icon.x0, a.x0 + st.title_dx)
+
     def test_az_gap_only_with_a_node_between(self):
         """Stacked AZs keep the sibling gap when nothing of their VPC sits between them, and
         get az_gap when a node of the VPC (here an NLB) does."""

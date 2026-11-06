@@ -444,6 +444,49 @@ class FlowColumnFixes(unittest.TestCase):
         self.assertIn(f"cols: {{id: svc, flow: {M.fmt_num(s3.cy - cw.cy + layout.WIDEN)}, align: bottom}}", tip)
 
 
+class ShortOverlayTitle(unittest.TestCase):
+    def test_member_below_a_non_member_or_in_no_box(self):
+        """An ASG titled "ASG" over a member below another node of its subnet, or over a
+        member in no box: Layout OK, the box clear of the node above (icon and label) and
+        hugging its member, not 8 under the subnet top or at the canvas edge."""
+        a = {"name": "a", "cols": ["c"], "rows": ["r1", "r2"],
+             "groups": [{"id": "cloud", "type": "cloud"},
+                        {"id": "region", "type": "region", "label": "Region", "in": "cloud"},
+                        {"id": "vpc", "type": "vpc", "label": "VPC", "cidr": "10.0.0.0/16", "in": "region"},
+                        {"id": "sn", "type": "private", "label": "App subnet", "in": "vpc"},
+                        {"id": "asg", "type": "asg", "label": "ASG", "over": ["b"]}],
+             "nodes": [{"id": "a", "icon": "service/Amazon-EC2", "label": "Bastion", "in": "sn", "at": ["c", "r1"]},
+                       {"id": "b", "icon": "service/Amazon-EC2", "label": "Worker", "in": "sn", "at": ["c", "r2"]}]}
+        b = {"name": "b", "cols": ["c", "d"], "rows": ["r0", "r1"],
+             "groups": [{"id": "asg", "type": "asg", "label": "ASG", "over": ["a"]}],
+             "nodes": [{"id": "x", "icon": "resource/Users", "label": "Users", "at": ["c", "r0"]},
+                       {"id": "a", "icon": "service/Amazon-EC2", "label": "A", "at": ["d", "r1"]}],
+             "edges": [{"e": "x -> a"}]}
+        for mode in ("document", "slide"):
+            for d, member, other in ((a, "b", "a"), (b, "a", None)):
+                with self.subTest(mode=mode, spec=d["name"]), tempfile.TemporaryDirectory() as tmp:
+                    src, out = Path(tmp) / "s.layout.json", Path(tmp) / "s.draft.svg"
+                    src.write_text(json.dumps(dict(d, mode=mode)), encoding="utf-8")
+                    buf = io.StringIO()
+                    with redirect_stdout(buf):
+                        rc = layout.main([str(src), "-o", str(out)])
+                    self.assertEqual((rc, buf.getvalue().strip().splitlines()[-1]), (0, "Layout OK"), buf.getvalue())
+                    rects, icons = {}, {}
+                    for g in ET.fromstring(out.read_bytes()).iter(NS + "g"):
+                        kids = list(g)
+                        if g.get("id") == "group:asg":
+                            r = kids[0]
+                            rects["asg"] = float(r.get("y"))
+                        elif g.get("id", "").startswith("node:"):
+                            icons[g.get("id")[5:]] = (float(kids[0].get("y")),
+                                                      max(float(t.get("y")) for t in kids if t.tag == NS + "text"))
+                    top = K.top_inset("asg", mode, "icon")
+                    self.assertGreaterEqual(icons[member][0] - rects["asg"], top)
+                    self.assertLess(icons[member][0] - rects["asg"], top + 8)
+                    if other:
+                        self.assertGreater(rects["asg"], icons[other][1])
+
+
 class LabelOnLine(unittest.TestCase):
     def test_no_room_above_or_below_puts_the_label_on_its_line(self):
         """No room above (a sub-caption) nor below (an icon): the label sits on its line over

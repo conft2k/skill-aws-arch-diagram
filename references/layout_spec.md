@@ -121,7 +121,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   says where its title goes relative to the subnet titles it crosses. A title no wider than
   an icon (`ASG`) puts the first member row right of the badge and title, at the subnet's
   own icon inset (gwlb); a longer one (`ASG · target group`) sits above the members and
-  pushes their row down (alb, nlb).
+  pushes their row down (alb, nlb). The short title goes beside only when the first member
+  row is its subnet's first; over a member lower in its subnet (another node above it) or in
+  no box, it sits above the member like a long one.
 - A group covers the tracks of what it contains. `span: {cols: [pub, pub], rows: [a, b]}`
   stretches it over tracks with no node of its own (an empty public subnet).
 - `pad`, `pad_top`, `pad_left`, `pad_right`, `pad_bottom`, `min_w`, `min_h` (px): extra room — `pad_top`

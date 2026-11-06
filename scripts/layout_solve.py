@@ -168,7 +168,6 @@ class _Model:
         self.flow_rows: List[Tuple[Optional[str], List[str]]] = []         # (parent, node ids in order)
         self.aligned: set = set()
         self.warnings: List[str] = []
-        self.no_hug: set = set()         # edges _hug leaves where the minimal solution put them
         # colspan node → the b1 → b2 span its x reservation assumes (held as b2 − b1 ≥ it);
         # empty on the first x solve, which reserves from both end tracks (solve())
         self.span: Dict[str, float] = {}
@@ -790,7 +789,6 @@ class _Model:
                  else st.badge_size + K.ICON_CLEAR) + self.S / 2
             for m in self._overlay_first(g, nodes=True):
                 self.add("x", gl, self.nref(m, "x", "lo"), d, f"beside {gid} title {fmt_num(d)} ⊃ {m}", own)
-            self.no_hug.add(f"group:{gid}.T")      # the top stays under the subnet header, not on the icon
         # over stack members: no subnet holds it, so keep it off the parent's other children
         # left and right of the column (a long title would reach over the VPC beside it)
         for (parent, col), ids in self.stacks.items():
@@ -861,7 +859,9 @@ class _Model:
         """An overlay title no wider than an icon (or a badge alone) goes left of the first
         member row, when the header inset under it would push that row below its subnet's
         own icon inset; a longer title stays above the members (ex alb, nlb) — y_after_x
-        then finds them clear of the header."""
+        then finds them clear of the header. Only when every first-row member is in a
+        subnet and on its first row: a member lower in its box (something of the box above
+        it) or outside any box has no subnet header to sit beside, so the title goes above."""
         st, mc = K.style(g.type), self.mc
         if g.label:
             if layout_text_width(g.label, st.title_size) > self.S:
@@ -871,20 +871,27 @@ class _Model:
         under = K.top_inset(g.type, mc.name, "icon")
         if st.badge:
             under = max(under, st.badge_size + K.ICON_CLEAR)
-        for m in self._overlay_first(g, nodes=True):
+        first = self._overlay_first(g, nodes=True)
+        for m in first:
             p = self.spec.nodes[m].parent
             if p is None:
-                return True
-            sg = self.spec.groups[p]
-            if g.header == "below":
-                ss = K.style(sg.type)
-                d = _up(ss.title_dy + K.GLYPH_DESCENT * ss.title_size) + K.OVERLAY_HEADER_GAP
-            else:
-                d = K.OVERLAY_HEADER_GAP
-            own = max(K.top_inset(sg.type, mc.name, "icon", bool(sg.cidr)), sg.pad_top or 0)
-            if d + under > own:
-                return True
-        return False
+                return False
+            r, pr = self.node_rng(m, "y"), self.group_rng(p, "y")
+            if r is not None and pr is not None and r[0] > pr[0]:
+                return False
+        return any(self._overlay_below(g, p) + under > self._icon_inset(p)
+                   for p in (self.spec.nodes[m].parent for m in first))
+
+    def _overlay_below(self, g, s) -> float:
+        """Subnet s's top → the overlay's top: 8, or 8 below s's title (header: below)."""
+        if g.header == "below":
+            ss = K.style(self.spec.groups[s].type)
+            return _up(ss.title_dy + K.GLYPH_DESCENT * ss.title_size) + K.OVERLAY_HEADER_GAP
+        return K.OVERLAY_HEADER_GAP
+
+    def _icon_inset(self, gid) -> float:
+        sg = self.spec.groups[gid]
+        return max(K.top_inset(sg.type, self.mc.name, "icon", bool(sg.cidr)), sg.pad_top or 0)
 
     def y_after_x(self, xv: Dict[str, float], nodes_x: Dict[str, float]):
         """The y rules that depend on solved x: overlay top (9, decision f) and group badge
@@ -898,6 +905,7 @@ class _Model:
             t0 = L + st.title_dx - K.HEADER_ICON_CLEAR
             t1 = L + st.title_dx + (layout_text_width(g.label, st.title_size) if g.label else 0) + K.HEADER_ICON_CLEAR
             b1 = L + (st.badge_size + K.ICON_CLEAR if st.badge else 0)
+            beside = set(self._overlay_first(g, nodes=True)) if self._overlay_beside(g) else set()
             for m in g.over:
                 it = self.item_node(m)
                 cx = nodes_x[m]
@@ -906,16 +914,18 @@ class _Model:
                 top = K.top_inset(g.type, mc.name, "icon") if under else K.OVERLAY_HEADER_GAP
                 if under and st.badge and x0 < b1:
                     top = max(top, st.badge_size + K.ICON_CLEAR)
-                self.add("y", gl, self.lo(it, "y"), top,
-                         f"{'header' if under else 'overlay'} inset {fmt_num(top)} {gid} ⊃ {m}", own)
+                what = "header" if under else "overlay"
+                if m in beside and not under:
+                    # beside its title: the subnet's own icon inset, less the overlay's top
+                    # inset in the subnet, so the top hugs to 8 under the subnet top when the
+                    # row sits at that inset and follows the row when it sits lower
+                    p = self.spec.nodes[m].parent
+                    top, what = max(top, self._icon_inset(p) - self._overlay_below(g, p)), "beside"
+                self.add("y", gl, self.lo(it, "y"), top, f"{what} inset {fmt_num(top)} {gid} ⊃ {m}", own)
                 ref, d, what = self.node_bottom(gid, it)
                 self.add("y", ref, gr, d, f"{what} {m} ⊂ {gid}", own)
             for s in self._overlay_first(g):
-                if g.header == "below":
-                    ss = K.style(self.spec.groups[s].type)
-                    d = _up(ss.title_dy + K.GLYPH_DESCENT * ss.title_size) + K.OVERLAY_HEADER_GAP
-                else:
-                    d = K.OVERLAY_HEADER_GAP
+                d = self._overlay_below(g, s)
                 self.add("y", (f"group:{s}.T", 0), gl, d, f"overlay below {s} top {fmt_num(d)}", own)
             for s in self._overlay_first(g, last=True):
                 self.add("y", gr, (f"group:{s}.B", 0), K.OVERLAY_HEADER_GAP, f"overlay inside {s}", own)
@@ -1104,7 +1114,7 @@ def _hug(m: _Model, axis: str, cons: List[Requirement], val: Dict[str, float]):
     done = set()
     for v in order:
         root = find(v)
-        if root in done or v not in val or v in m.no_hug:
+        if root in done or v not in val:
             continue
         done.add(root)
         mem = set(sets[root])

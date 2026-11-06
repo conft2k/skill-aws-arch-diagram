@@ -255,7 +255,13 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     feedback loop; W1.load takes title=; Requirement.soft for preferences (arrow 48 soft
     + 20 hard): W2 drops soft requirements before reporting a cycle.
  f. Overlay (ASG) top inset (+30/+28) binds only member icons under its header title;
-    other members keep ≥ 8 below the ASG top (ex gwlb +26 / +20).
+    other members keep ≥ 8 below the ASG top (ex gwlb +26 / +20). A title no wider than an
+    icon goes beside the first member row instead (x: the row right of badge + title) when
+    every first-row member sits on the first row of its subnet and the header inset would
+    push it below the subnet's icon inset; those members then keep the subnet's icon inset
+    less the overlay's own top inset in it (doc 32 − 8, slide 28 − 8), so the hugged top
+    lands 8 under the subnet top and follows a row that sits lower. A member in no box or
+    below something else of its box gets the title above it (no subnet header to sit by).
  g. Default font-family is the examples' fixed string (layout_const.FONT_FAMILY_DEFAULT);
     W1 reorders only when Noto Sans CJK KR is not installed, so output stays stable.
  h. edge.label_at None = auto (above a horizontal piece, right of a vertical one; a badge on
