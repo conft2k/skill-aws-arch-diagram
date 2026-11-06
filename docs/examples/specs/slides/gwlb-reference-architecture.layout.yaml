@@ -14,7 +14,7 @@ groups:
   - {id: secvpc,  type: vpc, label: Security VPC, cidr: 10.1.0.0/16, in: region, pad_bottom: 6}
   - {id: secaz,   type: az, in: secvpc, per: [az1, az2]}
   - {id: applsn,  type: private, label: Appliance subnet, in: secaz}
-  - {id: asg,     type: asg, label: ASG, over: [fw.*], header: right, pad_left: 64}
+  - {id: asg,     type: asg, label: ASG, over: [fw.*], header: right}
 
 nodes:
   - {id: users, icon: resource/Users, label: Users, at: [users, main]}

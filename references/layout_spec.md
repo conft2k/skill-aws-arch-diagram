@@ -107,14 +107,16 @@ The type fixes border color, width, dash, badge and header insets (quick referen
 - `over: [ec2a.*, ec2b.*]`: an overlay drawn around its member nodes, outside the
   containment tree (no `in`) — `asg` for an Auto Scaling group / target group, any other
   type (`generic` with a `dash`) for a box with no group icon, such as an ECS service. `header: right` (default) or `below`
-  says where its title goes relative to the subnet titles it crosses.
+  says where its title goes relative to the subnet titles it crosses. A title no wider than
+  an icon (`ASG`) puts the first member row right of the badge and title, at the subnet's
+  own icon inset (gwlb); a longer one (`ASG · target group`) sits above the members and
+  pushes their row down (alb, nlb).
 - A group covers the tracks of what it contains. `span: {cols: [pub, pub], rows: [a, b]}`
   stretches it over tracks with no node of its own (an empty public subnet).
 - `pad`, `pad_top`, `pad_left`, `pad_right`, `pad_bottom`, `min_w`, `min_h` (px): extra room — `pad_top`
   sets the box top → first icon distance (bedrock-dx 88: a bus above the endpoints);
   `pad_left` / `pad_right` replace `pad` on one side only (room for a label right of a
-  vertical line near the border; an ASG `pad_left: 64` puts its title left of the first
-  member without widening its right side); `pad_bottom` replaces `pad` at the bottom only
+  vertical line near the border, without widening the other side); `pad_bottom` replaces `pad` at the bottom only
   (child box → border; a node keeps at least 12 from its last baseline, so it only grows
   the room below a label) — gwlb slide `pad_bottom: 6` on the outer boxes saves height
   without narrowing their sides; `min_h` grows the box down.

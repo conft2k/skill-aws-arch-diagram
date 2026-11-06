@@ -269,7 +269,7 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     the type's header inset (room for a `points` bus above endpoints, bedrock-dx 88; DESIGN
     "no key for a subnet top inset"). `min_h` grows a box downward, not its top inset.
     `pad_left` / `pad_right` replace `pad` on one side only (room for a label beside a line
-    on that side, an ASG title left of its first member); `pad_bottom` replaces it at the
+    on that side); `pad_bottom` replaces it at the
     bottom (child box → border, the header-height minimum; a node's footprint bottom →
     border, never closer than Mode.label_bottom from its last baseline).
  n. Router space plan() adds beyond DESIGN 4.3 #10 (W5, from the golden renders):

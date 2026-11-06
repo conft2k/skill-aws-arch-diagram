@@ -533,7 +533,7 @@ class ConstraintTest(unittest.TestCase):
                      [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud"),
                       dict(id="app", type="vpc", label="Application VPC", cidr="10.0.0.0/16", parent="region"),
                       dict(id="sec", type="vpc", label="Security VPC", cidr="10.1.0.0/16", parent="region")]
-                     + tg + sg + [dict(id="asg", type="asg", label="ASG", over=["fw.1", "fw.2"])],
+                     + tg + sg + [dict(id="asg", type="asg", label="Auto Scaling group", over=["fw.1", "fw.2"])],
                      tn + sn + [dict(id="gwlb", icon="resource/Elastic-Load-Balancing_Gateway-Load-Balancer",
                                      label="GWLB", parent="sec", col="lb", row="main")])
         g = LS.solve(spec, [])
@@ -542,6 +542,38 @@ class ConstraintTest(unittest.TestCase):
             self.assertEqual((ra.y0, ra.y1), (rb.y0, rb.y1), (a, b))
         self.assertGreaterEqual(g.nodes["fw.1"].icon.y0 - g.groups["asg"].rect.y0, 30)
         self.assertEqual(check(spec, g), [])
+
+    def test_short_overlay_title_beside_first_member(self):
+        """An ASG titled no wider than an icon puts its first member row right of the badge
+        and title, at the subnet's own icon inset, its top 8 under the subnet top (ex gwlb);
+        a longer title stays above the members and pushes them down."""
+        def solved(label, mode):
+            tg, tn = per(
+                [dict(id="az", type="az", label="Availability Zone {n}", parent="vpc"),
+                 dict(id="sn", type="private", label="Appliance subnet", parent="az")],
+                [dict(id="fw", icon="service/Amazon-EC2", label="방화벽", parent="sn", col="fw")],
+                ["az1", "az2"], "az")
+            spec = build("asg", ["fw"], ["az1", "az2"],
+                         [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud"),
+                          dict(id="vpc", type="vpc", label="VPC", cidr="10.0.0.0/16", parent="region")]
+                         + tg + [dict(id="asg", type="asg", label=label, over=["fw.1", "fw.2"])], tn, mode=mode)
+            return spec, LS.solve(spec, [])
+        st = K.style("asg")
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode):
+                spec, g = solved("ASG", mode)
+                a, sn, icon = g.groups["asg"].rect, g.groups["sn.1"].rect, g.nodes["fw.1"].icon
+                title_end = a.x0 + st.title_dx + M.layout_text_width("ASG", st.title_size)
+                self.assertGreaterEqual(icon.x0, title_end + K.HEADER_ICON_CLEAR)
+                self.assertEqual(icon.y0 - sn.y0, K.top_inset("private", mode, "icon"))
+                self.assertEqual(a.y0 - sn.y0, K.OVERLAY_HEADER_GAP)
+                self.assertEqual(check(spec, g), [])
+                spec, g = solved("ASG · target group", mode)
+                a, sn, icon = g.groups["asg"].rect, g.groups["sn.1"].rect, g.nodes["fw.1"].icon
+                self.assertLess(icon.x0, a.x0 + st.title_dx)
+                self.assertGreaterEqual(icon.y0 - a.y0, K.top_inset("asg", mode, "icon"))
+                self.assertGreater(icon.y0 - sn.y0, K.top_inset("private", mode, "icon"))
+                self.assertEqual(check(spec, g), [])
 
     def test_az_gap_only_with_a_node_between(self):
         """Stacked AZs keep the sibling gap when nothing of their VPC sits between them, and

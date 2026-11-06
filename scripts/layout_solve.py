@@ -18,8 +18,9 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                (own x variables, pitch, centered in the parent afterwards) and flow columns
                (own y variables, pitch or label stack + stack gap, then top / centered /
                bottom in the parent's height; no row tracks), 9 overlays (ASG:
-               members, header right/below, inside each member subnet), 10 the caller's
-               Requirements, 11 canvas margin (and the note's requirements), plus template
+               members, header right/below, inside each member subnet, a short title beside the
+               first member row), 10 the caller's Requirements, 11 canvas margin (and the
+               note's requirements), plus template
                instances kept alike (x: equal edges; y: equal insets, by iteration), badge ↔
                icon clearance, track order / min_gap_before, min_w / min_h.
   solve        Bellman-Ford longest path from "origin" per axis = the minimal solution. A
@@ -152,6 +153,7 @@ class _Model:
         self.flow_rows: List[Tuple[Optional[str], List[str]]] = []         # (parent, node ids in order)
         self.aligned: set = set()
         self.warnings: List[str] = []
+        self.no_hug: set = set()         # edges _hug leaves where the minimal solution put them
 
     # ---- helpers --------------------------------------------------------------------
 
@@ -611,6 +613,13 @@ class _Model:
             it = self.item_node(m)
             self.add("x", gl, self.lo(it, "x"), pl, f"pad {fmt_num(pl)} {gid} ⊃ {m}", own)
             self.add("x", self.hi(it, "x"), gr, pr, f"pad {fmt_num(pr)} {m} ⊂ {gid}", own)
+        if self._overlay_beside(g):
+            # a short title: the first member row sits right of the badge + title (ex gwlb)
+            d = (st.title_dx + _up(layout_text_width(g.label, st.title_size)) + K.HEADER_ICON_CLEAR if g.label
+                 else st.badge_size + K.ICON_CLEAR) + self.S / 2
+            for m in self._overlay_first(g, nodes=True):
+                self.add("x", gl, self.nref(m, "x", "lo"), d, f"beside {gid} title {fmt_num(d)} ⊃ {m}", own)
+            self.no_hug.add(f"group:{gid}.T")      # the top stays under the subnet header, not on the icon
         first = self._overlay_first(g)
         for s in self._overlay_subnets(g):
             sg = self.spec.groups[s]
@@ -632,11 +641,42 @@ class _Model:
                 out.append(p)
         return out
 
-    def _overlay_first(self, g, last=False):
-        """Member subnets in the overlay's first (or last) member row."""
+    def _overlay_first(self, g, last=False, nodes=False):
+        """Member subnets (or, nodes=True, the members) in the overlay's first (or last) member row."""
         rows = [self.ri.get(self.spec.nodes[m].row, 0) for m in g.over]
         want = max(rows) if last else min(rows)
+        if nodes:
+            return [m for m, r in zip(g.over, rows) if r == want]
         return [self.spec.nodes[m].parent for m, r in zip(g.over, rows) if r == want and self.spec.nodes[m].parent]
+
+    def _overlay_beside(self, g) -> bool:
+        """An overlay title no wider than an icon (or a badge alone) goes left of the first
+        member row, when the header inset under it would push that row below its subnet's
+        own icon inset; a longer title stays above the members (ex alb, nlb) — y_after_x
+        then finds them clear of the header."""
+        st, mc = K.style(g.type), self.mc
+        if g.label:
+            if layout_text_width(g.label, st.title_size) > self.S:
+                return False
+        elif not st.badge:
+            return False
+        under = K.top_inset(g.type, mc.name, "icon")
+        if st.badge:
+            under = max(under, st.badge_size + K.ICON_CLEAR)
+        for m in self._overlay_first(g, nodes=True):
+            p = self.spec.nodes[m].parent
+            if p is None:
+                return True
+            sg = self.spec.groups[p]
+            if g.header == "below":
+                ss = K.style(sg.type)
+                d = _up(ss.title_dy + K.GLYPH_DESCENT * ss.title_size) + K.OVERLAY_HEADER_GAP
+            else:
+                d = K.OVERLAY_HEADER_GAP
+            own = max(K.top_inset(sg.type, mc.name, "icon", bool(sg.cidr)), sg.pad_top or 0)
+            if d + under > own:
+                return True
+        return False
 
     def y_after_x(self, xv: Dict[str, float], nodes_x: Dict[str, float]):
         """The y rules that depend on solved x: overlay top (9, decision f) and group badge
@@ -845,7 +885,7 @@ def _hug(m: _Model, axis: str, cons: List[Requirement], val: Dict[str, float]):
     done = set()
     for v in order:
         root = find(v)
-        if root in done or v not in val:
+        if root in done or v not in val or v in m.no_hug:
             continue
         done.add(root)
         mem = set(sets[root])
