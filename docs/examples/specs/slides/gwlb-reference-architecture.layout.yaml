@@ -5,40 +5,31 @@ cols: [users, igw, gwlbe, ec2, gwlb, fw]
 rows: [az1, main, az2]
 
 groups:
-  - {id: cloud,   type: cloud, pad: 6}
-  - {id: region,  type: region, label: Region, in: cloud, pad: 6}
-  - {id: appvpc,  type: vpc, label: Application VPC, cidr: 10.0.0.0/16, in: region, pad: 6}
-  - {id: appaz1,  type: az, label: Availability Zone 1, in: appvpc}
-  - {id: gwlbesn1, type: public, label: GWLBe subnet, in: appaz1}
-  - {id: appsn1,  type: private, label: App subnet, in: appaz1}
-  - {id: appaz2,  type: az, label: Availability Zone 2, in: appvpc}
-  - {id: gwlbesn2, type: public, label: GWLBe subnet, in: appaz2}
-  - {id: appsn2,  type: private, label: App subnet, in: appaz2}
-  - {id: secvpc,  type: vpc, label: Security VPC, cidr: 10.1.0.0/16, in: region, pad: 6}
-  - {id: secaz1,  type: az, label: Availability Zone 1, in: secvpc}
-  - {id: applsn1, type: private, label: Appliance subnet, in: secaz1}
-  - {id: secaz2,  type: az, label: Availability Zone 2, in: secvpc}
-  - {id: applsn2, type: private, label: Appliance subnet, in: secaz2}
-  - {id: asg,     type: asg, label: ASG, over: [fw1, fw2], header: right, pad: 64}
+  - {id: cloud,   type: cloud, pad: 6, pad_left: 8, pad_right: 8}
+  - {id: region,  type: region, label: Region, in: cloud, pad: 6, pad_left: 8, pad_right: 8}
+  - {id: appvpc,  type: vpc, label: Application VPC, cidr: 10.0.0.0/16, in: region, pad: 6, pad_left: 8, pad_right: 8}
+  - {id: appaz,   type: az, in: appvpc, per: [az1, az2]}
+  - {id: gwlbesn, type: public, label: GWLBe subnet, in: appaz}
+  - {id: appsn,   type: private, label: App subnet, in: appaz}
+  - {id: secvpc,  type: vpc, label: Security VPC, cidr: 10.1.0.0/16, in: region, pad: 6, pad_left: 8, pad_right: 8}
+  - {id: secaz,   type: az, in: secvpc, per: [az1, az2]}
+  - {id: applsn,  type: private, label: Appliance subnet, in: secaz}
+  - {id: asg,     type: asg, label: ASG, over: [fw.*], header: right, pad_left: 64}
 
 nodes:
   - {id: users, icon: resource/Users, label: Users, at: [users, main]}
   - {id: igw,   icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: appvpc, at: [igw, main]}
-  - {id: gwlbe1, icon: resource/Amazon-VPC_Endpoints, label: GWLBe, in: gwlbesn1, at: [gwlbe, az1]}
-  - {id: gwlbe2, icon: resource/Amazon-VPC_Endpoints, label: GWLBe, in: gwlbesn2, at: [gwlbe, az2]}
-  - {id: ec21,  icon: service/Amazon-EC2, label: EC2, in: appsn1, at: [ec2, az1]}
-  - {id: ec22,  icon: service/Amazon-EC2, label: EC2, in: appsn2, at: [ec2, az2]}
+  - {id: gwlbe, icon: resource/Amazon-VPC_Endpoints, label: GWLBe, in: gwlbesn, col: gwlbe}
+  - {id: ec2,   icon: service/Amazon-EC2, label: EC2, in: appsn, col: ec2}
   - {id: gwlb,  icon: resource/Elastic-Load-Balancing_Gateway-Load-Balancer, label: GWLB, in: secvpc, at: [gwlb, main]}
-  - {id: fw1,   icon: service/Amazon-EC2, label: 방화벽, in: applsn1, at: [fw, az1]}
-  - {id: fw2,   icon: service/Amazon-EC2, label: 방화벽, in: applsn2, at: [fw, az2]}
+  - {id: fw,    icon: service/Amazon-EC2, label: 방화벽, in: applsn, col: fw}
 
 edges:
   - {e: "users -> igw", label: "HTTPS :443"}
-  - {e: "igw -> gwlbe1, gwlbe2", trunk: true, step: 1}
-  - {e: "gwlb <-> gwlbe1, gwlbe2", step: 2}
+  - {e: "igw -> gwlbe.*", trunk: true, step: 1}
+  - {e: "gwlb <-> gwlbe.*", step: 2}
   - {e: "gwlb <-> asg", label: "GENEVE :6081", step: 3}
-  - {e: "gwlbe1 -> ec21", step: 4}
-  - {e: "gwlbe2 -> ec22", step: 4}
+  - {e: "gwlbe.* -> ec2.*", step: 4, step_each: true}
 
 note:
   steps:

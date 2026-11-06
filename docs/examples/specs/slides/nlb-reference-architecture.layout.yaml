@@ -8,13 +8,10 @@ groups:
   - {id: cloud,  type: cloud}
   - {id: region, type: region, label: Region, in: cloud}
   - {id: vpc,    type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
-  - {id: az1g,   type: az, label: Availability Zone 1, in: vpc}   # two AZ groups, not a per: template: the ASG header deepens AZ 1's top and its bottom AZ 2's bottom, and a template would copy both insets to both AZs (8px over 540)
-  - {id: pub1,   type: public, label: Public subnet, in: az1g}
-  - {id: app1sn, type: private, label: App subnet, in: az1g}
-  - {id: az2g,   type: az, label: Availability Zone 2, in: vpc}
-  - {id: pub2,   type: public, label: Public subnet, in: az2g}
-  - {id: app2sn, type: private, label: App subnet, in: az2g}
-  - {id: asg,    type: asg, label: ASG · target group, over: [ec2a1, ec2b1, ec2a2, ec2b2], header: right}
+  - {id: az,     type: az, in: vpc, per: [az1, az2]}
+  - {id: pubsn,  type: public, label: Public subnet, in: az}
+  - {id: appsn,  type: private, label: App subnet, in: az}
+  - {id: asg,    type: asg, label: ASG · target group, over: [ec2a.*, ec2b.*], header: right}
 
 nodes:
   - {id: users, icon: resource/Users, label: Users, at: [users, main]}
@@ -22,12 +19,9 @@ nodes:
   - {id: acm,   icon: service/AWS-Certificate-Manager, label: ACM, sub: TLS 리스너 인증서, in: region, at: [svc, az1]}
   - {id: cw,    icon: service/Amazon-CloudWatch, label: CloudWatch, sub: 지표 · 경보, in: region, at: [svc, main]}
   - {id: s3,    icon: service/Amazon-Simple-Storage-Service, label: S3, sub: NLB 액세스 로그, in: region, at: [svc, az2]}
-  - {id: nat1,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pub1, at: [pub, az1]}
-  - {id: ec2a1, icon: service/Amazon-EC2, label: EC2, in: app1sn, at: [app1, az1]}
-  - {id: ec2b1, icon: service/Amazon-EC2, label: EC2, in: app1sn, at: [app2, az1]}
-  - {id: nat2,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pub2, at: [pub, az2]}
-  - {id: ec2a2, icon: service/Amazon-EC2, label: EC2, in: app2sn, at: [app1, az2]}
-  - {id: ec2b2, icon: service/Amazon-EC2, label: EC2, in: app2sn, at: [app2, az2]}
+  - {id: nat,   icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubsn, col: pub}
+  - {id: ec2a,  icon: service/Amazon-EC2, label: EC2, in: appsn, col: app1}
+  - {id: ec2b,  icon: service/Amazon-EC2, label: EC2, in: appsn, col: app2}
   - {id: nlb,   icon: resource/Elastic-Load-Balancing_Network-Load-Balancer, label: NLB, in: vpc, at: [pub, main]}
   - {id: igw,   icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
 
@@ -36,5 +30,4 @@ edges:
   - {e: "igw -> nlb"}
   - {e: "nlb -> asg", label: "TCP :8080"}
   - {e: "users ..> r53", verb: DNS 조회}
-  - {e: "asg ..> nat1", verb: 아웃바운드}
-  - {e: "asg ..> nat2", verb: 아웃바운드}
+  - {e: "asg ..> nat.*", verb: 아웃바운드}

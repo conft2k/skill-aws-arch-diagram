@@ -13,9 +13,9 @@ groups:
   - {id: snb,    type: private, label: App subnet, in: vpcb}
   - {id: insp,   type: vpc, label: Inspection VPC, cidr: 100.64.0.0/16, in: region}
   - {id: az,     type: az, in: insp, per: [az1, az2]}
-  - {id: tgwsn,  type: private, label: TGW subnet, in: az, pad: 34}   # pad: the ENI clears the subnet badge on x, so the row is not pushed down 4px
+  - {id: tgwsn,  type: private, label: TGW subnet, in: az, pad_left: 34}   # pad_left: the ENI clears the subnet badge on x, so the row is not pushed down 4px
   - {id: fwsn,   type: private, label: Firewall subnet, in: az}
-  - {id: pubsn,  type: public, label: Public subnet, in: az, pad: 17}   # same for the NAT gateway
+  - {id: pubsn,  type: public, label: Public subnet, in: az, pad_left: 17}   # same for the NAT gateway
 
 nodes:
   - {id: ec2a, icon: service/Amazon-EC2, label: EC2, in: sna, at: [spoke, az1]}
