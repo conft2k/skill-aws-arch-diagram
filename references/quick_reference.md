@@ -152,7 +152,9 @@ per label line. First root `font-family` is a Korean font installed on this mach
 - Connector label: 12px, near the middle of the longest horizontal part between
   container borders, 4–8px above the line — with a step badge on that part, badge left
   and label 6px right of it, both above. Beside a vertical part: right of the line
-  (anchor start, line x + 10 document / + 8 slide). Below / left only when out of room.
+  (anchor start, line x + 10 document / + 8 slide). No room there: on the line, over a
+  `#FFFFFF` rect 2px larger than the text, both last in the file (top layer); below /
+  left only after that.
 - TGW route table drawn as a table: tie it to its TGW with a `#8C4FFF` 1.5px line,
   `stroke-dasharray="4 3"`, no arrowhead. The TGW example draws its route tables as
   nodes instead, so no example has this line.

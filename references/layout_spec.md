@@ -152,8 +152,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   (above a horizontal piece, right of a vertical one; with a badge on the piece the two
   sit side by side above it), `above`, `below`, `left` / `right` (vertical pieces), or
   `{x, y, anchor: start|middle|end}`. Don't ask for `below` / `left`: labels go above a
-  horizontal line and right of a vertical one. layout.py warns when a label lands on the
-  other side for lack of room — widen that side (`min_gap_before`, `pad`, `min_w`).
+  horizontal line and right of a vertical one. Without room there the engine puts the
+  label on its line over a background rect in the top layer, then (last) on the other
+  side, and warns either way — widen that side (`min_gap_before`, `pad`, `min_w`).
 - The shape is picked by rule (straight when the ends share a row or column, else HVH /
   VHV / HV / VH by which sides are free). Override only when the render shows a bad path:
   `shape: H|V|HVH|VHV|HV|VH`, `bend_x` / `bend_y` (an expression or `gap`), `from_side` /

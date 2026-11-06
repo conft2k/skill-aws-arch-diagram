@@ -779,7 +779,7 @@ def _explain(m: _Model, axis: str, val, pred) -> List[str]:
             if u == "origin" or u.startswith(pre + ":"):
                 break
         parts = " + ".join(f"{fmt_num(c.d)} ({c.why}, {c.owner})" for c in reversed(chain)) or "0"
-        out.append(f"{axis} {pre} {t.id} = {fmt_num(val[v])}: {u} {fmt_num(val.get(u, 0))} + {parts}")
+        out.append(f"{axis} {pre} {t.id} = {fmt_num(val.get(v, 0))}: {u} {fmt_num(val.get(u, 0))} + {parts}")
     return out
 
 

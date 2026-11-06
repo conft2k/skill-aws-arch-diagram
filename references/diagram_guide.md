@@ -701,8 +701,12 @@ draft path copies an example, or start from `docs/examples/specs/example.layout.
 - **Connector labels** (protocol, name) sit near the middle of the longest horizontal
   part of their line between container borders, 4–8px **above** it — also when a step
   number is on that part (side by side). On a vertical part the label goes to the
-  **right** of the line (`text-anchor="start"`, x = line + 8–10). Below or left only when
-  the preferred side has no room, and then widen that side instead if you can.
+  **right** of the line (`text-anchor="start"`, x = line + 8–10). When the preferred side
+  has no room (widen it first if you can), the second best is the label **on the line**:
+  centered on it (baseline = line y + 3 on a horizontal part), with a rect in the
+  background color (`#FFFFFF`) 2px larger than the text right behind it, both drawn last
+  in the file so they sit on top of every line and box; the line shows on both sides of
+  the label. The other side (below / left) is the last resort.
 - **Fixed header geometry.** A container's header label sits at baseline container.y +
   18 (x + 32 with a badge, x + 12 without); any box nested inside starts at container.y
   + 30 or lower (VPC → AZ, AZ → subnet) — **+ 46 when the container shows its CIDR**

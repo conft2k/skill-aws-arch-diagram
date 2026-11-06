@@ -419,7 +419,12 @@ Z_EDGE_LABEL = 40
 Z_BADGE = 50
 Z_NOTE = 60
 Z_RAW_ABOVE = 70
-Z_ORDER = (Z_RAW_BELOW, Z_GROUP, Z_NODE, Z_EDGE, Z_EDGE_LABEL, Z_BADGE, Z_NOTE, Z_RAW_ABOVE)
+Z_LABEL_TOP = 80          # a connector label on its line, over a background rect: on top of everything
+Z_ORDER = (Z_RAW_BELOW, Z_GROUP, Z_NODE, Z_EDGE, Z_EDGE_LABEL, Z_BADGE, Z_NOTE, Z_RAW_ABOVE, Z_LABEL_TOP)
 # `<g id>` suffix for an owner's elements in a layer other than its home layer
 # ("edge:3" lines → "edge:3:label", "edge:3:badge"); see layout_model "Element ids".
-Z_PART = {Z_EDGE_LABEL: "label", Z_BADGE: "badge"}
+Z_PART = {Z_EDGE_LABEL: "label", Z_BADGE: "badge", Z_LABEL_TOP: "masked"}
+# The background behind a label set on its line (the canvas color) and its margin round the
+# label's conservative glyph box.
+LABEL_BG = "#FFFFFF"
+LABEL_BG_PAD = 2

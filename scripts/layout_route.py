@@ -44,8 +44,9 @@ AWS Cloud border ranks its piece outside the Cloud above one in the Cloud's bare
 (Users → IGW), while a piece inside a Region still wins on length (tgw badge 2 at 518). Label baseline y − label_above / y + label_below;
 beside a vertical piece x ∓ vlabel_dx (anchor end / start), baseline mid + 4. Badge cy =
 y − 14 (vertical: cx = x − 22). A label goes above a horizontal piece and right of a
-vertical one, badge or not (beside the badge when it sits on the same piece); the other side
-only when that side has no room.
+vertical one, badge or not (beside the badge when it sits on the same piece). Without room
+there: on the line itself over a background rect, in the top layer (Z_LABEL_TOP), where no
+other connector runs under it if possible; the other side last.
 step_at: mid | start | end | gap (the piece inside no container but the ends' common
 ones) | stem | branch | [x, y]. On a collision (label ↔ label 4, ↔ border 8, ↔ icon 8,
 any line) the text moves 8 px at a time along the piece, then to the other side, then to
@@ -1059,8 +1060,21 @@ class _Placer:
         digit = _digit(cx, cy, n).box()
         return self._common(digit, K.ICON_CLEAR) or False
 
-    def take_text(self, t: TextLine):
-        self.texts.append(t.box())
+    def take_text(self, b: Box):
+        self.texts.append(b)
+
+    def bg_ok(self, b: Box) -> bool:
+        """A label's background on its line: like text_ok but lines may run under it."""
+        if self.canvas and not self.canvas.contains(b):
+            return False
+        near = b.expand(K.LABEL_CLEAR).t()
+        if any(CL.seg_hits_box(p, q, near) for p, q in self.ctx.border_segs):
+            return False
+        if any(b.expand(K.ICON_CLEAR).overlaps(i) for i in self.ctx.node_icons):
+            return False
+        if any(b.expand(BADGE_CLEAR).overlaps(i) for i in self.ctx.badges + self.circles):
+            return False
+        return not any(b.expand(K.TEXT_GAP).overlaps(t) for t in self.texts)
 
     def take_badge(self, cx, cy, n):
         self.circles.append(Box(cx - K.BADGE_R, cy - K.BADGE_R, cx + K.BADGE_R, cy + K.BADGE_R))
@@ -1160,7 +1174,7 @@ def _badge_and_label(ctx: _Ctx, x: _Edge, route: _Route, pieces: List[_Piece], p
             pl.take_badge(cx, cy, e.step)
             if all(pl.text_ok(t) for t in tls) and not _overlap_each(tls):
                 for t in tls:
-                    pl.take_text(t)
+                    pl.take_text(t.box())
                 return (cx, cy), tls, i == 0 and j == 0
             pl.circles.pop()
             pl.texts.pop()
@@ -1177,7 +1191,7 @@ def _badge_and_label(ctx: _Ctx, x: _Edge, route: _Route, pieces: List[_Piece], p
             if not all(pl.text_ok(t) for t in tls) or _overlap_each(tls):
                 continue
             for t in tls:
-                pl.take_text(t)
+                pl.take_text(t.box())
             for bp in _badge_pieces(ctx, x, route, pieces):
                 for cx, cy in _badge_spots(bp):
                     if pl.badge_ok(cx, cy, e.step):
@@ -1243,7 +1257,7 @@ def _place(ctx: _Ctx, x: _Edge, route: _Route, pl: _Placer, draw_texts: bool
             x0, y0 = M.eval_expr(e.label_at.x, ctx.geom), M.eval_expr(e.label_at.y, ctx.geom)
             for k, (s, st) in enumerate(texts):
                 tl = TextLine(s, x0, y0 + k * K.SUB_PITCH, st.size, st.fill, st.weight, e.label_at.anchor)
-                pl.take_text(tl)
+                pl.take_text(tl.box())
                 els.append(M.el_text(tl, z=K.Z_EDGE_LABEL, owner=owner))
             return els, warns, perfect
         except (KeyError, ValueError) as err:
@@ -1255,14 +1269,37 @@ def _place(ctx: _Ctx, x: _Edge, route: _Route, pl: _Placer, draw_texts: bool
         order = [p for p in order if p is badge_piece] + [p for p in order if p is not badge_piece] \
             if order and order[0] is badge_piece else order
     placed = None
+    rule_side = want in (None, "above", "right")     # the preferred side (asked for or by default)
     for i, pc in enumerate(order):
-        for j, tls in enumerate(_label_spots(ctx, pc, texts, want, pc is badge_piece)):
+        for j, tls in enumerate(_label_spots(ctx, pc, texts, want, pc is badge_piece, other=not rule_side)):
             if all(pl.text_ok(t) for t in tls) and not _overlap_each(tls):
                 placed = tls
                 perfect = perfect and i == 0 and j == 0
                 break
         if placed:
             break
+    if placed is None and rule_side and order:
+        # second best: on the line itself, over a background rect, on top of everything
+        on_line = _on_line(ctx, order, texts, route, pl)
+        if on_line is not None:
+            for t in on_line:
+                b = t.box(conservative=True).expand(K.LABEL_BG_PAD)
+                pl.take_text(b)
+                els.append(M.el_rect(b, fill=K.LABEL_BG, z=K.Z_LABEL_TOP, owner=owner))
+                els.append(M.el_text(t, z=K.Z_LABEL_TOP, owner=owner))
+            warns.append(f"{_where(e)}: label {texts[0][0]!r} sits on its line over a background — no room "
+                         f"above / right of it; widen that side (min_gap_before, pad, min_w) to lift it off")
+            return els, warns, False
+    if placed is None and rule_side:
+        # last: the other side
+        for pc in order:
+            for tls in _label_spots(ctx, pc, texts, want, pc is badge_piece):
+                if all(pl.text_ok(t) for t in tls) and not _overlap_each(tls):
+                    placed = tls
+                    break
+            if placed:
+                break
+        perfect = False
     if placed is None and order:
         perfect = False
         placed = next(iter(_label_spots(ctx, order[0], texts, want, order[0] is badge_piece)), None)
@@ -1276,9 +1313,38 @@ def _place(ctx: _Ctx, x: _Edge, route: _Route, pl: _Placer, draw_texts: bool
                          f"(labels go above a horizontal line and right of a vertical one); widen that side "
                          f"(min_gap_before, pad, min_w)")
     for t in placed or []:
-        pl.take_text(t)
+        pl.take_text(t.box())
         els.append(M.el_text(t, z=K.Z_EDGE_LABEL, owner=owner))
     return els, warns, perfect
+
+
+def _on_line(ctx: _Ctx, order: List[_Piece], texts, route: _Route, pl: _Placer) -> Optional[List[TextLine]]:
+    """Label lines centered on a piece of the route (crossing it), clear of icons, badges,
+    labels and borders; first where no other connector runs under the background, then
+    anywhere."""
+    own = set()
+    for p, q in zip(route.pts, route.pts[1:]):
+        own.add((tuple(p), tuple(q)))
+        own.add((tuple(q), tuple(p)))
+    others = [(p, q) for p, q in pl.lines if (tuple(p), tuple(q)) not in own]
+    n = len(texts)
+    for strict in (True, False):
+        for pc in order:
+            lo, hi = sorted((pc.p[0], pc.q[0])) if pc.horiz else sorted((pc.p[1], pc.q[1]))
+            for o in _slide(pc.length, 0):
+                c = (pc.mid[0] if pc.horiz else pc.mid[1]) + o
+                if not lo - 1e-6 <= c <= hi + 1e-6:
+                    continue
+                x, yc = (c, pc.mid[1]) if pc.horiz else (pc.mid[0], c)
+                tls = [TextLine(s, x, yc + 3 + (k - (n - 1) / 2) * K.SUB_PITCH, st.size, st.fill, st.weight, "middle")
+                       for k, (s, st) in enumerate(texts)]
+                bgs = [t.box(conservative=True).expand(K.LABEL_BG_PAD) for t in tls]
+                if _overlap_each(tls) or not all(pl.bg_ok(b) for b in bgs):
+                    continue
+                if strict and any(CL.seg_hits_box(p, q, b.t()) for p, q in others for b in bgs):
+                    continue
+                return tls
+    return None
 
 
 def _label_side(tls: List[TextLine], pieces: List[_Piece]) -> Optional[str]:
@@ -1303,13 +1369,15 @@ def _overlap_each(tls: List[TextLine]) -> bool:
     return any(a.expand(K.TEXT_GAP).overlaps(b) for i, a in enumerate(bs) for b in bs[i + 1:])
 
 
-def _label_spots(ctx: _Ctx, pc: _Piece, texts, want, has_badge: bool):
+def _label_spots(ctx: _Ctx, pc: _Piece, texts, want, has_badge: bool, other: bool = True):
     """Candidate label line sets on a piece: centered and slid 8 px at a time, the wanted
     side first, then the other side."""
     m = ctx.m
     mid = pc.mid
     if pc.horiz:
         sides = ["below", "above"] if want == "below" else ["above", "below"]
+        if want in (None, "above") and not other:
+            sides = ["above"]
         lo, hi = sorted((pc.p[0], pc.q[0]))
         for side in sides:
             for o in _slide(pc.length, 0):
@@ -1326,6 +1394,8 @@ def _label_spots(ctx: _Ctx, pc: _Piece, texts, want, has_badge: bool):
                 yield out
     else:
         sides = ["left", "right"] if want == "left" else ["right", "left"]
+        if want in (None, "right") and not other:
+            sides = ["right"]
         lo, hi = sorted((pc.p[1], pc.q[1]))
         n = len(texts)
         for side in sides:
@@ -1551,6 +1621,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
     pl = _Placer(ctx, all_lines)
     labels: List[Element] = []
     badges: List[Element] = []
+    on_line: List[Element] = []
     for n in sorted(routes):
         r, x = routes[n], xs[n]
         texts_here = x.t.trunk is None or x.t.first == n
@@ -1558,4 +1629,5 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         warns += w
         labels += [el for el in e_els if el.z == K.Z_EDGE_LABEL]
         badges += [el for el in e_els if el.z == K.Z_BADGE]
-    return els + labels + badges, warns
+        on_line += [el for el in e_els if el.z == K.Z_LABEL_TOP]
+    return els + labels + badges + on_line, warns

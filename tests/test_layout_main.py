@@ -149,6 +149,30 @@ class Feedback(unittest.TestCase):
         self.assertEqual((extra, skip), ({}, {2: 1}))
 
 
+class LabelOnLine(unittest.TestCase):
+    def test_no_room_above_or_below_puts_the_label_on_its_line(self):
+        """No room above (a sub-caption) nor below (an icon): the label sits on its line over
+        a background rect, both in the top layer, and the draft still checks clean."""
+        d = {"name": "t", "cols": ["a"], "rows": ["r"],
+             "nodes": [{"id": "x", "icon": "service/AWS-Lambda", "label": "Fn A", "xy": [60, 200]},
+                       {"id": "y", "icon": "service/AWS-Lambda", "label": "Fn B", "xy": [300, 200]},
+                       {"id": "z", "icon": "service/Amazon-Simple-Storage-Service", "label": "Bucket",
+                        "sub": ["a long sub-caption line"], "xy": [180, 124]},
+                       {"id": "w", "icon": "service/Amazon-Simple-Storage-Service", "label": "Logs",
+                        "xy": [180, 250]}],
+             "edges": [{"e": "x -> y", "label": "HTTPS :443", "shape": "H"}]}
+        spec, b = built(d)
+        top = [e for e in b.elements if e.z == K.Z_LABEL_TOP]
+        self.assertEqual([e.kind for e in top], ["rect", "text"])
+        rect, text = top
+        self.assertEqual(rect.attrs["fill"], K.LABEL_BG)
+        self.assertLess(rect.attrs["y"], 200)
+        self.assertGreater(rect.attrs["y"] + rect.attrs["height"], 200)       # the line runs under it
+        self.assertEqual(max(e.z for e in b.elements), K.Z_LABEL_TOP)
+        self.assertTrue(any("sits on its line" in w for w in b.warnings), b.warnings)
+        self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg))], [])
+
+
 class CLI(unittest.TestCase):
     def run_cli(self, *args):
         p = subprocess.run([sys.executable, str(ROOT / "scripts" / "layout.py"), *map(str, args)],

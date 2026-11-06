@@ -168,6 +168,7 @@ Layers (layout_const.Z_*), emitted in ascending z; inside a layer, in production
   Z_BADGE      step badges (circle, then digit)
   Z_NOTE       note rect and text
   Z_RAW_ABOVE  raw `layer: above`
+  Z_LABEL_TOP  a connector label set on its line: background rect, then the text
 Element.owner is the id of what the element draws:
   "group:<gid>"  "node:<nid>"  "edge:<n>" (n = Edge.n, 0-based)  "note"  "raw:<i>"
 Each producer emits an owner's elements contiguously within a layer. emit() wraps each
@@ -246,7 +247,8 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
  g. Default font-family is the examples' fixed string (layout_const.FONT_FAMILY_DEFAULT);
     W1 reorders only when Noto Sans CJK KR is not installed, so output stays stable.
  h. edge.label_at None = auto (above a horizontal piece, right of a vertical one; a badge on
-    the same piece sits beside the label, both above). Edge.step is the
+    the same piece sits beside the label, both above; no room: on the line over a
+    background rect at Z_LABEL_TOP; then the other side). Edge.step is the
     badge on that instance after step / step_each / steps resolution.
  i. Track ids are unique across cols and rows; spec ids match [A-Za-z0-9_-]+ (section 5).
  j. Positions the examples computed from text widths (panel description column, slide
