@@ -285,6 +285,15 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     0.7 × 1498 and nlb-mtls 764 vs 763 drew panes; the specs no longer force `place`).
  p. Default output: <spec dir>/<name>.draft.svg. The emitted header comment names the
     spec's file name only (no directory, so the draft does not depend on the cwd).
+ q. Two nodes side by side on one row are separated band by band (W2): the icon and each
+    label line (its glyph box) of one against those of the other that overlap it
+    vertically — lines Mode.label_gap apart (document 16, slide 4 = CL TEXT_GAP at 0.6 em),
+    an icon sibling_gap from anything within ICON_CLEAR of its height. A long last line
+    below the neighbour's shorter stack takes no room (slide tgw: TGW A RT beside Dev VPC,
+    100 instead of 134). plan() gives back the whole footprints where a HVH leaving a node
+    sideways drops past its labels between it and the next node of its row (bedrock-dx
+    PC → Internet), and asks (soft, documents) a labelled VHV's horizontal piece for its
+    label + 8 each side past a split port.
 """
 from __future__ import annotations
 

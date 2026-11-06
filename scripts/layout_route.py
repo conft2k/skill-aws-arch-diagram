@@ -474,6 +474,15 @@ def plan(spec: Spec) -> List[Requirement]:
                     hard = need
                     req(xa, xb, need, f"{'trunk' if t.trunk else 'bend'} gutter {e.a}→{e.b}", soft)
                 texts = [s for s in (e.label, e.verb) if s]
+                if not hor and texts and not follower and m.name == "document":
+                    # a VHV's horizontal piece holds its label with 8 to spare each side
+                    # past a split port (ex tgw "VPC attachment" on a spoke); slides put a
+                    # label that does not fit beside the vertical piece instead
+                    w = max(M.layout_text_width(s, K.TEXT_PROTO.size) for s in texts)
+                    ha, hb = (f"node:{e.a}" if e.a_kind == "node" else None), (f"node:{e.b}" if e.b_kind == "node" else None)
+                    if ha and hb and t.dx in (1, -1):
+                        need = w + 2 * K.LABEL_CLEAR + K.PORT_TOPBOT
+                        add("x", *((ha, hb) if t.dx > 0 else (hb, ha)), need, f"label {texts[0]!r} run on the bend", owner, True)
                 if hor and texts and not follower:
                     # the label's run: the piece before the bend holds the text + 8 from the
                     # box (or icon) and 4 from the bend, the arrow piece follows (ex nfw
@@ -506,11 +515,47 @@ def plan(spec: Spec) -> List[Requirement]:
                         add("x", f"group:{gid}.R", f"group:{sub}.R", OVERLAY_EXIT, f"line out of {gid} clear of {sub}", owner)
                     else:
                         add("x", f"group:{sub}.L", f"group:{gid}.L", OVERLAY_EXIT, f"line out of {gid} clear of {sub}", owner)
+        if shape == HVH and t.dx in (1, -1):
+            # the vertical leg drops past the labels of an end it leaves sideways: the
+            # stack's widest line, not just the lines beside a neighbour (bedrock-dx PC)
+            if e.a_kind == "node" and t.dy == 1:
+                _gutter_reqs(spec, e.a, B, t.dx, owner, add)
+            if e.b_kind == "node" and t.dy == -1:
+                _gutter_reqs(spec, e.b, A, -t.dx, owner, add)
         if t.dy == 1 and shape in (V, VHV, HV) and e.b_kind == "node":
             _header_reqs(spec, e.b, nb, owner, add)
         if t.dy == -1 and shape in (V, VHV, VH) and e.a_kind == "node":
             _header_reqs(spec, e.a, na, owner, add)
     return reqs
+
+
+def _half(spec: Spec, n) -> float:
+    """A node's footprint half width (icon or widest label line at 0.6 em), as the solver's."""
+    ws = [M.layout_text_width(n.label, K.label_size(spec.S))] if n.label else []
+    ws += [M.layout_text_width(s, K.TEXT_SUB.size) for s in n.sub]
+    return float(math.ceil(max([spec.S] + ws) / 2 - 1e-9))
+
+
+def _gutter_reqs(spec: Spec, nid: str, other: _End, d: int, owner: str, add) -> None:
+    """A HVH leaving node `nid` sideways (toward d) and turning down: its vertical runs
+    between nid and the first sibling on nid's row toward the other end, past both label
+    stacks, so those two keep their whole footprints (widest lines) a sibling gap apart.
+    (The solver separates side-by-side nodes by the label lines level with each other
+    only.)"""
+    n = spec.nodes[nid]
+    if n.on or n.xy is not None or n.col is None or n.row is None or other.cext is None:
+        return
+    ci, _ = _indices(spec)
+    lo, hi = ci[n.col], ci[n.col2 or n.col]
+    for o in spec.nodes.values():
+        if o.id == nid or o.parent != n.parent or o.on or o.xy is not None or o.col is None or o.row != n.row:
+            continue
+        olo, ohi = ci[o.col], ci[o.col2 or o.col]
+        if not (hi < olo <= other.cext[1] if d > 0 else other.cext[0] <= ohi < lo):
+            continue
+        need = spec.const.sibling_gap + _half(spec, n) + _half(spec, o)
+        a, b = (nid, o.id) if d > 0 else (o.id, nid)
+        add("x", f"node:{a}", f"node:{b}", need, f"bend gutter past {nid}'s labels | {o.id}", owner)
 
 
 def _header_reqs(spec: Spec, nid: str, groups: Sequence[str], owner: str, add) -> None:

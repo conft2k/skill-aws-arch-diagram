@@ -13,6 +13,7 @@ are not planned here). Also: every constraint holds in the result, positive cycl
 reported by why/owner, soft requirements are dropped first, output is deterministic, and
 the groups and nodes drawn alone pass check_layout. Standard library only.
 """
+import math
 import re
 import sys
 import unittest
@@ -669,6 +670,36 @@ class ConstraintTest(unittest.TestCase):
         self.assertEqual(node_gap()[0], K.DOCUMENT.label_bottom)
         self.assertEqual(node_gap(pad_bottom=2)[0], K.DOCUMENT.label_bottom)
         self.assertTrue(40 <= node_gap(pad_bottom=40)[1] < 41)   # from the footprint bottom (rounded up)
+
+    def test_side_by_side_labels_by_line(self):
+        """Two nodes on one row are kept apart by the label lines level with each other: a
+        long last line below the neighbour's shorter stack sets nothing, and the result
+        stays check_layout clean (slide tgw: Dev VPC beside TGW A RT)."""
+        def solved(mode):
+            spec = build("bands", ["a1", "a2"], ["bot"],
+                         [dict(id="cloud", type="cloud"), dict(id="ra", type="region", label="Region", parent="cloud")],
+                         [dict(id="dev", icon="service/Amazon-Virtual-Private-Cloud", label="Dev VPC",
+                               sub=["10.3.0.0/16"], parent="ra", col="a1", row="bot"),
+                          dict(id="rta", icon="resource/Amazon-Route-53_Route-Table", label="TGW A RT",
+                               sub=["VPC·VPN 경로 전파", "10.16.0.0/13 → peering"], parent="ra", col="a2", row="bot")],
+                         mode=mode)
+            return spec, LS.solve(spec, [])
+        spec, g = solved("slide")
+        pitch = g.cols["a2"] - g.cols["a1"]
+        # the old rule: sibling gap + both whole footprints (the long last line) = 134
+        whole = 12 + math.ceil(M.layout_text_width("10.3.0.0/16", 12) / 2) + \
+            math.ceil(M.layout_text_width("10.16.0.0/13 → peering", 12) / 2)
+        self.assertLess(pitch, whole - 30)
+        level = K.SLIDE.label_gap + (M.layout_text_width("10.3.0.0/16", 12) + M.layout_text_width("VPC·VPN 경로 전파", 12)) / 2
+        self.assertEqual(pitch, math.ceil(level - 1e-9))
+        self.assertEqual(check(spec, g), [])
+        # a dy that puts the neighbour's long line level with dev's sub-caption brings it back
+        spec.nodes["rta"].dy = -16
+        g = LS.solve(spec, [])
+        self.assertGreaterEqual(g.cols["a2"] - g.cols["a1"],
+                                (M.layout_text_width("10.3.0.0/16", 12) + M.layout_text_width("10.16.0.0/13 → peering", 12)) / 2)
+        spec, g = solved("document")
+        self.assertEqual(check(spec, g), [])
 
     def test_requirements_and_colspan(self):
         spec = nfw_spec()

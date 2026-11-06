@@ -141,6 +141,10 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   inside a template.
 - A load balancer or Network Firewall goes in the VPC on the gap row, `in: vpc, at: [pub,
   main]`, never inside the AZ template (the loader warns: it would be drawn once per AZ).
+- Two nodes on one row are spaced by what sits level: icon by icon and label line by label
+  line, so a route table's long last route line under a VPC's two-line label takes no room
+  between them (tgw `rta` beside `dev`). Don't push such a pair apart with `xy` or
+  `min_gap_before`.
 - `dx` / `dy`: offset from the track position (the engine still keeps clearances
   around it). `xy: [cx, cy]`: an absolute icon center — last resort.
 

@@ -65,9 +65,9 @@ def _up(v: float) -> float:
 
 class _Foot:
     """A node's extent relative to its icon center."""
-    __slots__ = ("lines", "h", "top", "base", "bot", "mask_w", "mask_h")
+    __slots__ = ("lines", "h", "top", "base", "bot", "mask_w", "mask_h", "bands")
 
-    def __init__(self, lines, h, top, base, bot, mask_w, mask_h):
+    def __init__(self, lines, h, top, base, bot, mask_w, mask_h, bands):
         self.lines = lines          # [(text, size, fill)]
         self.h = h                  # half width (x)
         self.top = top              # icon top offset (−S/2)
@@ -75,6 +75,7 @@ class _Foot:
         self.bot = bot              # footprint bottom offset (glyph descent or mask bottom)
         self.mask_w = mask_w
         self.mask_h = mask_h
+        self.bands = bands          # [(y0, y1, half width, text?)]: the icon and each label line (glyph box)
 
 
 def _footprint(spec: Spec, n) -> _Foot:
@@ -95,12 +96,22 @@ def _footprint(spec: Spec, n) -> _Foot:
         bot = max(bot, -S / 2 + mask_h)
     h = _up(w / 2)
     top = -S / 2
+    if n.on:
+        bands = [(top, bot, h, False)]
+    else:
+        bands = [(top, S / 2, S / 2, False)]
+        for i, (t, sz, _) in enumerate(lines):
+            b = S / 2 + K.NODE_LABEL_DY + K.SUB_PITCH * i
+            bands.append((b - K.GLYPH_ASCENT * sz, b + K.GLYPH_DESCENT * sz, layout_text_width(t, sz) / 2, True))
     if n.col and n.col2 is None:
-        h = max(h, _up(spec.track(n.col).min_w / 2))
+        mw = _up(spec.track(n.col).min_w / 2)
+        if mw > h:
+            h = mw
+            bands.append((top, bot, mw, False))
     if n.row:
         mw = spec.track(n.row).min_w / 2
         top, bot = min(top, -mw), max(bot, mw)
-    return _Foot(lines, h, top, base, bot, mask_w, mask_h)
+    return _Foot(lines, h, top, base, bot, mask_w, mask_h, bands)
 
 
 # =======================================================================================
@@ -386,10 +397,34 @@ class _Model:
             if self.spec.nodes[a.nid].parent == self.spec.nodes[b.nid].parent or a.border or b.border:
                 self.add("x", (va, oa), (vb, ob), self.mc.node_pitch,
                          f"pitch {fmt_num(self.mc.node_pitch)} {a.key} → {b.key}", owner)
-            d = g + fa.h + fb.h
-            self.add("x", (va, oa), (vb, ob), d, f"{why} (half widths {fmt_num(fa.h)} + {fmt_num(fb.h)})", owner)
+            na, nb = self.spec.nodes[a.nid], self.spec.nodes[b.nid]
+            if na.row is not None and na.row == nb.row:
+                d, ha, hb, what = self._band_sep(fa, fb, nb.dy - na.dy, g)
+                why = f"{what} {a.key} | {b.key}"
+            else:
+                d, ha, hb = g + fa.h + fb.h, fa.h, fb.h
+            self.add("x", (va, oa), (vb, ob), d, f"{why} (half widths {fmt_num(ha)} + {fmt_num(hb)})", owner)
             return
         self.add(axis, self.hi(a, axis), self.lo(b, axis), d, why, owner)
+
+    def _band_sep(self, fa: _Foot, fb: _Foot, off: float, g: float):
+        """Center distance for two nodes side by side on one row (b right of a, b's icon
+        `off` px lower): only the bands (icon, each label line) that overlap vertically
+        need room between them — label lines label_gap apart (they overlap when their
+        glyph boxes do, like check_layout's TEXT TOO CLOSE), an icon sibling gap g from
+        whatever comes within ICON_CLEAR of its height. A long last line below the other
+        node's shorter stack sets nothing. Returns (d, half a, half b, why)."""
+        best = (0.0, 0.0, 0.0, "")
+        for y0, y1, ha, ta in fa.bands:
+            for z0, z1, hb, tb in fb.bands:
+                text = ta and tb
+                if min(y1, z1 + off) - max(y0, z0 + off) <= (0.0 if text else -K.ICON_CLEAR):
+                    continue
+                gap = self.mc.label_gap if text else g
+                d = gap + ha + hb
+                if d > best[0]:
+                    best = (d, ha, hb, f"{'label gap' if text else 'sibling gap'} {fmt_num(gap)}")
+        return (_up(best[0]),) + best[1:]
 
     def _siblings(self, axis, parent):
         """Siblings of one parent (2, 3). Border nodes count as siblings both in their VPC's

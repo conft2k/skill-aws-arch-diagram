@@ -12,6 +12,7 @@ ALB "아웃바운드"), the shape table, candidate validation on synthetic obsta
 requirements on the example geometry, and check_layout.py on a minimal SVG of groups +
 nodes + routed edges.
 """
+import math
 import re
 import statistics
 import subprocess
@@ -450,6 +451,26 @@ class Plan(unittest.TestCase):
         # a verb (attachment type) has no outside-the-Cloud piece: tgw's sits in the Region
         reqs = R.plan(layout_spec.load(spec_path("tgw")))
         self.assertFalse([r for r in reqs if r.owner == "edge:2" and "outside" in r.why])
+
+
+    def test_bend_gutter_past_the_source_labels(self):
+        """A HVH that leaves a node sideways and drops past its label stack keeps the
+        node's whole footprint (its widest line) a sibling gap from the next node on its
+        row (bedrock-dx PC → Internet past 고객 라우터): the solver's line-by-line spacing
+        would let the router's neighbour come closer than the vertical leg needs."""
+        spec = layout_spec.load(SPECS / "bedrock-dx-reference-architecture.layout.yaml")
+        gut = [r for r in R.plan(spec) if "bend gutter past" in r.why]
+        self.assertEqual([(r.a, r.b, r.owner) for r in gut], [("node:pc", "node:rtr", "edge:0")])
+        want = 16 + math.ceil(M.layout_text_width("CLAUDE_CODE_USE_BEDROCK=1", 12) / 2) + \
+            math.ceil(M.layout_text_width("고객 라우터", 14) / 2)
+        self.assertEqual(gut[0].d, want)
+        self.assertFalse(gut[0].soft)
+        # a VHV's labelled horizontal piece asks for its label run in a document only
+        spec = layout_spec.load(spec_path("tgw"))
+        run = [r for r in R.plan(spec) if r.why.startswith("label 'VPC attachment' run on the bend")]
+        self.assertEqual([(r.a, r.b, r.soft) for r in run], [("node:svcs", "node:tgwa", True)])
+        spec = layout_spec.load(SPECS / "slides/tgw-reference-architecture.layout.yaml")
+        self.assertFalse([r for r in R.plan(spec) if "run on the bend" in r.why])
 
 
 class Synthetic(unittest.TestCase):
