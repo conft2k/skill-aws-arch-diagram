@@ -46,9 +46,6 @@ from layout_model import (  # noqa: E402
     el_image, el_rect, el_text, fmt_num, layout_text_width, split_eid, union_all,
 )
 
-# Not in layout_const yet (reported to W0): QR 109 "mask_w = max(S, tw + 8)".
-MASK_TEXT_PAD = 8
-
 _EPS = 1e-7
 _NEG = float("-inf")
 
@@ -89,7 +86,7 @@ def _footprint(spec: Spec, n) -> _Foot:
     mask_w = mask_h = None
     w = max(S, tw)
     if n.on:
-        mask_w = _up(max(S, tw + MASK_TEXT_PAD))
+        mask_w = _up(max(S, tw + K.MASK_TEXT_PAD))
         mask_h = S + mc.mask_extra + K.LINE_PITCH * max(0, len(lines) - 1)
         w = mask_w
         bot = max(bot, -S / 2 + mask_h)
@@ -277,7 +274,7 @@ class _Model:
             if axis == "x":
                 self.add(axis, gl, (f"group:{cid}.L", 0), self.pad(gid), f"pad {fmt_num(self.pad(gid))} {gid} ⊃ {cid}", own)
             else:
-                top = K.top_inset(g.type, mc.name, "box", cidr)
+                top = max(K.top_inset(g.type, mc.name, "box", cidr), g.pad_top or 0)
                 self.add(axis, gl, (f"group:{cid}.T", 0), top, f"top inset {fmt_num(top)} {gid} ⊃ {cid}", own)
             self.add(axis, (f"group:{cid}.{R}", 0), gr, self.pad(gid), f"pad {fmt_num(self.pad(gid))} {cid} ⊂ {gid}", own)
         for nid in self.child_nodes[gid]:
@@ -287,7 +284,7 @@ class _Model:
                 self.add(axis, gl, self.lo(it, axis), p, f"pad {fmt_num(p)} {gid} ⊃ node {nid}", own)
                 self.add(axis, self.hi(it, axis), gr, p, f"pad {fmt_num(p)} node {nid} ⊂ {gid}", own)
             else:
-                top = K.top_inset(g.type, mc.name, "icon", cidr)
+                top = max(K.top_inset(g.type, mc.name, "icon", cidr), g.pad_top or 0)
                 self.add(axis, gl, self.lo(it, axis), top, f"icon inset {fmt_num(top)} {gid} ⊃ {nid}", own)
                 self.add(axis, self.hi(it, axis, base=True), gr, mc.label_bottom,
                          f"label_bottom {fmt_num(mc.label_bottom)} {nid} ⊂ {gid}", own)

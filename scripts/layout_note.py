@@ -15,7 +15,8 @@ Places (DESIGN 4.7):
          flowed in a row (20 from a text end to the next badge), ≤ 3 lines.
   none   no note.
 Auto rule: a document with steps gets a pane when its drawing is taller than 0.7 × its
-width, otherwise a panel; a slide with steps gets a pane when pane + drawing fit the 1108
+width, or when top-level items sit left of the AWS Cloud and the pane fits above them
+without pushing them (the space is free: bedrock-dx, nlb-mtls), otherwise a panel; a slide with steps gets a pane when pane + drawing fit the 1108
 slide width, otherwise lines; a slide never gets a panel. A pane whose coupling would push
 what sits under it down by more than 40 px is widened to 320 first, then given up for the
 panel / lines (with a warning).
@@ -109,7 +110,7 @@ def _auto(spec: Spec, geom: Geometry, cloud: Optional[Box], fixed_w: Optional[fl
         fit_h = cloud.y0 + h + spec.const.canvas_margin
         if fit_w > K.SLIDE_MAX_W or fit_h > K.SLIDE_MAX_H[bool(spec.title)]:
             return other, None, None
-    elif not d.h > K.PANE_RATIO * d.w:
+    elif not d.h > K.PANE_RATIO * d.w and not _pane_free(spec, geom, cloud, w):
         return other, None, None
     # pane coupling: widen before giving up when it pushes what sits under the pane too far
     tries = [w] + ([K.PANE_W_WIDE] if fixed_w is None and w < K.PANE_W_WIDE else [])
@@ -120,6 +121,14 @@ def _auto(spec: Spec, geom: Geometry, cloud: Optional[Box], fixed_w: Optional[fl
             return "pane", tw, None
     return other, None, (f"{note.src}: the legend pane would push what sits under it {push:.0f}px down "
                          f"(> {PANE_MAX_PUSH}); using the {'plain lines' if slide else 'bottom panel'}")
+
+
+def _pane_free(spec: Spec, geom: Geometry, cloud: Box, w: float) -> bool:
+    """A document's pane costs nothing when top-level items sit left of the AWS Cloud and the
+    pane fits above them as they are (no push): the space is there already (ex bedrock-dx,
+    drawing 1040 high < 0.7 × 1498 wide; nlb-mtls 764 vs 763 — both drafts use a pane)."""
+    nodes, groups = _left_items(spec, geom, cloud)
+    return bool(nodes or groups) and pane_push(spec, geom, cloud, w) <= 0
 
 
 def _pane_unfit(spec: Spec, cloud: Optional[Box]) -> Optional[str]:

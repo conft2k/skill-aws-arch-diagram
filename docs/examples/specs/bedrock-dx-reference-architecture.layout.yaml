@@ -10,12 +10,12 @@ groups:
   - {id: rw,   type: region, label: Region us-west-2 (옵션 B), in: cloud}
   - {id: vpcw, type: vpc, label: VPC, cidr: 10.1.0.0/16, in: rw}
   - {id: azw,  type: az, label: Availability Zone 1, in: vpcw}
-  - {id: snw,  type: private, label: Private subnet, cidr: 10.1.1.0/24, in: azw}
+  - {id: snw,  type: private, label: Private subnet, cidr: 10.1.1.0/24, in: azw, pad_top: 88}   # pad_top 88: room above the endpoints for the bus (icon top − 36, below the CIDR line), as the draft
   - {id: dst,  type: generic, label: 목적지 리전 (global), dash: "6,4", in: cloud}
   - {id: rs,   type: region, label: Region ap-northeast-2 (서울), in: cloud}
   - {id: vpcs, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: rs}
   - {id: az,   type: az, in: vpcs, per: [s1, s2]}
-  - {id: sn,   type: private, label: Private subnet, cidr: {1: 10.0.1.0/24, 2: 10.0.2.0/24}, in: az}
+  - {id: sn,   type: private, label: Private subnet, cidr: {1: 10.0.1.0/24, 2: 10.0.2.0/24}, in: az, pad_top: 88}   # pad_top 88: the bus row above the endpoints (draft subnet.y + 52, icons + 88)
 
 nodes:
   - {id: pc,   icon: resource/Client, label: 개발자 PC, sub: [Claude Code, CLAUDE_CODE_USE_BEDROCK=1, AWS_REGION=ap-northeast-2], in: onprem, at: [pc, link]}
@@ -51,7 +51,7 @@ edges:
   - {e: "dxgw -> vgww", step: 8}
   # MVP: phase-2 `fork: bus` (vgws -> res.*, sts.*, bed.*, br.*) drawn as the draft's 12 separate lines: stub, vertical trunk, one bus per AZ, one drop per endpoint
   - {e: "vgws -- vpcs", points: [["vgws.x1", "vgws.cy"], ["vgws.x1+12", "vgws.cy"]]}             # MVP: bus stub out of the VGW
-  - {e: "vgws -- vpcs", points: [["vgws.x1+12", "res.1.y0-36"], ["vgws.x1+12", "vgws.cy"]]}      # MVP: vertical trunk from the AZ 1 bus down to the stub
+  - {e: "vgws -- vpcs", points: [["vgws.x1+12", "res.1.y0-36"], ["vgws.x1+12", "res.2.y0-36"]]}  # MVP: vertical trunk joining the AZ 1 and AZ 2 buses; the stub meets it at the VGW's height (the VGW sits in the row between the AZs)
   - {e: "vgws -- sn.1", points: [["vgws.x1+12", "res.1.y0-36"], ["br.1.cx", "res.1.y0-36"]]}     # MVP: AZ 1 bus, 32 above the icons
   - {e: "vgws -> res.1", points: [["res.1.cx", "res.1.y0-36"], ["res.1.cx", "res.1.y0-4"]]}      # MVP: drop
   - {e: "vgws -> sts.1", points: [["sts.1.cx", "sts.1.y0-36"], ["sts.1.cx", "sts.1.y0-4"]], step: 4}   # MVP: drop
@@ -74,7 +74,7 @@ edges:
   - {e: "beds ..> dst", label: AWS 네트워크, label_at: right, step: 7, step_at: gap}   # ends on the 목적지 리전 box (draft: 4 below its border, not at the icon); label_at right: the draft puts it right of the vertical line (default would be below, as the hop has a badge); step_at gap: badge between the Seoul Region top and the box
 
 note:
-  place: pane          # the auto rule would pick panel (drawing height 1040 < 0.7 × width 1498); width auto = the left column (On-premises + Direct Connect), draft 456
+  # place auto → pane: the On-premises column left of the Cloud has room for it above (width auto = that column, draft 456)
   steps:
     - ["PC → IAM Identity Center", "aws sso login은 사내 프록시 → 인터넷입니다(VPC 엔드포인트 미지원). CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1로 업데이트·텔레메트리·릴리스 노트를 끕니다(Bedrock에선 지표·오류 보고가 이미 꺼짐)."]
     - ["PC → 사내 DNS → Resolver inbound", "*.ap-northeast-2.amazonaws.com과 us-west-2 이름을 inbound 엔드포인트로 조건부 전달. Private DNS로 bedrock-runtime.ap-northeast-2.amazonaws.com 등 → ENI IP."]

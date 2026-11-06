@@ -18,7 +18,9 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
         picked, defaults applied, icons resolved to full `set/name` refs, expressions
         parsed into Expr. Raises SpecError(problems) with every problem found (not just
         the first). Non-fatal lint goes to Spec.warnings.
-    parse_expr(s) -> Expr        the expression grammar of section 6 (also used by W5 for raw).
+    parse_expr(s, spec=None) -> Expr   the expression grammar of section 6. Without spec,
+        `<id>.attr` parses as kind "node"; with it, a group id gives kind "group". W5 takes
+        raw placeholders from RawSpec.exprs (already resolved), or passes spec.
 
   layout_route.py  (W3)
     plan(spec) -> list[Requirement]
@@ -53,6 +55,8 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
         place needs (pane coupling). `width` fixes the pane width. Pure: no geom mutation.
 
   layout.py        (W5)  CLI, pipeline, emit, in-process check, feedback loop, --explain.
+    main(argv) -> exit status; build(spec, extra_reqs, skip, place, source) -> Build (one
+    pass of the pipeline below); emit(spec, geom, elements, source) -> bytes.
     The pipeline (W5 owns it; the others rely on this call order):
         spec  = layout_spec.load(path, mode, title)
         reqs  = layout_route.plan(spec)
@@ -63,9 +67,19 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
         edges, warns = layout_route.draw(spec, geom)
         elements = layout_solve.draw(spec, geom) + edges + nb.elements + raw elements
         svg = emit(spec, geom, elements)        # stable sort by z, wrap owners in <g id>
-        then check_layout.run_checks / Advisor in process; on fixable kinds add
-        Requirements or `skip` entries and go back to solve (≤ 5 rounds, DESIGN 4.10).
-    nb.requirements must hold on geom (same place and width as nb0); W5 asserts that.
+        then check_layout.run_checks in process; on what is left add Requirements or
+        `skip` entries and go back to solve (≤ 5 rounds, DESIGN 4.10); the round with the
+        fewest problems gets check_layout --fix's fixed-answer repairs (Advisor.plan +
+        write_edits) and is written. Feedback by kind:
+          SHORT ARROW, LINE HUGS BORDER, TEXT AT BORDER / TOO CLOSE / OVERLAP / NEAR ICON,
+            BADGE NEAR ICON (a short piece's label or badge too): the neighbouring tracks
+            around the spot, on the axis that separates the two things, get
+            "track b − track a ≥ current + 16" (owner the element's id, why "feedback: …").
+          LINE OVER TEXT / ICON, LINE NEAR TEXT on a connector: skip[n] += 1 (≤ 3), then widen.
+          route.draw's "drew X instead of Y" warning: widen the gaps between the edge's ends.
+        Later rounds keep the note place of the first (only the pane width is recomputed).
+    nb.requirements must hold on geom (same place and width as nb0); W5 checks that and
+    warns when one is short by more than 0.5 px.
     spec.note is None → W4 returns NoteBlock("none").
 
   layout_const.py / layout_model.py (W0)  this contract. W6 (docs/examples/specs/*.yaml,
@@ -123,12 +137,19 @@ Canvas (W2): every drawn thing ≥ canvas_margin from "origin" on both axes, and
   drawing = union of every group rect and node footprint (no edges, no note).
 Note rects (W4 computes them; W2 needs only place/w/h):
   panel  Box(PANEL_X, drawing.y1 + PANEL_GAP, canvas_w − PANEL_X, … + h); below() = 16 + h + 16
-  pane   Box(PANE_X, cloud.y0, PANE_X + w, cloud.y0 + h); below() = 0
-  lines  h = canvas bottom − drawing.y1 (first badge cy = drawing.y1 + 18 … last baseline + 4); below() = h
+  pane   Box(PANE_X, cloud.y0, PANE_X + w, cloud.y0 + h); below() = 0. Width (auto):
+         300, 320 when a description would wrap past 4 lines at 300, or — when top-level
+         items sit left of the Cloud — the left column floor(cloud.x0 − PANE_GAP − PANE_X)
+         measured on geom0, if wider (ex bedrock-dx 456)
+  lines  h = canvas bottom − drawing.y1 (first badge cy = drawing.y1 + 18 … last baseline + 4); below() = h;
+         rect = Box(cloud.x0, drawing.y1, rightmost text end, drawing.y1 + h), w its width.
+         Items: a step = badge + "{hop} {desc}" as one grey 12px line; text-only notes:
+         the summary, then each row as "{label} {text}" (W6's slide specs follow this)
   none   below() = 0
 "cloud" is spec.cloud_id(), the first group of type cloud. Pane Requirements (W4):
   x: origin → group:<cloud>.L ≥ PANE_X + w + PANE_GAP;  the client node pinned to
-     PANE_X + w/2 (two requirements) when it is a top-level node under the pane;
+     PANE_X + w/2 (two requirements) only when the pane is 300 / 320 wide and the top-level
+     items left of the Cloud are nodes of one col and no group;
   y: group:<cloud>.T → node:<client> ≥ h + PANE_CLIENT_GAP + S/2;
      group:<cloud>.T → group:<g>.T ≥ h + PANE_OUTER_GAP for a top-level group under it.
 
@@ -175,6 +196,9 @@ function of the spec: same spec → byte-identical draft (sorted nothing by hash
   gap(<a>,<b>) [±n]                      middle of the widest free corridor between two
                                          tracks of one axis (Geometry.gap)
 Track ids are unique across cols and rows (W1 enforces), so gap() knows its axis.
+raw: RawSpec.exprs maps a placeholder's inner text to its Expr ("{br.cx+4}" → key
+"br.cx+4"); W5 substitutes fmt_num(eval_expr(...)) and checks the result against the draft
+subset (svg2pptx.collect's tags; <g> with id / translate only; bundle: hrefs).
 eval_expr(expr, geom) below evaluates one (W3 for hints, W5 for raw).
 
 =========================================================================================
@@ -182,11 +206,14 @@ eval_expr(expr, geom) below evaluates one (W3 for hints, W5 for raw).
 =========================================================================================
   text_width(s, size)         = check_layout.text_width: 0.55 em Latin, 1.0 em Hangul/CJK/
                                 arrows. Use it where the result must agree with the checker
-                                and the examples: glyph boxes for obstacle tests, the note
-                                description column (56 + widest hop + 16) and slide line flow.
+                                and the examples: glyph boxes for the checker-equal obstacle
+                                tests (headers), the note description column (56 + widest
+                                hop + 16), slide line flow and pane wrapping (decision j).
   layout_text_width(s, size)  conservative 0.6 em Latin (wide characters unchanged). Use it
                                 to reserve space: node footprints, header width constraints,
-                                label runs, mask widths, pane wrapping.
+                                label runs, mask widths; and for the router's node-label
+                                obstacles (a line should miss the rendered glyphs, which run
+                                wider than 0.55 em on capitals / underscores).
 Both live here (layout_model), importing check_layout (which loads the icon bundle via
 find_icon on import, ~0.1 s); layout_const stays import-free.
 
@@ -222,10 +249,31 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     badge on that instance after step / step_each / steps resolution.
  i. Track ids are unique across cols and rows; spec ids match [A-Za-z0-9_-]+ (section 5).
  j. Positions the examples computed from text widths (panel description column, slide
-    line flow) use text_width (0.55 em), not the conservative layout_text_width.
+    line flow, pane wrapping) use text_width (0.55 em), not the conservative
+    layout_text_width (at 0.6 em nlb-mtls step 2 and bedrock-dx step 2 wrap differently).
  k. Subnet / VPC / AZ icon top +32 doc, +28 slide; Cloud → Region +40 doc. Two examples
     are tighter on purpose (bedrock-dx Region +34, the skeleton's AZ 2 EC2 +30); the
     engine keeps the table value (tests/test_layout_model.py TIGHTER).
+ l. Shared interpretations (W1 → W2 / W3): Group.nodes excludes `on` nodes (their col
+    counts toward the VPC's parent's cols); `xy` nodes have col / row None; flow-row nodes
+    given a `col` have flow_index None; Edge.src = "edges[i]"; template instances are
+    Group.instance / Node.instance plus the ".n" id suffix.
+ m. Group `pad_top` (spec key, px): box top → its first icon / nested box when larger than
+    the type's header inset (room for a `points` bus above endpoints, bedrock-dx 88; DESIGN
+    "no key for a subnet top inset"). `min_h` grows a box downward, not its top inset.
+ n. Router space plan() adds beyond DESIGN 4.3 #10 (W5, from the golden renders):
+    a vertical leg at a node through the top border of the node's boxes the other end is
+    outside of passes right of their header (hard: checker width + 5; soft: 0.6 em + 8;
+    alb RDS replication); the same soft 0.6 em + 8 with the arrow at its target length for
+    a fork trunk past a header (gwlb); a HVH / VHV label run before the bend (soft: text
+    + 8 from the box + 4 to the bend, then the arrow; nfw "VPC attachment"); an overlay
+    (ASG) a line leaves sideways keeps 16 to its member subnets' parallel border (alb
+    816 → 836, nlb). `points` routes get no route warnings (check_layout judges them).
+ o. Note auto rule (DESIGN 4.7) also picks the pane for a document when top-level items sit
+    left of the Cloud and the pane fits above them without a push (bedrock-dx 1040 <
+    0.7 × 1498 and nlb-mtls 764 vs 763 drew panes; the specs no longer force `place`).
+ p. Default output: <spec dir>/<name>.draft.svg. The emitted header comment names the
+    spec's file name only (no directory, so the draft does not depend on the cwd).
 """
 from __future__ import annotations
 
@@ -325,6 +373,7 @@ class Group:
     span_cols: Optional[Tuple[str, str]] = None   # spec `span` (already merged into cols/rows)
     span_rows: Optional[Tuple[str, str]] = None
     pad: Optional[float] = None     # px, overrides Mode.pad / pad_node for this group's children
+    pad_top: Optional[float] = None  # px: box top → its first icon / nested box, when more than the type's header inset (decision m)
     min_w: Optional[float] = None   # px
     min_h: Optional[float] = None   # px
     dash: Optional[str] = None      # resolved stroke-dasharray (style default or spec `dash`), None = solid

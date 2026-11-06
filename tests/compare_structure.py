@@ -216,7 +216,9 @@ class Draft:
 
     def chain_of(self, pt):
         gs = [g for g in self.groups if inside(pt, g["box"])]
-        return [g for g in sorted(gs, key=lambda g: -g["area"])]
+        # an overlay (ASG, target group) spans AZs: it is not nested in the subnet it crosses
+        # and its area says nothing about nesting, so it goes innermost
+        return [g for g in sorted(gs, key=lambda g: (g["type"] in K.OVERLAY_TYPES, -g["area"]))]
 
     # -- nodes ---------------------------------------------------------------------------
     def _nodes(self):
@@ -397,12 +399,54 @@ class Draft:
             return ["%s %s %s" % (s, self._op(False, True, dashed), k) for s in src for k in snk]
         return ["net{%s} %s" % (", ".join(sorted(t[1] for t in terms)), self._op(bool(snk), bool(snk), dashed))]
 
-    def hop_of(self, li):
-        """The endpoints of connector li, junction ends replaced by the net's other side."""
+    def _nearest(self, li, p):
+        """The point of connector li nearest p."""
+        best = None
+        for a, b in zip(self.lines[li]["pts"], self.lines[li]["pts"][1:]):
+            L2 = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2
+            t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / L2))
+            q = (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+            d = ((q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2) ** 0.5
+            if best is None or d < best[0] - 1e-9:
+                best = (d, q)
+        return best[1]
+
+    def _along(self, li, p):
+        """Distance along connector li's path to the point of it nearest p."""
+        pts, run, best = self.lines[li]["pts"], 0.0, None
+        for a, b in zip(pts, pts[1:]):
+            L = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+            d = seg_dist(p, a, b)
+            if best is None or d < best[0] - 1e-9:
+                t = 0.0 if L == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / L ** 2))
+                best = (d, run + t * L)
+            run += L
+        return best[1] if best else 0.0
+
+    def hop_of(self, li, c=None):
+        """The endpoints of connector li, junction ends replaced by the net's other side. A
+        line that runs straight through a fork (or merge) junction other lines start on
+        counts, where badge c sits on its shared part, the whole fan: a split trunk drawn
+        as stem + branch in one polyline is the same hop as a stem line ending at the
+        junction."""
         net = self.nets[self.line_net[li]]
         src = sorted(t[1] for t in net["terms"] if not t[2])
         snk = sorted(t[1] for t in net["terms"] if t[2])
         e = self.line_ends[li]
+        if c is not None and e[0][0] != "j" and e[1][0] != "j" and len(net["lines"]) > 1:
+            pts = self.lines[li]["pts"]
+            joins = [self._along(li, q) for j in net["lines"] if j != li
+                     for k, q in enumerate((self.lines[j]["pts"][0], self.lines[j]["pts"][-1]))
+                     if self.line_ends[j][k][0] == "j"
+                     and any(seg_dist(q, a, b) <= TOUCH for a, b in zip(pts, pts[1:]))]
+            if joins:
+                at = self._along(li, c)
+                fan_b = at <= min(joins) and len(snk) > 1 and not e[0][2]      # badge on the stem of a fork
+                fan_a = at >= max(joins) and len(src) > 1 and e[1][2]          # badge past a merge
+                if fan_b or fan_a:
+                    a = "+".join(src) if fan_a else e[0][1]
+                    b = "+".join(snk) if fan_b else e[1][1]
+                    return "%s — %s" % (a, b)
         out = []
         for k in (0, 1):
             kind, tgt, arrow = e[k]
@@ -457,7 +501,24 @@ class Draft:
             li = self._badge_line(b["c"], rule_only=True)
             if li is None:
                 li = self._badge_line(b["c"], rule_only=False)
-            out[b["n"]].append(self.hop_of(li) if li is not None else "(no connector)")
+            if li is None:
+                out[b["n"]].append("(no connector)")
+                continue
+            hop = self.hop_of(li, b["c"])
+            # lines drawn on top of each other from one end (a fork as two full polylines)
+            # share the stretch the badge sits on: the hop is the whole fan
+            q = self._nearest(li, b["c"])
+            a, _, far = hop.partition(" — ")
+            fan = {far}
+            for j in range(len(self.lines)):
+                if j != li and any(seg_dist(q, u, v) <= TOUCH for u, v in zip(self.lines[j]["pts"], self.lines[j]["pts"][1:])):
+                    a2, _, far2 = self.hop_of(j, b["c"]).partition(" — ")
+                    if a2 == a:
+                        fan.update(far2.split("+"))
+            if len(fan) > 1:
+                fan = {x for f in fan for x in f.split("+")}
+                hop = "%s — %s" % (a, "+".join(sorted(fan)))
+            out[b["n"]].append(hop)
         return {k: sorted(v) for k, v in out.items()}
 
     def orders(self):

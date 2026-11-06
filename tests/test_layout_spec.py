@@ -428,7 +428,7 @@ ERRORS = [
       "nodes, edges, note, raw)"]),
     ("unknown group key", lambda d: d["groups"][1].update(lable="x"),
      ["groups[1] region: unknown key 'lable' (did you mean 'label'?) (known: id, type, label, cidr, in, per, "
-      "over, span, pad, min_w, min_h, dash, header)"]),
+      "over, span, pad, pad_top, min_w, min_h, dash, header)"]),
     ("type", lambda d: d.update(S="big"),
      ["spec: S: expected a positive number (icon size, default 48), got 'big'"]),
     ("id characters", lambda d: d["nodes"][0].update(id="nat.gw"),

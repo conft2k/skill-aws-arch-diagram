@@ -30,10 +30,10 @@ edges:                       # topology diagram: '--' = solid 1.5px, no arrowhea
   - {e: "cgw -- inet"}
   - {e: "inet -- vpn", label: IPsec, step: 1}
   - {e: "vpn -- tgwa", verb: VPN attachment, step: 2}
-  - {e: "tgwa -- svcs", verb: VPC attachment, shape: VHV}   # DESIGN 4.5 rule 5 picks VH (TGW A's left/right sides hold the VPN and peering lines); the draft leaves the TGW top and ends at the VPC's bottom
-  - {e: "tgwa -- prod", shape: VHV}                         # same as tgwa -- svcs
-  - {e: "tgwa -- dev", shape: VHV}                          # rule 5 VH would leave the TGW bottom straight through TGW A RT; the draft ends at the VPC's top
-  - {e: "tgwa -- test", shape: VHV}                         # same as tgwa -- dev
+  - {e: "tgwa -- svcs", verb: VPC attachment}   # VHV by rule 5's hub exception (TGW A's left/right sides hold the VPN and peering lines; headless spokes leave its top / bottom); same for the other three spokes
+  - {e: "tgwa -- prod"}
+  - {e: "tgwa -- dev"}
+  - {e: "tgwa -- test"}
   - {e: "tgwa -- peer", step: 3, step_at: gap}              # badge in the 776–816 run between Region A's border and the peering icon, not mid of the longer 644–776 piece
   - {e: "peer -- tgwb"}
   - {e: "tgwb -- dr", step: 4}

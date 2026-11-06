@@ -19,6 +19,9 @@ Shape choice (DESIGN 4.5) is a pure function of the Spec, recomputed by plan() a
      through its route table) or the source is a hub (both horizontal sides taken) and
      the line is headless topology ("--", "..": tgw's upper spokes).
   6. otherwise VHV.
+plan() also keeps a vertical leg at a node right of the headers of the boxes it enters
+or leaves through their top, a HVH label's run before the bend, and an overlay a line
+leaves sideways 16 inside its subnets (layout_model decision n).
 Trunks: `trunk: true` instances of one spec line with one far end merge (first instance
 draws the whole path and the arrowhead, the others stop at the junction); with one near end
 they fork (a shared port, one arrowhead per branch). Labels and the badge of a trunk are
@@ -70,6 +73,7 @@ HORIZ = ("left", "right")
 VERT = ("top", "bottom")
 MIN_SEG = 12          # shortest headless end segment (ex tgw spoke stubs 226 → 214)
 NUDGE = 8             # bend / label / badge step (DESIGN 4.5-4.6)
+OVERLAY_EXIT = 16     # overlay side a line leaves through ↔ its member subnet's border
 OBST_CLEAR = 4        # a bend keeps this from icons and labels (LINE_CLEAR)
 BADGE_CLEAR = 4       # badge circle ↔ icon / text / other badge
 HUG_OVERLAP = 20      # check_layout: a parallel run longer than this next to a border is a hug
@@ -432,13 +436,16 @@ def plan(spec: Spec) -> List[Requirement]:
                             req(f"group:{gb}.{eb}", vb, clear + ob + seg(he, soft), f"fork trunk inside {gb}", soft)
                         if hor and d > 0:
                             # the trunk enters these boxes through their top / bottom border:
-                            # it passes right of their header (checker glyph width + 4)
+                            # it passes right of their header (layout width + 8)
                             for g in nb:
                                 grp = spec.groups[g]
                                 if grp.label:
                                     st = K.style(grp.type)
                                     hw = st.title_dx + M.text_width(grp.label, st.title_size) + OBST_CLEAR + 1
                                     req(f"group:{g}.L", vb, hw + ob + seg(he, False), f"fork trunk past {g}'s header", False)
+                                    # preferred: the render's wider glyphs + 8, and the arrow at its target length
+                                    hw = st.title_dx + M.layout_text_width(grp.label, st.title_size) + K.LABEL_CLEAR
+                                    req(f"group:{g}.L", vb, hw + ob + seg(he, True), f"fork trunk past {g}'s header", True)
                     continue
                 xa = f"group:{ga}.{ea}" if ga else va
                 xb = f"group:{gb}.{eb}" if gb else vb
@@ -451,6 +458,15 @@ def plan(spec: Spec) -> List[Requirement]:
                         continue
                     hard = need
                     req(xa, xb, need, f"{'trunk' if t.trunk else 'bend'} gutter {e.a}→{e.b}", soft)
+                texts = [s for s in (e.label, e.verb) if s]
+                if hor and texts and not follower:
+                    # the label's run: the piece before the bend holds the text + 8 from the
+                    # box (or icon) and 4 from the bend, the arrow piece follows (ex nfw
+                    # "VPC attachment" 316 − 220); a preference, the router finds another piece
+                    w = max(M.layout_text_width(s, K.TEXT_PROTO.size) for s in texts)
+                    near = K.LABEL_CLEAR if ga else spec.S / 2 + K.ICON_CLEAR
+                    far = m.trunk_clear if gb else ob + seg(he, True)
+                    req(xa, xb, near + w + OBST_CLEAR + far, f"label {texts[0]!r} run before the bend", True)
             elif (shape == HV and hor) or (shape == VH and not hor):
                 if e.b_kind == "node":         # a's port → b's center line
                     req(va, f"node:{e.b}", oa + seg(hs, False), f"first leg {e.a}→{e.b}", False)
@@ -460,7 +476,42 @@ def plan(spec: Spec) -> List[Requirement]:
                         if soft and seg(he, True) == seg(he, False):
                             continue
                         req(f"node:{e.a}", vb, ob + seg(he, soft), f"arrow {seg(he, soft):g} into {e.b}", soft)
+        # a vertical leg at a node crosses the top border of the node's boxes the other end
+        # is outside of (entering from above, or leaving upward): it passes right of their
+        # header (badge, title, CIDR; layout widths + 8), as alb's RDS replication
+        # a line leaving an overlay (ASG) box sideways starts 4 off its border: keep the
+        # member subnets' parallel border 16 beyond it so the start reads as the ASG's
+        # (ex alb SQL 816 → 836, nlb 916 → 932; QR 48's 8 elsewhere)
+        for gid, kind, side in ((e.a, e.a_kind, t.side_a), (e.b, e.b_kind, t.side_b)):
+            if kind == "group" and spec.groups[gid].overlay and side in ("left", "right"):
+                for sub in dict.fromkeys(spec.nodes[m].parent for m in spec.groups[gid].over):
+                    if sub is None:
+                        continue
+                    if side == "right":
+                        add("x", f"group:{gid}.R", f"group:{sub}.R", OVERLAY_EXIT, f"line out of {gid} clear of {sub}", owner)
+                    else:
+                        add("x", f"group:{sub}.L", f"group:{gid}.L", OVERLAY_EXIT, f"line out of {gid} clear of {sub}", owner)
+        if t.dy == 1 and shape in (V, VHV, HV) and e.b_kind == "node":
+            _header_reqs(spec, e.b, nb, owner, add)
+        if t.dy == -1 and shape in (V, VHV, VH) and e.a_kind == "node":
+            _header_reqs(spec, e.a, na, owner, add)
     return reqs
+
+
+def _header_reqs(spec: Spec, nid: str, groups: Sequence[str], owner: str, add) -> None:
+    if spec.nodes[nid].on or spec.nodes[nid].xy is not None:
+        return
+    for g in groups:
+        grp = spec.groups[g]
+        if grp.overlay:
+            continue
+        st = K.style(grp.type)
+        for soft, tw, clear in ((False, M.text_width, OBST_CLEAR + 1), (True, M.layout_text_width, K.LABEL_CLEAR)):
+            w = max([tw(grp.label, st.title_size)] if grp.label else [0.0]
+                    + ([tw(grp.cidr, K.TEXT_CIDR.size)] if grp.cidr else []))
+            if w:
+                add("x", f"group:{g}.L", f"node:{nid}", st.title_dx + w + clear,
+                    f"vertical line at {nid} passes right of {g}'s header", owner, soft)
 
 
 def _label_req(spec, e, d, na, nb, ae, be, outer, req, va, vb, oa, ob):
@@ -495,7 +546,10 @@ def _label_req(spec, e, d, na, nb, ae, be, outer, req, va, vb, oa, ob):
 # draw(): context
 
 class _Ctx:
-    """Static obstacles of a solved Geometry (glyph boxes by the checker's text_width)."""
+    """Static obstacles of a solved Geometry. Node labels use the conservative 0.6 em glyph
+    boxes: the checker's 0.55 em runs short of the render on capitals and underscores
+    (bedrock-dx CLAUDE_CODE_USE_BEDROCK=1), and a line should miss the real glyphs. Headers
+    keep the checker's boxes (plan() reserves their room at 0.6 em already)."""
 
     def __init__(self, spec: Spec, geom: Geometry):
         self.spec, self.geom = spec, geom
@@ -519,8 +573,11 @@ class _Ctx:
                     self.texts.append(t.box())
         for n in geom.nodes.values():
             self.node_icons.append(n.icon)
-            self.texts += [t.box() for t in n.lines]
+            self.texts += [t.box(conservative=True) for t in n.lines]
         self.icons = self.node_icons + self.badges
+        # obstacle tuples as _line_problems tests them (icons + 1, texts + LINE_CLEAR)
+        self.icon_t = [(b.expand(1).t(), b) for b in self.icons]
+        self.text_t = [(b.expand(K.LINE_CLEAR).t(), b) for b in self.texts]
         cloud = spec.cloud_id()
         self.cloud = geom.groups[cloud].rect if cloud in geom.groups else None
 
@@ -604,12 +661,14 @@ def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool) -> List[str
     if not segs:
         return ["no segment"]
     for i, (p, q) in enumerate(segs):
-        for b in ctx.icons:
-            if CL.seg_hits_box(p, q, b.expand(1).t()):
+        x0, x1 = (p[0], q[0]) if p[0] <= q[0] else (q[0], p[0])
+        y0, y1 = (p[1], q[1]) if p[1] <= q[1] else (q[1], p[1])
+        for t, b in ctx.icon_t:
+            if t[0] <= x1 and x0 <= t[2] and t[1] <= y1 and y0 <= t[3] and CL.seg_hits_box(p, q, t):
                 probs.append(f"LINE OVER ICON ({b.x0:g},{b.y0:g})")
                 break
-        for b in ctx.texts:
-            if CL.seg_hits_box(p, q, b.expand(K.LINE_CLEAR).t()):
+        for t, b in ctx.text_t:
+            if t[0] <= x1 and x0 <= t[2] and t[1] <= y1 and y0 <= t[3] and CL.seg_hits_box(p, q, t):
                 probs.append(f"LINE OVER TEXT ({b.x0:.0f},{b.y0:.0f})")
                 break
         horiz = abs(p[1] - q[1]) < 0.5
@@ -1385,7 +1444,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
     # trunks whose followers could not share the first instance's bend: report
     for n, r in sorted(routes.items()):
         x = xs[n]
-        if r.probs:
+        if r.probs and x.t.shape != P:      # `points` is the spec's own route: check_layout judges it
             warns.append(f"{_where(x.e)}: {', '.join(sorted(set(r.probs)))} (best of the candidates)")
         if r.shape != x.t.shape and x.t.shape != P:
             warns.append(f"{_where(x.e)}: drew {r.shape} instead of {x.t.shape} (re-solve may be needed)")

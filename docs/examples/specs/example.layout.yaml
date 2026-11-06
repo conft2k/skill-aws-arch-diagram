@@ -9,7 +9,7 @@ groups:
   - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
   - {id: vpc,    type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
   - {id: az,     type: az, in: vpc, per: [az1, az2]}
-  - {id: pubsn,  type: public, label: Public subnet, in: az}
+  - {id: pubsn,  type: public, label: Public subnet, in: az, span: {cols: [pub, pub]}}
   - {id: appsn,  type: private, label: App subnet, in: az}
   - {id: asg,    type: asg, label: ASG · target group, over: [ec2.*], header: right}
 

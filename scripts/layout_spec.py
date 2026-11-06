@@ -51,7 +51,7 @@ LB_PREFIX = "resource/Elastic-Load-Balancing_"
 
 TOP_KEYS = ("name", "mode", "title", "S", "font", "cols", "rows", "groups", "nodes", "edges", "note", "raw")
 TRACK_KEYS = ("id", "min_gap_before", "min_w", "flow")
-GROUP_KEYS = ("id", "type", "label", "cidr", "in", "per", "over", "span", "pad", "min_w", "min_h", "dash", "header")
+GROUP_KEYS = ("id", "type", "label", "cidr", "in", "per", "over", "span", "pad", "pad_top", "min_w", "min_h", "dash", "header")
 NODE_KEYS = ("id", "icon", "label", "sub", "in", "at", "col", "row", "on", "dx", "dy", "xy")
 EDGE_KEYS = ("e", "label", "verb", "step", "step_at", "steps", "step_each", "label_at", "trunk", "fork", "shape",
              "bend_x", "bend_y", "from_side", "to_side", "from_offset", "to_offset", "points")
@@ -689,7 +689,7 @@ class _Loader:
             r["label"] = self.field(r, "label", self.c_label) if "label" in d else (st.label if st else None)
             r["label_default"] = "label" not in d
             r["cidr"] = self.field(r, "cidr", self.c_label)
-            for k in ("pad", "min_w", "min_h"):
+            for k in ("pad", "pad_top", "min_w", "min_h"):
                 r[k] = self.field(r, k, self.c_pos)
             r["dash"] = st.dash if st else None
             if "dash" in d:
@@ -866,7 +866,7 @@ class _Loader:
             g = Group(id=gid, type=r["d"].get("type") if r["ok"] else "generic", label=label,
                       cidr=self.subst(r, "cidr", _pick(r["cidr"], n), n), parent=parent,
                       header=r["header"], span_cols=r["span_cols"], span_rows=r["span_rows"],
-                      pad=_pick(r["pad"], n), min_w=_pick(r["min_w"], n), min_h=_pick(r["min_h"], n),
+                      pad=_pick(r["pad"], n), pad_top=_pick(r["pad_top"], n), min_w=_pick(r["min_w"], n), min_h=_pick(r["min_h"], n),
                       dash=_pick(r["dash"], n), template=r["tmpl"], instance=n, depth=depth, src=r["loc"])
             sp.groups[gid] = g
             if parent is not None:

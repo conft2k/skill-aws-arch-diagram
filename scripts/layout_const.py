@@ -135,6 +135,7 @@ MIN_ARROW = 20            # CL MIN_ARROW: arrowhead segment ≥ 20 (QR 144)
 HUG_CLEAR = 12            # CL HUG_CLEAR: connector alongside a border ≥ 12 (QR 145, slide trunk 12)
 LB_CLEAR = 8              # QR 76: load balancer node ↔ AZ and subnet borders
 MASK_CLEAR = 8            # QR 77: IGW/VGW mask ↔ next container border and canvas edge
+MASK_TEXT_PAD = 8         # QR 110: mask width = max(S, label width + 8)
 
 # --------------------------------------------------------------------------------------
 # Mode table (DESIGN 4.4, checked against the examples)

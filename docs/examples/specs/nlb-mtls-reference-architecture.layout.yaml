@@ -30,7 +30,6 @@ edges:
   - {e: "nlb -> besg.*", trunk: true, label: "TCP :80", step: 3, step_at: ["besg.1.x0-22", "row.main"], label_at: {x: "besg.1.x0-4", y: "row.main+4", anchor: start}}   # trunk: one stem, a vertical trunk and an arrow into each backend-sg (split trunk); step_at/label_at: badge 3 and "TCP :80" sit on the main line right of the trunk (the one allowed override), not on a branch
 
 note:
-  place: pane
   steps:
     - [S3 → 신뢰 저장소, "S3의 CA 번들(ca-bundle.pem)과 CRL(crl.pem)로 ELB 신뢰 저장소를 만들어 :443 리스너에 연결합니다."]
     - [클라이언트 → NLB, "NLB :443이 클라이언트 인증서를 신뢰 체인 → 만료 → CRL → ID 필터 순서로 검사하고, 하나라도 실패하면 TLS alert로 끊습니다."]
