@@ -349,10 +349,11 @@ class Reproduce(unittest.TestCase):
         self.assertEqual(label.attrs["y"], 254 - 9)
         self.assertEqual(b[2][1], 254 - K.BADGE_DY)
         self.assertLessEqual(b[2][0] + K.BADGE_R + 4, label.attrs["x"] - M.text_width(label.text, 12) / 2)
-        # the 50px Internet → VPN piece has no room for both: the label stays above, badge 1 below
+        # and badge 1 beside 'IPsec' on the (widened) Internet → VPN piece
         label = next(e for e in els if e.owner == "edge:1" and e.kind == "text" and e.z == K.Z_EDGE_LABEL)
         self.assertEqual(label.attrs["y"], 254 - 9)
-        self.assertEqual(b[1][1], 254 + K.BADGE_DY)
+        self.assertEqual(b[1][1], 254 - K.BADGE_DY)
+        self.assertLessEqual(b[1][0] + K.BADGE_R + 4, label.attrs["x"] - M.text_width(label.text, 12) / 2)
 
     def test_nlb_mtls_trunk(self):
         spec, geom, d, boxes, els, warns = routed("nlb-mtls")

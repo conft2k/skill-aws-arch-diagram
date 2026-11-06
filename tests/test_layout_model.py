@@ -333,7 +333,7 @@ class EdgeTest(unittest.TestCase):
                         elif t["y"] - p[1] == mc.label_below:
                             below += 1
         self.assertGreater(above, 20)
-        self.assertGreaterEqual(below, 4)
+        self.assertEqual(below, 0)          # labels go above a horizontal line, badge or not
 
 
 class NoteTest(unittest.TestCase):

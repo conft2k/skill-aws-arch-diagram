@@ -141,6 +141,7 @@ assets/icons.json            857 icons in one JSON bundle (sets: service, resour
                              use), not committed
 docs/examples/specs/         one layout spec per reference example plus the skeleton
                              `example.layout.yaml`; each regenerates its example's layout
+                             (`slides/`: the slide examples' specs)
 scripts/find_icon.py         fuzzy lookup: `find_icon.py alb igw "s3 gateway endpoint"`
 scripts/layout.py            the layout engine: spec -> draft SVG; computes every coordinate,
                              runs check_layout with feedback rounds, and names the spec item

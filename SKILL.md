@@ -74,8 +74,10 @@ settle the slide titles (one line each, or none) and the list of slides.
 
 ### 2. Copy the closest example spec
 `docs/examples/` holds finished, checked document-size layouts (`*.svg`, each with its
-`*.png`), and `docs/examples/specs/` the spec that regenerates each one. Pick the one
-whose topology is closest to the request and **copy its spec into the scratchpad now**:
+`*.png`), and `docs/examples/specs/` the spec that regenerates each one; for a slide,
+`docs/examples/specs/slides/` holds the `mode: slide` specs of `docs/examples/slides/`
+(each fits 1108 × 540 at 10pt). Pick the one whose topology is closest to the request
+and **copy its spec into the scratchpad now**:
 
 ```bash
 cp ${CLAUDE_SKILL_DIR}/docs/examples/specs/nfw-reference-architecture.layout.yaml /path/to/scratchpad/arch.layout.yaml

@@ -134,7 +134,7 @@ assets/icons.json            아이콘 857개를 담은 JSON 번들 (세트: ser
                              group, category); 설치할 때(건너뛰면 처음 쓸 때) 만들며
                              커밋하지 않음
 docs/examples/specs/         참조 예제마다 하나인 레이아웃 spec과 골격 `example.layout.yaml`;
-                             각 spec이 그 예제의 레이아웃을 다시 만듦
+                             각 spec이 그 예제의 레이아웃을 다시 만듦 (`slides/`: 슬라이드 예제용)
 scripts/find_icon.py         이름으로 아이콘 찾기: `find_icon.py alb igw "s3 gateway endpoint"`
 scripts/layout.py            레이아웃 엔진: spec -> 초안 SVG; 모든 좌표를 계산하고 check_layout을
                              피드백 라운드와 함께 돌려 문제마다 spec 항목과 고칠 점을 출력

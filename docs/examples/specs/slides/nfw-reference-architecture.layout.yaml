@@ -1,0 +1,48 @@
+# Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet
+name: nfw-reference-architecture
+mode: slide
+cols: [spoke, att, tgw, eni, fw, nat, igw, inet]   # att: an empty column so VPC B (az2, spoke) and the TGW (main, tgw) are two columns apart and separate on x, not on y
+rows: [az1, main, az2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+  - {id: vpca,   type: vpc, label: VPC A, cidr: 10.1.0.0/16, in: region}
+  - {id: sna,    type: private, label: App subnet, in: vpca}
+  - {id: vpcb,   type: vpc, label: VPC B, cidr: 10.2.0.0/16, in: region}
+  - {id: snb,    type: private, label: App subnet, in: vpcb}
+  - {id: insp,   type: vpc, label: Inspection VPC, cidr: 100.64.0.0/16, in: region}
+  - {id: az,     type: az, in: insp, per: [az1, az2]}
+  - {id: tgwsn,  type: private, label: TGW subnet, in: az, pad: 34}   # pad: the ENI clears the subnet badge on x, so the row is not pushed down 4px
+  - {id: fwsn,   type: private, label: Firewall subnet, in: az}
+  - {id: pubsn,  type: public, label: Public subnet, in: az, pad: 17}   # same for the NAT gateway
+
+nodes:
+  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, in: sna, at: [spoke, az1]}
+  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, in: snb, at: [spoke, az2]}
+  - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: "VPC A · B 전파", in: region, at: [tgw, az1], dy: -3}   # dy: its label stack sits 12px (sibling gap) above the TGW icon; 3px up lets the TGW row hug AZ 1 and the slide fit 540
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: "0.0.0.0/0 → 검사 VPC", in: region, at: [tgw, az2]}
+  - {id: eni,  icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tgwsn, col: eni}
+  - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, in: fwsn, col: fw}
+  - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubsn, col: nat}
+  - {id: nfw,  icon: service/AWS-Network-Firewall, label: AWS Network Firewall, in: insp, at: [fw, main]}
+  - {id: igw,  icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: insp, at: [igw, main]}
+  - {id: inet, icon: resource/Internet, label: Internet, at: [inet, main]}
+
+edges:
+  - {e: "vpca <-> tgw", verb: VPC attachment, step: 1}
+  - {e: "vpcb <-> tgw"}
+  - {e: "tgw <-> eni.*", step: 2, step_at: start}   # step_at: badge 2 on the TGW-side piece left of the Inspection VPC, not the longer piece inside the TGW subnet
+  - {e: "eni.* <-> fwe.*", step: 3}
+  - {e: "fwe.* -> nat.*", step: 4}
+  - {e: "nat.* -> igw", trunk: true, step: 5}
+  - {e: "igw -> inet"}
+
+note:
+  steps:
+    - [VPC → TGW, ""]
+    - [Spoke RT, "0.0.0.0/0 → 검사 VPC (appliance mode)"]
+    - [같은 AZ 방화벽에서 검사, "(VPC 간은 TGW로 반환)"]
+    - [방화벽 → NAT, "(인터넷행)"]
+    - [NAT → IGW, ""]
