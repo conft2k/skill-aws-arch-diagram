@@ -454,6 +454,15 @@ def node_in_cloud(d):
     d["nodes"][2]["in"] = "cloud"
 
 
+def col_only(d):
+    d["nodes"][2].pop("at")
+    d["nodes"][2]["col"] = "c"
+
+
+def flow_col(d, **kw):
+    d["cols"] = ["a", "b", dict(id="c", flow=100, **kw)]
+
+
 # (case, mutation, exact problems)
 ERRORS = [
     ("unknown top-level key", lambda d: d.update(colz=1),
@@ -536,13 +545,54 @@ ERRORS = [
      ["edges[2] inet -> ec2.2: e: 'ec2.2' is left out by `only:` (nodes[0] ec2); drawn instances: ec2.1"]),
     ("expression reference", lambda d: d["edges"][1].update(bend_x="igx.cx+8"),
      ["edges[1] inet -> igw: bend_x: expression 'igx.cx+8': no node or group 'igx'"]),
-    ("flow on a column", lambda d: d.update(cols=[{"id": "a", "flow": 160}, "b", "c"]),
-     ["cols[0] a: flow: only rows can be flow rows"]),
+    ("col only on a grid column", col_only,
+     ["nodes[2] inet: row: required (only nodes in a per template or on a flow column take no row; 'c' is a "
+      "grid column: give it `flow: <pitch>` to stack its nodes)"]),
+    ("align on a row", lambda d: d.update(rows=[{"id": "az1", "align": "top"}, "main", "az2"]),
+     ["rows[0] az1: align: only a flow column takes align (top | center | bottom); a flow row is centered in "
+      "its parent"]),
+    ("align without flow", lambda d: d.update(cols=[{"id": "a", "align": "top"}, "b", "c"]),
+     ["cols[0] a: align: 'a' is not a flow column; give `flow: <pitch>` too"]),
+    ("align value", lambda d: flow_col(d, align="middle"),
+     ["cols[2] c: align: expected one of top | center | bottom, got 'middle'"]),
+    ("dy on a flow-column node", lambda d: (flow_col(d), col_only(d), d["nodes"][2].update(dy=10)),
+     ["nodes[2] inet: dy: a node on the flow column 'c' takes its y from the stack; drop dy (the column's "
+      "`flow:` pitch spaces the nodes)"]),
+    ("border node on a flow column", lambda d: (d.update(cols=[{"id": "a", "flow": 100}, "b", "c"]),
+                                                d["nodes"][1].pop("at"), d["nodes"][1].update(col="a")),
+     ["nodes[1] igw: on: a border node needs a grid row; 'a' is a flow column (give `at: [col, row]`)"]),
+    ("span without a row", lambda d: (flow_col(d), d["nodes"][2].pop("at"), d["nodes"][2].update(col="b..c")),
+     ["nodes[2] inet: row: required (a span 'b..c' needs a row: `at: [b..c, <row>]`)"]),
     ("dash on a fixed-style group", lambda d: d["groups"][2].update(dash="6,4"),
      ["groups[2] vpc: dash: only generic (and cloudwan) groups take a dash; vpc is always solid"]),
     ("{n} outside a template", lambda d: d["nodes"][2].update(label="Internet {n}"),
      ["nodes[2] inet: label: {n} is the instance number; only items inside a per template have one"]),
 ]
+
+
+class FlowColumns(unittest.TestCase):
+    def test_col_only_nodes_stack_in_spec_order(self):
+        def f(d):
+            flow_col(d, align="bottom")
+            d["nodes"] += [{"id": "s3", "icon": "service/Amazon-Simple-Storage-Service", "label": "S3",
+                            "in": "region", "col": "c"},
+                           {"id": "cw", "icon": "service/Amazon-CloudWatch", "label": "CloudWatch",
+                            "in": "region", "col": "c"},
+                           {"id": "kms", "icon": "service/AWS-Key-Management-Service", "label": "KMS",
+                            "in": "region", "at": ["c", "az1"]}]          # pinned to a grid row
+        s = L.load(mutate(f))
+        c = s.cols[2]
+        self.assertEqual((c.id, c.flow, c.align), ("c", 100.0, "bottom"))
+        self.assertEqual([(n.id, n.col, n.row, n.flow_index) for n in s.nodes.values() if n.parent == "region"],
+                         [("igw", "a", "main", None), ("s3", "c", None, 0), ("cw", "c", None, 1),
+                          ("kms", "c", "az1", None)])
+        self.assertEqual(s.flow_stacks(), {("region", "c"): ["s3", "cw"]})
+        self.assertEqual(s.groups["region"].rows, ("az1", "az2"))     # the stack adds no rows
+        self.assertEqual(s.warnings, [])
+
+    def test_flow_true_takes_the_mode_pitch(self):
+        s = L.load(mutate(lambda d: d.update(cols=["a", "b", {"id": "c", "flow": True}])))
+        self.assertEqual((s.cols[2].flow, s.cols[2].align), (float(s.const.flow_pitch), "center"))
 
 
 class Errors(unittest.TestCase):

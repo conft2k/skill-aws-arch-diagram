@@ -15,7 +15,9 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                diagonal pairs), 3 neighbour pitch, 4 header and CIDR widths, 5 IGW/VGW pinned
                on the VPC border (mask kept MASK_CLEAR from borders), 6 the AZ gap row,
                7 colspan (left side on the first track, right side on the last), 8 flow rows
-               (own x variables, pitch, centered in the parent afterwards), 9 overlays (ASG:
+               (own x variables, pitch, centered in the parent afterwards) and flow columns
+               (own y variables, pitch or label stack + stack gap, then top / centered /
+               bottom in the parent's height; no row tracks), 9 overlays (ASG:
                members, header right/below, inside each member subnet), 10 the caller's
                Requirements, 11 canvas margin (and the note's requirements), plus template
                instances kept alike (x: equal edges; y: equal insets, by iteration), badge ↔
@@ -130,6 +132,9 @@ class _Model:
         self.ri = {t.id: i for i, t in enumerate(spec.rows)}
         self.foot = {nid: _footprint(spec, n) for nid, n in spec.nodes.items()}
         self.flow = {nid for nid, n in spec.nodes.items() if n.xy is None and n.col is None}
+        self.stacks = spec.flow_stacks()                                     # flow columns
+        self.flowc = {nid for ids in self.stacks.values() for nid in ids}
+        self.stack_shift: Dict[str, float] = {}                              # nid → align shift (explain)
         self.tree = [g for g in spec.groups.values() if not g.overlay]
         self.overlays = [g for g in spec.groups.values() if g.overlay]
         self.child_groups: Dict[Optional[str], List[str]] = defaultdict(list)
@@ -186,7 +191,7 @@ class _Model:
             return None
         if axis == "x":
             return None if nid in self.flow else self.rng("x", n.col, n.col2 or n.col)
-        return self.rng("y", n.row, n.row)
+        return None if nid in self.flowc else self.rng("y", n.row, n.row)
 
     def group_rng(self, gid, axis):
         g = self.spec.groups[gid]
@@ -206,7 +211,7 @@ class _Model:
         """A node's center variable; side "lo" (left / as b) or "hi" (right / as a): a
         colspan node uses its first track on the left and its last on the right."""
         n = self.spec.nodes[nid]
-        if n.xy is not None or (axis == "x" and nid in self.flow):
+        if n.xy is not None or (axis == "x" and nid in self.flow) or (axis == "y" and nid in self.flowc):
             return (f"node:{nid}", 0.0)
         if axis == "x":
             c = n.col2 if (side == "hi" and n.col2) else n.col
@@ -263,6 +268,7 @@ class _Model:
                 self._badge_clear_x()
         else:
             self._az_gaps()
+            self._flow_cols()
         self._templates_equal(axis)
         # canvas margin (11): top-level groups and nodes
         m = mc.canvas_margin
@@ -465,6 +471,41 @@ class _Model:
                 self.add("x", (f"node:{a}", 0), (f"node:{b}", 0), d,
                          f"flow pitch {fmt_num(pitch)} {a} → {b}", f"node:{b}")
             self.flow_rows.append((key[0], ids))
+
+    def _flow_cols(self):
+        """Flow columns (8): own y variables, top → bottom in spec order, each next icon at
+        least the column's pitch below, and below the previous label stack + stack gap."""
+        for (parent, col), ids in sorted(self.stacks.items(), key=lambda kv: (str(kv[0][0]), kv[0][1])):
+            pitch = self.spec.track(col).flow or self.mc.flow_pitch
+            for a, b in zip(ids, ids[1:]):
+                d = max(pitch, self.foot[a].bot - self.foot[b].top + self.mc.stack_gap)
+                self.add("y", (f"node:{a}", 0), (f"node:{b}", 0), d,
+                         f"flow pitch {fmt_num(pitch)} {a} ↓ {b}" + (" (label stack)" if d > pitch else ""),
+                         f"node:{b}")
+
+    def align_stacks(self, cons: List[Requirement], yv: Dict[str, float]):
+        """Move each flow column down from its minimal (top) position: centered in its
+        parent's height (the icon top of the first node to the footprint bottom of the last),
+        or to the bottom, as far as every constraint allows."""
+        for (parent, col), ids in self.stacks.items():
+            align = self.spec.track(col).align
+            if parent is None or align == "top":
+                continue
+            mem = {f"node:{i}" for i in ids}
+            slack = _shift_slack(cons, yv, mem)
+            if align == "center":
+                top = yv[f"node:{ids[0]}"] + self.foot[ids[0]].top
+                bot = yv[f"node:{ids[-1]}"] + self.foot[ids[-1]].bot
+                want = (yv[f"group:{parent}.T"] + yv[f"group:{parent}.B"]) / 2 - (top + bot) / 2
+            else:
+                want = slack
+            lim = min(want, slack)
+            shift = math.floor(lim + 1e-9) if lim != float("inf") else 0
+            if shift > 0:
+                for v in mem:
+                    yv[v] += shift
+                for i in ids:
+                    self.stack_shift[i] = shift
 
     def _badge_clear_x(self):
         """Slides: the nodes on a badged box's first row sit right of its badge (icon left ≥
@@ -827,6 +868,33 @@ def _explain(m: _Model, axis: str, val, pred) -> List[str]:
     return out
 
 
+def _explain_stacks(m: _Model, val, pred, final) -> List[str]:
+    """Flow columns: per node, the chain that set its y (back to the node above it, a row
+    or the origin), and the align shift."""
+    out = []
+    for (parent, col), ids in m.stacks.items():
+        for k, nid in enumerate(ids):
+            v = f"node:{nid}"
+            stop = {"origin", f"node:{ids[k - 1]}"} if k else {"origin"}
+            chain, u, seen = [], v, set()
+            while u in pred and u not in seen:
+                seen.add(u)
+                c = pred[u]
+                if c.why == "coordinate ≥ 0":
+                    u = c.a
+                    break
+                chain.append(c)
+                u = c.a
+                if u in stop or u.startswith("row:"):
+                    break
+            parts = " + ".join(f"{fmt_num(c.d)} ({c.why}, {c.owner})" for c in reversed(chain)) or "0"
+            sh = m.stack_shift.get(nid)
+            where = "centered in" if m.spec.track(col).align == "center" else "at the bottom of"
+            tail = f"; then {where} {parent} +{fmt_num(sh)}" if sh else ""
+            out.append(f"y flow {col} {nid} = {fmt_num(final.get(v, 0))}: {u} {fmt_num(val.get(u, 0))} + {parts}{tail}")
+    return out
+
+
 # =======================================================================================
 # solve
 
@@ -875,9 +943,10 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
         if not more:
             break
         ycons_in = ycons + more
+    m.align_stacks(ycons, yv)
 
     geom = _geometry(m, xv, yv, note_block)
-    geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred)
+    geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)
     geom.warnings = list(m.warnings)
     return geom
 
@@ -892,6 +961,8 @@ def _node_center(m: _Model, nid: str, axis: str, val) -> float:
         if n.col2:
             return (val[f"col:{n.col}"] + val[f"col:{n.col2}"]) / 2 + n.dx
         return val[f"col:{n.col}"] + n.dx
+    if nid in m.flowc:
+        return val[f"node:{nid}"]
     return val[f"row:{n.row}"] + n.dy
 
 

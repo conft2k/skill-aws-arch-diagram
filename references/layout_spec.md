@@ -56,12 +56,23 @@ and the engine spaces the tracks by what lies between them. Name columns after t
 gap row between the AZs where Users, the IGW and the load balancer sit. Stacked AZ boxes
 get the full AZ gap only when a node of their VPC (or one on its border) sits on a row
 between them; with nothing between, they are just siblings (16px apart). An item is a name
-or `{id, min_gap_before: px, min_w: px, flow: px}`. `min_gap_before` is the least distance
-from the previous track's center to this one's. Two columns whose nodes share no row may
+or `{id, min_gap_before: px, min_w: px, flow: px, align: top|center|bottom}`.
+`min_gap_before` is the least distance from the previous track's center to this one's. Two columns whose nodes share no row may
 land on the same x (only their order is kept) — a column outside the AZ boxes next to
 one inside them (an endpoint on the gap row beside a cache column): give the later one
 `min_gap_before`. `flow: 160` makes a *flow row*: its nodes give `row:` only and are laid
 out in list order at that pitch, centered in their parent (the regional services row).
+On a column, `flow: 110` makes a *flow column*: its nodes give `col:` only and are stacked
+top → bottom in list order, each icon center that pitch below the one above it (or the
+label stack above it + the stack gap, whichever is larger), one stack per parent,
+centered in the parent's height (`align: top` / `bottom` pins it there; `--explain` prints
+a `y flow` line per node).
+A flow column makes no rows, so the nodes beside a VPC stay off its AZ rows and never push
+it down (alb slide: the services beside the VPC; Route 53 at the top of the Cloud).
+`flow: true` takes the mode's pitch (160). A flow-column node takes no `dy` (the stack
+sets its y); an edge into one picks its shape as if it spanned its parent's rows (H to
+a node on any of them), so give `shape:` when it should leave from the top (alb slide
+`users ..> r53`, `shape: VH`); two nodes of one column join with a straight V.
 
 ## groups
 
@@ -115,8 +126,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
 - `label` (required, 14px); `sub`: a string or a list of 12px grey lines under it.
   In a template, `label: {1: RDS Primary, 2: RDS Standby}`.
 - Position: `at: [col, row]`; `at: [b1..b2, main]` centers between two columns (a colspan
-  node, tgw `tgwb`); `col:` alone inside a `per` template; `row:` alone on a flow row
-  (`at: [col, flowrow]` pins one node of that row to a grid column: alb Route 53).
+  node, tgw `tgwb`); `col:` alone inside a `per` template or on a flow column; `row:`
+  alone on a flow row (`at: [col, flowrow]` pins one node of that row to a grid column:
+  alb Route 53; `at: [flowcol, row]` pins one to a grid row).
 - `in: <group>` for containment; leave it out for things outside AWS (Users, Internet,
   Client) — the loader rejects Internet, Direct Connect and Site-to-Site VPN in the Cloud.
 - `on: <vpc>` puts an IGW or VGW on that VPC's border: its column left of the VPC's
@@ -241,7 +253,10 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   overlay over both EC2 columns and one arrow into it; the LB (`in: vpc, at: [pub, main]`)
   and the IGW (`on: vpc, at: [igw, main]`) on the gap row.
 - **Regional services row** (alb, nlb): a flow row, services `in: region, row: svc`, Route
-  53 `in: cloud, at: [r53, svc]` (global); as a column instead (nlb-mtls) `at: [svc, az1]` ….
+  53 `in: cloud, at: [r53, svc]` (global); as a column instead, on the AZ slots (nlb-mtls
+  `at: [svc, az1]` …) or, evenly spaced and free of the AZ rows, a flow column `{id: svc,
+  flow: 110}` beside the VPC with services `in: region, col: svc` and Route 53 `in: cloud,
+  col: r53` on `{id: r53, flow: true, align: top}` (slides/alb).
 - **Trunks**: merge `nat.* -> igw`, fork `igw -> gwlbe.*`, both `trunk: true`.
 - **Numbered flow** (gwlb, nfw, tgw): `step` on the edges + `note.steps`.
 - **Hub and topology** (tgw): `--` edges, `at: [b1..b2, main]` under two spokes, route

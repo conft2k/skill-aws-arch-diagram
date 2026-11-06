@@ -219,6 +219,23 @@ def mini_spec(mode="document"):
     return build("mini", ["igw", "pub", "app"], ["az1", "main", "az2"], groups, nodes, mode)
 
 
+def flowcol_spec(mode="slide", pitch=100, align="center", n=4):
+    """mini_spec plus regional services in a flow column right of the VPC (alb slide)."""
+    base = mini_spec(mode)
+    svc = [("acm", "service/AWS-Certificate-Manager", "ACM", "인증서"),
+           ("waf", "service/AWS-WAF", "AWS WAF", "Web ACL"),
+           ("cw", "service/Amazon-CloudWatch", "CloudWatch", "지표 · 경보"),
+           ("s3", "service/Amazon-Simple-Storage-Service", "S3", "액세스 로그")][:n]
+    groups = [{k: getattr(g, k) for k in ("id", "type", "label", "cidr", "parent", "over", "header", "template",
+                                          "instance")} for g in base.groups.values()]
+    nodes = [{k: getattr(nd, k) for k in ("id", "icon", "label", "sub", "parent", "col", "row", "on", "template",
+                                          "instance")} for nd in base.nodes.values()]
+    nodes += [dict(id=i, icon=ic, label=lb, sub=[sb], parent="region", col="svc", flow_index=k)
+              for k, (i, ic, lb, sb) in enumerate(svc)]
+    return build("flowcol", ["igw", "pub", "app", ("svc", {"flow": pitch, "align": align})],
+                 ["az1", "main", "az2"], groups, nodes, mode)
+
+
 # =======================================================================================
 # The example drafts
 
@@ -615,6 +632,76 @@ class ConstraintTest(unittest.TestCase):
         nb = NoteBlock("panel", w=0, h=140)
         g2 = LS.solve(spec, [], note_block=nb)
         self.assertEqual(g2.canvas_h, g2.drawing.y1 + 16 + 140 + 16)
+
+
+class FlowColumnTest(unittest.TestCase):
+    """Flow columns: col-only nodes stacked top → bottom, aligned in the parent's height,
+    no rows of their own."""
+    IDS = ["acm", "waf", "cw", "s3"]
+
+    def test_stack_pitch_and_center(self):
+        spec = flowcol_spec()
+        g = LS.solve(spec, [])
+        ns = [g.nodes[i] for i in self.IDS]
+        self.assertEqual(len({n.cx for n in ns}), 1)                       # one column
+        self.assertEqual([b.cy - a.cy for a, b in zip(ns, ns[1:])], [100, 100, 100])
+        reg = g.groups["region"].rect
+        self.assertLessEqual(abs((ns[0].icon.y0 + ns[-1].footprint().y1) / 2 - reg.cy), 1)
+        for n in ns:
+            self.assertTrue(contains(reg, n.footprint()), n.id)
+            self.assertTrue(n.cx - spec.S / 2 > g.groups["vpc"].rect.x1, n.id)   # right of the VPC
+        self.assertEqual(check(spec, g), [])
+
+    def test_no_rows_of_its_own(self):
+        """The stack moves no row track and leaves the Region's height to the VPC."""
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode):
+                g0 = LS.solve(mini_spec(mode), [])
+                g = LS.solve(flowcol_spec(mode), [])
+                self.assertEqual(g.rows, g0.rows)
+                self.assertEqual((g.groups["region"].rect.y0, g.groups["region"].rect.y1),
+                                 (g0.groups["region"].rect.y0, g0.groups["region"].rect.y1))
+
+    def test_label_stack_beats_a_small_pitch(self):
+        spec = flowcol_spec(pitch=10)
+        g = LS.solve(spec, [])
+        f = LS._footprint(spec, spec.nodes["acm"])
+        want = f.bot - (-spec.S / 2) + spec.const.stack_gap
+        ns = [g.nodes[i] for i in self.IDS]
+        self.assertEqual([b.cy - a.cy for a, b in zip(ns, ns[1:])], [want] * 3)
+        for a, b in zip(ns, ns[1:]):
+            self.assertGreaterEqual(b.icon.y0 - a.footprint().y1, spec.const.stack_gap)
+
+    def test_align_top_and_bottom(self):
+        top = LS.solve(flowcol_spec(align="top"), [])
+        reg = top.groups["region"].rect
+        inset = K.top_inset("region", top.mode, "icon")
+        self.assertEqual(top.nodes["acm"].icon.y0 - reg.y0, inset)
+        bot = LS.solve(flowcol_spec(align="bottom"), [])
+        mc = K.mode("slide")
+        reg = bot.groups["region"].rect
+        self.assertEqual(reg.y1 - bot.nodes["s3"].last_baseline, mc.label_bottom)
+
+    def test_taller_stack_grows_the_parent_down(self):
+        g0 = LS.solve(mini_spec("slide"), [])
+        g = LS.solve(flowcol_spec(pitch=200), [])
+        self.assertEqual(g.rows, g0.rows)
+        self.assertGreater(g.groups["region"].rect.y1, g0.groups["region"].rect.y1)
+        self.assertEqual(g.nodes["s3"].cy - g.nodes["acm"].cy, 600)
+
+    def test_requirement_on_a_stack_node(self):
+        """A "node:" requirement on the y axis acts on the stacked center (feedback rounds)."""
+        spec = flowcol_spec()
+        g = LS.solve(spec, [Requirement("y", "node:waf", "node:cw", 140, "feedback: text too close", "node:cw")])
+        self.assertGreaterEqual(g.nodes["cw"].cy - g.nodes["waf"].cy, 140)
+
+    def test_explain(self):
+        g = LS.solve(flowcol_spec(), [])
+        lines = [e for e in g.explain if e.startswith("y flow svc")]
+        self.assertEqual(len(lines), 4)
+        self.assertIn("icon inset", lines[0])
+        self.assertIn("flow pitch 100 acm ↓ waf", lines[1])
+        self.assertIn("centered in region", lines[1])
 
 
 class CycleTest(unittest.TestCase):

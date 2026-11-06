@@ -36,7 +36,7 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
   layout_solve.py  (W2)
     solve(spec, reqs, note_block=None) -> Geometry
         Footprints, constraint generation (DESIGN 4.3 items 1-11) + reqs, longest-path
-        solve per axis, hug, border nodes, flow rows, overlays, colspan, canvas. With
+        solve per axis, hug, border nodes, flow rows / columns, overlays, colspan, canvas. With
         note_block it also applies note_block.requirements (W5 passes them inside reqs as
         well; duplicates are harmless) and sizes the canvas for the note (section 4).
         Raises SolveError(problems) on a positive cycle, naming the Requirement.why/owner
@@ -124,7 +124,8 @@ is two Requirements). Variable names (strings):
   "group:<gid>.L" / ".R"         a group rect's left / right edge (x axis)
   "group:<gid>.T" / ".B"         its top / bottom edge (y axis)
   "node:<nid>"                   the node's icon center on that axis (track center + dx/dy,
-                                 a flow-row node's solved center, a border node's border).
+                                 a flow-row node's solved x, a flow-column node's solved y,
+                                 a border node's border).
 W2 maps "node:<nid>" of a colspan node (center between X_b1 and X_b2) conservatively:
 as `a` it uses X_b2, as `b` it uses X_b1, so the requirement holds for any center in
 the span (DESIGN 4.3 #7). Node footprint widths are not variables: a requirer adds the
@@ -259,8 +260,11 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     engine keeps the table value (tests/test_layout_model.py TIGHTER).
  l. Shared interpretations (W1 → W2 / W3): Group.nodes excludes `on` nodes (their col
     counts toward the VPC's parent's cols); `xy` nodes have col / row None; flow-row nodes
-    given a `col` have flow_index None; Edge.src = "edges[i]"; template instances are
-    Group.instance / Node.instance plus the ".n" id suffix.
+    given a `col` (flow-column nodes given a `row`) have flow_index None; a flow-column node
+    has row None and col set (Spec.flow_stacks lists them): its y is a "node:" variable,
+    stacked in spec order, and the router takes its parent's rows as its row range;
+    Edge.src = "edges[i]"; template instances are Group.instance / Node.instance plus the
+    ".n" id suffix.
  m. Group `pad_top` (spec key, px): box top → its first icon / nested box when larger than
     the type's header inset (room for a `points` bus above endpoints, bedrock-dx 88; DESIGN
     "no key for a subnet top inset"). `min_h` grows a box downward, not its top inset.
@@ -359,7 +363,8 @@ class Track:
     index: int                      # position in spec cols / rows, 0-based
     min_gap_before: float = 0.0     # px: center − previous center ≥ this (0 = no extra)
     min_w: float = 0.0              # px: band width ≥ this (cols: width, rows: height)
-    flow: Optional[float] = None    # rows only: pitch (px) of a flow row, None = grid row
+    flow: Optional[float] = None    # pitch (px) of a flow row / flow column, None = grid track
+    align: str = "center"           # flow columns: top | center | bottom in the parent's height
 
 
 @dataclass
@@ -403,13 +408,13 @@ class Node:
     parent: Optional[str] = None    # containing group (`in`); for `on` nodes the VPC's parent; None = top level
     col: Optional[str] = None       # col track; colspan: first track (None = flow-row node)
     col2: Optional[str] = None      # colspan last track (`at: [b1..b2, r]`), None = no span
-    row: Optional[str] = None       # row track (template instances: the instance's `per` row)
+    row: Optional[str] = None       # row track (template instances: the instance's `per` row; None = flow-column node)
     on: Optional[str] = None        # border gateway: the VPC group id it straddles
     side: Optional[str] = None      # `on` nodes: "left" | "right" border (W1 from track indices); phase 2 top|bottom
     dx: float = 0.0                 # px nudges from the grid position
     dy: float = 0.0
     xy: Optional[Tuple[float, float]] = None   # absolute icon center (escape hatch); overrides col/row
-    flow_index: Optional[int] = None   # flow-row node: 0-based order among the row's nodes in the same parent
+    flow_index: Optional[int] = None   # flow-row / flow-column node: 0-based order among the track's nodes in the same parent
     icon_query: Optional[str] = None   # the spec's alias when the icon was given as one (for the summary)
     template: Optional[str] = None
     instance: Optional[int] = None
@@ -523,6 +528,17 @@ class Spec:
     def node_chain(self, nid: str) -> List[str]:
         """The groups containing a node, innermost first."""
         return self.ancestors(self.nodes[nid].parent)
+
+    def flow_stacks(self) -> Dict[Tuple[Optional[str], str], List[str]]:
+        """Flow columns: {(parent, col track): node ids top → bottom} — the nodes that give
+        `col:` only (row None, outside a template), in flow_index order (decision l)."""
+        out: Dict[Tuple[Optional[str], str], List[str]] = {}
+        for n in self.nodes.values():
+            if n.row is None and n.col is not None and n.col2 is None and n.xy is None and n.on is None:
+                out.setdefault((n.parent, n.col), []).append(n.id)
+        for ids in out.values():
+            ids.sort(key=lambda i: self.nodes[i].flow_index or 0)
+        return out
 
 
 # =======================================================================================

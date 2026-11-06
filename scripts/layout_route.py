@@ -9,7 +9,9 @@ The contract (signatures, z layers, ids) is layout_model's docstring; numbers ar
 Shape choice (DESIGN 4.5) is a pure function of the Spec, recomputed by plan() and draw():
   0. `points` → "P"; `shape`; from_side / to_side imply one (both horizontal → H/HVH, …).
   1. row ranges overlap → H; column ranges overlap → V (a colspan node covers its whole
-     span, a group its track range). Straight edges mark the node sides they use.
+     span, a group its track range, a flow-row node its parent's columns, a flow-column
+     node its parent's rows; two nodes of one flow column are apart by stack order).
+     Straight edges mark the node sides they use.
   2. (a colspan is caught by 1: its V / H to a node under one of its tracks draws with a
      jog through a free bend, like a VHV.)
   3. both facing horizontal sides free (columns apart) → HVH, the vertical in a gutter.
@@ -126,7 +128,12 @@ def _end(spec: Spec, eid: str, kind: str, ci, ri) -> _End:
     elif n.parent and spec.groups[n.parent].cols:          # flow-row node: somewhere in its parent
         pc = spec.groups[n.parent].cols
         c = (ci[pc[0]], ci[pc[1]])
-    r = (ri[n.row], ri[n.row]) if n.row is not None else None
+    r = None
+    if n.row is not None:
+        r = (ri[n.row], ri[n.row])
+    elif n.parent and spec.groups[n.parent].rows:          # flow-column node: somewhere in its parent
+        pr = spec.groups[n.parent].rows
+        r = (ri[pr[0]], ri[pr[1]])
     return _End(eid, kind, c, r)
 
 
@@ -188,11 +195,16 @@ def _topology(spec: Spec) -> Dict[int, _Topo]:
             cache[(eid, kind)] = _end(spec, eid, kind, ci, ri)
         return cache[(eid, kind)]
 
+    stack = {nid: (key, k) for key, ids in spec.flow_stacks().items() for k, nid in enumerate(ids)}
     occ = set()
     out: Dict[int, _Topo] = {}
     for e in spec.edges:
         A, B = end(e.a, e.a_kind), end(e.b, e.b_kind)
         dx, dy = _rel(A.cext, B.cext), _rel(A.rext, B.rext)
+        ka = stack.get(e.a) if e.a_kind == "node" else None
+        kb = stack.get(e.b) if e.b_kind == "node" else None
+        if ka and kb and ka[0] == kb[0]:                # two nodes of one flow column: by stack order
+            dy = 1 if kb[1] > ka[1] else -1
         shape = _forced(e, dx, dy)
         note = "override" if shape else ""
         if shape is None:

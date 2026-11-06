@@ -5,6 +5,7 @@
 """
 import copy
 import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -147,6 +148,78 @@ class Feedback(unittest.TestCase):
         extra, skip = {}, {}
         layout.feedback(b, [layout.Problem(iss, ["edge:2", "node:tgw"], [txt, seg])], extra, skip)
         self.assertEqual((extra, skip), ({}, {2: 1}))
+
+
+def flow_column_spec():
+    """A slide VPC with ACM, CloudWatch and S3 in a flow column right of it (col: only), and
+    edges into the column and between two of its nodes."""
+    def n(i, icon, label, **kw):
+        return dict(id=i, icon=icon, label=label, **kw)
+    return {
+        "name": "fc", "mode": "slide",
+        "cols": ["users", "igw", "pub", "app", {"id": "svc", "flow": 100}],
+        "rows": ["az1", "main", "az2"],
+        "groups": [{"id": "cloud", "type": "cloud"},
+                   {"id": "region", "type": "region", "label": "Region", "in": "cloud"},
+                   {"id": "vpc", "type": "vpc", "label": "VPC", "in": "region"},
+                   {"id": "az", "type": "az", "in": "vpc", "per": ["az1", "az2"]},
+                   {"id": "pubsn", "type": "public", "label": "Public subnet", "in": "az"},
+                   {"id": "appsn", "type": "private", "label": "App subnet", "in": "az"}],
+        "nodes": [n("users", "resource/Users", "Users", at=["users", "main"]),
+                  n("igw", "resource/Amazon-VPC_Internet-Gateway", "IGW", on="vpc", at=["igw", "main"]),
+                  n("alb", "resource/Elastic-Load-Balancing_Application-Load-Balancer", "ALB", at=["pub", "main"],
+                    **{"in": "vpc"}),
+                  n("nat", "resource/Amazon-VPC_NAT-Gateway", "NAT gateway", col="pub", **{"in": "pubsn"}),
+                  n("ec2", "service/Amazon-EC2", "EC2", col="app", **{"in": "appsn"}),
+                  n("acm", "service/AWS-Certificate-Manager", "ACM", sub="인증서", col="svc", **{"in": "region"}),
+                  n("cw", "service/Amazon-CloudWatch", "CloudWatch", sub="지표 · 로그", col="svc",
+                    **{"in": "region"}),
+                  n("s3", "service/Amazon-Simple-Storage-Service", "S3", sub="로그 보관", col="svc",
+                    **{"in": "region"})],
+        "edges": [{"e": "users -> igw", "label": "HTTPS :443"}, {"e": "igw -> alb"},
+                  {"e": "alb -> ec2.*", "label": "HTTP :80"}, {"e": "ec2.* ..> cw", "verb": "지표"},
+                  {"e": "cw ..> s3"}],
+    }
+
+
+class FlowColumn(unittest.TestCase):
+    def test_full_run_checks_clean(self):
+        """layout.py on a spec with a flow column: Layout OK, the stack in spec order under
+        one x, a straight vertical line between two of its nodes, --explain lines per node."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "fc.layout.json"
+            src.write_text(json.dumps(flow_column_spec(), ensure_ascii=False), encoding="utf-8")
+            out = Path(tmp) / "fc.draft.svg"
+            rc, text = CLI.run_cli(self, src, "-o", out, "--explain")
+            self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+            self.assertEqual(CL.run_file(str(out), False)[0][-1], "Layout OK")
+            data = out.read_bytes()
+        self.assertEqual(len([ln for ln in text.splitlines() if ln.startswith("  y flow svc ")]), 3, text)
+        spec, b = built(flow_column_spec())
+        k = next(e.n for e in spec.edges if (e.a, e.b) == ("cw", "s3"))
+        self.assertEqual(layout.layout_route.shapes(spec)[k], "V")      # by stack order, not H
+        g = next(e for e in ET.fromstring(data).iter(NS + "g") if e.get("id") == f"edge:{k}")
+        ln, = list(g)
+        self.assertEqual((ln.tag, ln.get("x1")), (NS + "line", ln.get("x2")))
+        ns = [b.geom.nodes[i] for i in ("acm", "cw", "s3")]
+        self.assertEqual(len({n.cx for n in ns}), 1)
+        self.assertTrue(ns[0].cy < ns[1].cy < ns[2].cy)
+
+    def test_feedback_widens_the_stack_pitch(self):
+        """A y problem between two nodes of a flow column widens their pitch, not a row gap."""
+        spec, b = built(flow_column_spec())
+        g = b.geom
+        cw, s3 = g.nodes["cw"], g.nodes["s3"]
+        txt = {"box": (cw.cx - 20, cw.last_baseline - 10, cw.cx + 20, cw.last_baseline + 3), "el": None}
+        ico = {"box": (s3.icon.x0, s3.icon.y0, s3.icon.x1, s3.icon.y1), "el": None}
+        iss = CL.Issue("TEXT NEAR ICON", "TEXT NEAR ICON ...", [], {"t": txt, "i": ico})
+        extra = {}
+        self.assertTrue(layout.feedback(b, [layout.Problem(iss, ["node:cw", "node:s3"], [txt, ico])], extra, {}))
+        (key, r), = extra.items()
+        self.assertEqual(key, ("y", "node:cw", "node:s3"))
+        self.assertAlmostEqual(r.d, s3.cy - cw.cy + layout.WIDEN)
+        tip = layout.spec_fix(spec, g, layout.Problem(iss, ["node:cw", "node:s3"], [txt, ico]))
+        self.assertIn(f"cols: {{id: svc, flow: {M.fmt_num(s3.cy - cw.cy + layout.WIDEN)}}}", tip)
 
 
 class LabelOnLine(unittest.TestCase):

@@ -50,7 +50,8 @@ LB_ICONS = ("service/Elastic-Load-Balancing", "service/AWS-Network-Firewall")
 LB_PREFIX = "resource/Elastic-Load-Balancing_"
 
 TOP_KEYS = ("name", "mode", "title", "S", "font", "cols", "rows", "groups", "nodes", "edges", "note", "raw")
-TRACK_KEYS = ("id", "min_gap_before", "min_w", "flow")
+TRACK_KEYS = ("id", "min_gap_before", "min_w", "flow", "align")
+FLOW_ALIGN = ("top", "center", "bottom")   # a flow column in its parent's height
 GROUP_KEYS = ("id", "type", "label", "cidr", "in", "per", "only", "over", "span", "pad", "pad_top", "pad_left",
               "pad_right", "min_w", "min_h",
               "dash", "header")
@@ -364,7 +365,7 @@ class _Loader:
                 if isinstance(it, str):
                     it = {"id": it}
                 if not isinstance(it, dict):
-                    self.err(loc, f"expected a track name or {{id, min_gap_before, min_w, flow}}, got {it!r}")
+                    self.err(loc, f"expected a track name or {{id, min_gap_before, min_w, flow, align}}, got {it!r}")
                     continue
                 self.keys(loc, it, TRACK_KEYS)
                 tid = it.get("id")
@@ -381,14 +382,23 @@ class _Loader:
                             setattr(t, k, float(it[k]))
                 if "flow" in it:
                     fl = it["flow"]
-                    if axis == "col":
-                        self.err(loc, "flow: only rows can be flow rows")
-                    elif fl is True:
+                    if fl is True:
                         t.flow = float(K.mode(self.spec.mode).flow_pitch)
                     elif _num(fl) and fl > 0:
                         t.flow = float(fl)
                     elif fl not in (False, None):
                         self.err(loc, f"flow: expected a pitch in px (e.g. 160) or true, got {fl!r}")
+                if "align" in it:
+                    al = it["align"]
+                    if axis == "row":
+                        self.err(loc, "align: only a flow column takes align (top | center | bottom); "
+                                      "a flow row is centered in its parent")
+                    elif t.flow is None:
+                        self.err(loc, f"align: {tid!r} is not a flow column; give `flow: <pitch>` too")
+                    elif al not in FLOW_ALIGN:
+                        self.err(loc, f"align: expected one of {' | '.join(FLOW_ALIGN)}, got {al!r}")
+                    else:
+                        t.align = al
                 if tid in self.track_by:
                     other = self.track_by[tid]
                     self.err(loc, f"duplicate track {tid!r} (already a {other.axis} track); "
@@ -837,10 +847,25 @@ class _Loader:
         flow = r["row"] is not None and self.track_by[r["row"]].flow is not None
         if flow:        # `row:` only → placed in list order; with a col it keeps that grid column
             return
+        fcol = r["col"] is not None and self.track_by[r["col"]].flow is not None
+        if rowspec is None and fcol and r["col2"] is None:
+            # `col:` only on a flow column → stacked top → bottom in list order
+            if r["on"] is not None:
+                self.err(loc, f"on: a border node needs a grid row; {r['col']!r} is a flow column "
+                              "(give `at: [col, row]`)")
+            if "dy" in d:
+                self.err(loc, f"dy: a node on the flow column {r['col']!r} takes its y from the stack; "
+                              "drop dy (the column's `flow:` pitch spaces the nodes)")
+            return
         if rowspec is None and colspec is None:
-            self.err(loc, "at: required (`at: [col, row]`, `row:` for a flow row, or `xy:`)")
+            self.err(loc, "at: required (`at: [col, row]`, `row:` for a flow row, `col:` for a flow "
+                          "column, or `xy:`)")
+        elif rowspec is None and r["col2"] is not None:
+            self.err(loc, f"{rowkey}: required (a span {colspec!r} needs a row: `at: [{colspec}, <row>]`)")
         elif rowspec is None:
-            self.err(loc, f"{rowkey}: required (only nodes in a per template take their row from the instance)")
+            self.err(loc, f"{rowkey}: required (only nodes in a per template or on a flow column take no row"
+                          + (f"; {r['col']!r} is a grid column: give it `flow: <pitch>` to stack its nodes"
+                             if r["col"] is not None and not fcol else "") + ")")
         elif colspec is None:
             self.err(loc, "col: required (only flow-row nodes have no column)")
 
@@ -968,14 +993,20 @@ class _Loader:
                 sp.nodes[iid] = node
                 if parent is not None and parent in sp.groups and r["on"] is None:
                     sp.groups[parent].nodes.append(iid)        # `in` nodes only, not border nodes
-        # flow-row order among the row's nodes in the same parent
+        # flow-row (flow-column) order among the track's nodes in the same parent
         seen: Dict[Tuple[str, Optional[str]], int] = {}
         for node in sp.nodes.values():
-            if node.row is not None and node.col is None and node.xy is None \
-                    and self.track_by[node.row].flow is not None:
+            if node.xy is not None:
+                continue
+            if node.row is not None and node.col is None and self.track_by[node.row].flow is not None:
                 key = (node.row, node.parent)
-                node.flow_index = seen.get(key, 0)
-                seen[key] = node.flow_index + 1
+            elif node.col is not None and node.row is None and node.col2 is None and node.on is None \
+                    and self.track_by[node.col].flow is not None:
+                key = (node.col, node.parent)
+            else:
+                continue
+            node.flow_index = seen.get(key, 0)
+            seen[key] = node.flow_index + 1
 
     def pattern(self, loc: str, key: str, pat, want=("node", "group")) -> Optional[List[Tuple[Optional[int], str]]]:
         """An endpoint / member pattern → [(instance n or None, expanded id)]."""

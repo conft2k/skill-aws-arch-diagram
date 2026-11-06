@@ -12,7 +12,8 @@ Pipeline (the contract is layout_model.py's docstring, section 1):
   (place and width fixed) → route.draw → emit → check_layout in process.
 The check applies check_layout --fix's fixed-answer repairs, then answers what is left by
 kind and solves again (at most 5 rounds): SHORT ARROW, LINE HUGS BORDER and a label or
-badge crowded by a border, icon or another label widen the column / row gap it sits in;
+badge crowded by a border, icon or another label widen the column / row gap it sits in
+(in a flow column, which has no rows, the pitch between its two nodes around the spot);
 a connector over a label or icon takes that edge's next routing candidate; an edge the
 router could not draw in its planned shape widens the gaps it spans. The round with the
 fewest problems is written.
@@ -20,8 +21,8 @@ fewest problems is written.
 Output: a summary (canvas, the size 12px text gets on a 16:9 slide, the note, the icon
 refs, warnings), then check_layout's problem lines, each with the spec items behind it and
 a spec change to try, and last `Layout OK` or `N problems`. Exit status 0 when the draft
-is clean, 1 when problems remain or the spec is invalid. --explain also prints, per track,
-the chain of constraints that set its position. --no-check skips the check (and the
+is clean, 1 when problems remain or the spec is invalid. --explain also prints, per track
+(and per flow-column node), the chain of constraints that set its position. --no-check skips the check (and the
 feedback rounds). The same spec always gives a byte-identical draft.
 
 Needs PyYAML for .yaml specs (`uv run --with pyyaml python3 scripts/layout.py ...` when it
@@ -326,6 +327,20 @@ def bracket(geom: Geometry, axis: str, v: float) -> Optional[Tuple[str, str, flo
     return None
 
 
+def stack_bracket(spec: Spec, geom: Geometry, owners: Sequence[str], v: float) -> Optional[Tuple[str, str, float, str]]:
+    """A y spot in a flow column one of `owners` sits in: the neighbouring nodes (a, b) of
+    that stack with a ≤ v < b, their distance and the column (flow columns have no rows)."""
+    nids = {M.split_eid(o)[1] for o in owners if M.split_eid(o)[0] == "node"}
+    for (_, col), ids in spec.flow_stacks().items():
+        if not nids & set(ids):
+            continue
+        for a, c in zip(ids, ids[1:]):
+            pa, pc = geom.nodes[a].cy, geom.nodes[c].cy
+            if pa <= v < pc:
+                return f"node:{a}", f"node:{c}", pc - pa, col
+    return None
+
+
 def edge_of(owner: str) -> Optional[Tuple[int, str]]:
     kind, ref, part = M.split_eid(owner)
     if kind == "edge" and ref.isdigit():
@@ -339,12 +354,12 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
     changed = False
     widened = set()
 
-    def widen(axis: str, v: float, why: str, owner: str):
+    def widen(axis: str, v: float, why: str, owner: str, owners: Sequence[str] = ()):
         nonlocal changed
-        br = bracket(b.geom, axis, v)
+        br = (stack_bracket(b.spec, b.geom, owners, v) if axis == "y" else None) or bracket(b.geom, axis, v)
         if br is None:
             return
-        a, c, cur = br
+        a, c, cur = br[:3]
         key = (axis, a, c)
         if key in widened:
             return
@@ -368,7 +383,7 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
                 continue
         w = where_to_widen(p)
         if w:
-            widen(w[0], w[1], k.lower(), owner)
+            widen(w[0], w[1], k.lower(), owner, p.owners)
     # an edge the router drew in another shape than plan() reserved space for: widen the
     # gaps its planned route crosses (DESIGN 4.5 "re-solve")
     for wmsg in b.warnings:
@@ -430,7 +445,10 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
                                                                        "LINE HUGS BORDER"):
             tips.append(f"{spec.groups[ref].src} {ref}: pad / min_w / min_h")
     w = where_to_widen(p)
-    if w:
+    st = stack_bracket(spec, geom, p.owners, w[1]) if w and w[0] == "y" else None
+    if st:
+        tips.append(f"cols: {{id: {st[3]}, flow: {M.fmt_num(st[2] + WIDEN)}}}")
+    elif w:
         br = bracket(geom, w[0], w[1])
         if br:
             a, b, cur = br
@@ -576,7 +594,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if sp:
         print(sp)
         if not a.explain:              # the evidence: what set each track on the axis that overflows
-            pre = "x col" if "too wide" in sp else "y row"
+            pre = ("x col",) if "too wide" in sp else ("y row", "y flow")
             for line in b.geom.explain:
                 if line.startswith(pre):
                     print(f"  {line}")
