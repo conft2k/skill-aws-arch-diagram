@@ -19,7 +19,10 @@ Shape choice (DESIGN 4.5) is a pure function of the Spec, recomputed by plan() a
   5. the source's facing horizontal side taken → VH, except VHV when the VH's vertical
      leg would run through a node in the source's column (tgw: a hub's lower spokes
      through its route table) or the source is a hub (both horizontal sides taken) and
-     the line is headless topology ("--", "..": tgw's upper spokes).
+     the line is headless topology ("--", "..": tgw's upper spokes). Rules 3-5 give way to
+     VHV for headless lines from one node toward one vertical side that reach both its
+     left and its right (a fan of spokes), so the two sides mirror (a hub with one free
+     horizontal side would otherwise get a VH on one side and a HVH on the other).
   6. otherwise VHV.
 plan() also keeps a vertical leg at a node right of the headers of the boxes it enters
 or leaves through their top, a HVH label's run before the bend, and an overlay a line
@@ -222,6 +225,15 @@ def _topology(spec: Spec) -> Dict[int, _Topo]:
                 occ.add((e.a, sa))
             if e.b_kind == "node" and sb:
                 occ.add((e.b, sb))
+    # fans: a node's headless diagonal lines toward one vertical side, by horizontal side
+    fan: Dict[Tuple[str, int], set] = {}
+    for e in spec.edges:
+        t = out[e.n]
+        if t.dx in (1, -1) and t.dy in (1, -1) and not (e.head_end or e.head_start) and not e.points:
+            if e.a_kind == "node":
+                fan.setdefault((e.a, t.dy), set()).add(t.dx)
+            if e.b_kind == "node":
+                fan.setdefault((e.b, -t.dy), set()).add(-t.dx)
     for e in spec.edges:
         t = out[e.n]
         if t.shape is not None:
@@ -246,6 +258,12 @@ def _topology(spec: Spec) -> Dict[int, _Topo]:
                     t.shape, t.note = VH, "rule 5: source side taken"
             else:
                 t.shape, t.note = VHV, "rule 6"
+            if t.shape != VHV and not (e.head_end or e.head_start) and (
+                    len(fan.get((e.a, dy), ())) == 2 or len(fan.get((e.b, -dy), ())) == 2):
+                # headless spokes leaving one node up (or down) to both sides: every one
+                # VHV, out of that node's top (bottom), so the two sides mirror (slide tgw
+                # TGW B: VH into DR VPC's side, HVH into Analytics VPC's otherwise)
+                t.shape, t.note = VHV, f"rule 5: fan of spokes to both sides (topology; not {t.shape})"
         else:
             t.shape, t.note = VHV, "rule 6 (position unknown)"
     for e in spec.edges:

@@ -302,6 +302,31 @@ class Shapes(unittest.TestCase):
         self.assertIn("cross a node", notes["dev"])
         self.assertIn("hub", notes["svcs"])
 
+    def test_fan_of_spokes_mirrors(self):
+        """A node with headless spokes up to both its left and its right gets VHV on both,
+        even with one horizontal side free (slide tgw TGW B on its own column between DR
+        and Analytics VPC, the peering line on its left): not VH on one side and HVH on
+        the other. With arrowheads, or spokes to one side only, the old rules stand."""
+        spec = layout_spec.load({
+            "name": "fan", "mode": "slide", "cols": ["peer", "b1", "bm", "b2"], "rows": ["top", "main"],
+            "groups": [{"id": "cloud", "type": "cloud"}, {"id": "rb", "type": "region", "in": "cloud"}],
+            "nodes": [{"id": "peer", "icon": "resource/Amazon-VPC_Peering-Connection", "label": "peer", "in": "cloud",
+                       "at": ["peer", "main"]},
+                      {"id": "tgwb", "icon": "service/AWS-Transit-Gateway", "label": "TGW B", "in": "rb",
+                       "at": ["bm", "main"]},
+                      {"id": "dr", "icon": "service/Amazon-Virtual-Private-Cloud", "label": "DR", "in": "rb",
+                       "at": ["b1", "top"]},
+                      {"id": "ana", "icon": "service/Amazon-Virtual-Private-Cloud", "label": "Analytics", "in": "rb",
+                       "at": ["b2", "top"]}],
+            "edges": [{"e": "peer -- tgwb"}, {"e": "tgwb -- dr"}, {"e": "ana -- tgwb"}]})
+        topo = R._topology(spec)
+        self.assertEqual([topo[n].shape for n in (1, 2)], ["VHV", "VHV"])
+        self.assertIn("fan of spokes", topo[1].note)
+        self.assertIn("not VH", topo[1].note)
+        for e in spec.edges[1:]:
+            e.op = "->"
+        self.assertEqual([R._topology(spec)[n].shape for n in (1, 2)], ["VH", "HVH"])
+
     def test_users_route53_is_vh(self):
         spec = layout_spec.load(spec_path("alb"))
         self.assertEqual(R.shapes(spec)[4], "VH")

@@ -187,7 +187,8 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   label on its line over a background rect in the top layer, then (last) on the other
   side, and warns either way — widen that side (`min_gap_before`, `pad`, `min_w`).
 - The shape is picked by rule (straight when the ends share a row or column, else HVH /
-  VHV / HV / VH by which sides are free). Override only when the render shows a bad path:
+  VHV / HV / VH by which sides are free; headless spokes from one node up — or down — to
+  both its left and its right are all VHV, so a hub's two sides mirror). Override only when the render shows a bad path:
   `shape: H|V|HVH|VHV|HV|VH`, `bend_x` / `bend_y` (an expression or `gap`), `from_side` /
   `to_side` (`left|right|top|bottom`), `from_offset` / `to_offset` (px along the side),
   `points: [[x, y], …]` (the whole polyline, ends included; `e:` still names the ends).
