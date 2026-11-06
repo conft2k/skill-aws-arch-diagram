@@ -82,8 +82,8 @@
   <text x="420" y="458" font-size="14" text-anchor="middle" fill="#232F3E">IGW</text>
   <!-- main path: client → IGW → NLB (client certificate checked) → trunk → EC2 -->
   <line x1="204" y1="416" x2="392" y2="416" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <circle cx="282" cy="402" r="10" fill="#232F3E"/><text x="282" y="406" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
-  <text x="282" y="432" font-size="12" text-anchor="middle" fill="#232F3E">HTTPS :443</text>
+  <circle cx="246" cy="402" r="10" fill="#232F3E"/><text x="246" y="406" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <text x="295" y="407" font-size="12" text-anchor="middle" fill="#232F3E">HTTPS :443</text>
   <line x1="448" y1="416" x2="505" y2="416" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
   <line x1="561" y1="416" x2="642" y2="416" stroke="#232F3E" stroke-width="1.5"/>
   <circle cx="668" cy="416" r="10" fill="#232F3E"/><text x="668" y="420" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>

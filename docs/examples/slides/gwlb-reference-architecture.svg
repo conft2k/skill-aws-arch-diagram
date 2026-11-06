@@ -119,12 +119,12 @@
   <polyline points="778,296 452,296 452,396" fill="none" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
   <!-- GENEVE is only GWLB ⇄ appliances -->
   <line x1="834" y1="288" x2="926" y2="288" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
-  <text x="880" y="304" font-size="12" text-anchor="middle" fill="#232F3E">GENEVE :6081</text>
+  <text x="880" y="280" font-size="12" text-anchor="middle" fill="#232F3E">GENEVE :6081</text>
 
   <!-- numbered steps -->
   <circle cx="326" cy="274" r="10" fill="#232F3E"/><text x="326" y="278" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
   <circle cx="718" cy="266" r="10" fill="#232F3E"/><text x="718" y="270" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
-  <circle cx="880" cy="274" r="10" fill="#232F3E"/><text x="880" y="278" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <circle cx="880" cy="302" r="10" fill="#232F3E"/><text x="880" y="306" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
   <circle cx="544" cy="180" r="10" fill="#232F3E"/><text x="544" y="184" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
   <circle cx="544" cy="410" r="10" fill="#232F3E"/><text x="544" y="414" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
 

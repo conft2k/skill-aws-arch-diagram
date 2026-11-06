@@ -126,7 +126,7 @@
   <line x1="612" y1="642" x2="423" y2="642" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
   <text x="553" y="634" font-size="12" text-anchor="middle" fill="#545B64">아웃바운드</text>
   <line x1="976" y1="392" x2="976" y2="614" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
-  <text x="966" y="481" font-size="12" text-anchor="end" fill="#545B64">동기식 복제</text>
+  <text x="986" y="481" font-size="12" text-anchor="start" fill="#545B64">동기식 복제</text>
 
   <!-- note panel: full canvas width minus 16px each side (x=16, w=1078), 16px below the AWS Cloud box; one summary row, baseline panel.y + 26, canvas ends 16px below the panel -->
   <rect x="16" y="786" width="1078" height="44" fill="#F8F9F9" stroke="#D5DBDB" stroke-width="1"/>

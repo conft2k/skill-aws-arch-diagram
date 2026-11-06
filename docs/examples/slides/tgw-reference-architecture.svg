@@ -20,14 +20,14 @@
   <text x="230" y="296" font-size="14" text-anchor="middle" fill="#232F3E">Internet</text>
   <line x1="130" y1="254" x2="202" y2="254" stroke="#232F3E" stroke-width="1.5"/>
   <line x1="258" y1="254" x2="308" y2="254" stroke="#232F3E" stroke-width="1.5"/>
-  <text x="283" y="270" font-size="12" text-anchor="middle" fill="#232F3E">IPsec</text>
+  <text x="283" y="248" font-size="12" text-anchor="middle" fill="#232F3E">IPsec</text>
 
   <!-- Site-to-Site VPN outside the AWS Cloud; its VPN attachment line runs into TGW A
-       (the type label sits below the line because step 2 takes the space above) -->
+       (step 2 and the type label side by side above the line) -->
   <image href="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB3aWR0aD0iODBweCIgaGVpZ2h0PSI4MHB4IiB2aWV3Qm94PSIwIDAgODAgODAiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayI+CiAgICA8dGl0bGU+SWNvbi1BcmNoaXRlY3R1cmUvNjQvQXJjaF9BV1MtU2l0ZS10by1TaXRlLVZQTl82NDwvdGl0bGU+CiAgICA8ZyBpZD0iSWNvbi1BcmNoaXRlY3R1cmUvNjQvQXJjaF9BV1MtU2l0ZS10by1TaXRlLVZQTl82NCIgc3Ryb2tlPSJub25lIiBzdHJva2Utd2lkdGg9IjEiIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCI+CiAgICAgICAgPGcgaWQ9Ikljb24tQXJjaGl0ZWN0dXJlLUJHLzY0L05ldHdvcmtpbmctQ29udGVudC1EZWxpdmVyeSIgZmlsbD0iIzhDNEZGRiI+CiAgICAgICAgICAgIDxyZWN0IGlkPSJSZWN0YW5nbGUiIHg9IjAiIHk9IjAiIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCI+PC9yZWN0PgogICAgICAgIDwvZz4KICAgICAgICA8ZyBpZD0iSWNvbi1TZXJ2aWNlLzY0L0FXUy1TaXRlLXRvLVNpdGUtVlBOXzY0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNC42MDAwMDAsIDEyLjAwMDAwMCkiIGZpbGw9IiNGRkZGRkYiPgogICAgICAgICAgICA8cGF0aCBkPSJNMTYuNDE0LDEyIEMxNi40MTQsNi40ODYgMjAuOSwyIDI2LjQxNCwyIEMzMS45MjgsMiAzNi40MTQsNi40ODYgMzYuNDE0LDEyIEwzNi40MTQsMTMgTDM4LjQxNCwxMyBMMzguNDE0LDEyIEMzOC40MTQsNS4zODMgMzMuMDMxLDAgMjYuNDE0LDAgQzE5Ljc5NywwIDE0LjQxNCw1LjM4MyAxNC40MTQsMTIgTDE0LjQxNCwxMyBMMTYuNDE0LDEzIEwxNi40MTQsMTIgWiBNMjMuNDE0LDM4IEMyMy40MTQsMzkuNjU0IDI0Ljc2LDQxIDI2LjQxNCw0MSBDMjguMDY4LDQxIDI5LjQxNCwzOS42NTQgMjkuNDE0LDM4IEMyOS40MTQsMzYuMzQ2IDI4LjA2OCwzNSAyNi40MTQsMzUgQzI0Ljc2LDM1IDIzLjQxNCwzNi4zNDYgMjMuNDE0LDM4IEwyMy40MTQsMzggWiBNMjEuNDE0LDM4IEMyMS40MTQsMzUuMjQzIDIzLjY1NywzMyAyNi40MTQsMzMgQzI5LjE3MSwzMyAzMS40MTQsMzUuMjQzIDMxLjQxNCwzOCBDMzEuNDE0LDQwLjQxNSAyOS42OTMsNDIuNDM0IDI3LjQxNCw0Mi44OTkgTDI3LjQxNCw0OSBMMjUuNDE0LDQ5IEwyNS40MTQsNDIuODk5IEMyMy4xMzUsNDIuNDM0IDIxLjQxNCw0MC40MTUgMjEuNDE0LDM4IEwyMS40MTQsMzggWiBNMTAuNDE0LDU0IEw0Mi40MTQsNTQgTDQyLjQxNCwyOCBMMTAuNDE0LDI4IEwxMC40MTQsNTQgWiBNMzguNDE0LDI2IEw0NC40MTQsMjYgTDQ0LjQxNCw1NiBMOC40MTQsNTYgTDguNDE0LDI2IEwxNC40MTQsMjYgTDE0LjQxNCwyMCBMMTYuNDE0LDIwIEwxNi40MTQsMjYgTDM2LjQxNCwyNiBMMzYuNDE0LDIwIEwzOC40MTQsMjAgTDM4LjQxNCwyNiBaIE01Mi44MjgsMTcgTDQ2LjEyMSwyMy43MDcgTDQ0LjcwNywyMi4yOTMgTDQ5LDE4IEwzLjgyOCwxOCBMOC4xMjEsMjIuMjkzIEw2LjcwNywyMy43MDcgTDMuNTUyNzEzNjhlLTE1LDE3IEw2LjcwNywxMC4yOTMgTDguMTIxLDExLjcwNyBMMy44MjgsMTYgTDQ5LDE2IEw0NC43MDcsMTEuNzA3IEw0Ni4xMjEsMTAuMjkzIEw1Mi44MjgsMTcgWiIgaWQ9IkFXUy1TaXRlLXRvLVNpdGUtVlBOXzY0X1NxdWlkIj48L3BhdGg+CiAgICAgICAgPC9nPgogICAgPC9nPgo8L3N2Zz4=" x="312" y="230" width="48" height="48"/>
   <text x="336" y="296" font-size="14" text-anchor="middle" fill="#232F3E">Site-to-Site VPN</text>
   <line x1="364" y1="254" x2="542" y2="254" stroke="#232F3E" stroke-width="1.5"/>
-  <text x="478" y="268" font-size="12" text-anchor="middle" fill="#545B64">VPN attachment</text>
+  <text x="445" y="248" font-size="12" fill="#545B64">VPN attachment</text>
 
   <!-- ===== AWS Cloud ===== -->
   <rect x="406" y="16" width="682" height="482" fill="none" stroke="#232F3E" stroke-width="2"/>
@@ -104,8 +104,8 @@
   <polyline points="970,226 970,214 1020,214 1020,186" fill="none" stroke="#232F3E" stroke-width="1.5"/>
 
   <!-- numbered steps (same placement as the document version): bottom 4px above each hop's own line -->
-  <circle cx="283" cy="240" r="10" fill="#232F3E"/><text x="283" y="244" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
-  <circle cx="478" cy="240" r="10" fill="#232F3E"/><text x="478" y="244" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <circle cx="283" cy="268" r="10" fill="#232F3E"/><text x="283" y="272" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <circle cx="429" cy="240" r="10" fill="#232F3E"/><text x="429" y="244" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
   <circle cx="738" cy="240" r="10" fill="#232F3E"/><text x="738" y="244" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
   <circle cx="925" cy="200" r="10" fill="#232F3E"/><text x="925" y="204" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
 
