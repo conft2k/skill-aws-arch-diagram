@@ -467,6 +467,10 @@ def summary(spec: Spec, b: Build, out_path: Path) -> List[str]:
             lines.append(f"  alias {n.icon_query!r} → {n.icon} ({n.src})")
     for w in spec.warnings + g.warnings + b.warnings:
         lines.append(f"warning: {w}")
+    if spec.mode == "document" and W > K.DOC_WIDE:
+        lines.append(f"warning: canvas {M.fmt_num(W)} wide (> {K.DOC_WIDE}): on a ~900 px page 12px text comes out "
+                     f"at {12 * 900 / W:.1f}px — fold the longest row: give a branch or a later stage its own row "
+                     "(a lane below the main line, its flow still left → right) instead of more columns")
     return lines
 
 

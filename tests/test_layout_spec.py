@@ -349,6 +349,22 @@ class ExampleSpecs(unittest.TestCase):
         self.assertEqual([(e.a, e.b) for e in s.edges if e.b.startswith(("writer", "reader"))],
                          [("ec2.1", "writer.1"), ("ec2.2", "reader.2")])
 
+    def test_folded_hop_warns(self):
+        """A flow sub-resource with its own icon written into its service node's caption warns;
+        the service's own resource (an SNS topic, an event bus) does not."""
+        d = base()
+        d["nodes"] += [{"id": "ddb", "icon": "service/Amazon-DynamoDB", "label": "DynamoDB",
+                        "sub": ["Orders · Streams 켬"], "at": ["c", "az1"], "in": "region"},
+                       {"id": "bus", "icon": "resource/Amazon-EventBridge_Custom-Event-Bus", "label": "EventBridge",
+                        "sub": ["orders 버스", "규칙 → 2 대상"], "at": ["c", "az2"], "in": "region"},
+                       {"id": "sns", "icon": "service/Amazon-Simple-Notification-Service", "label": "SNS",
+                        "sub": ["토픽 order-status"], "at": ["a", "az1"], "in": "region"}]
+        s = L.load(d)
+        folded = [w for w in s.warnings if "sub-caption names" in w]
+        self.assertEqual(len(folded), 2, folded)
+        self.assertIn("resource/Amazon-DynamoDB_Stream", folded[0])
+        self.assertIn("resource/Amazon-EventBridge_Rule", folded[1])
+
     def test_edge_forms(self):
         d = base()
         d["nodes"].append({"id": "s3", "icon": "service/Amazon-Simple-Storage-Service", "label": "S3",

@@ -426,6 +426,10 @@ def slide_pt(w: float, h: float, title: bool = True) -> float:
 # produced in. GROUP holds every group (outer → inner, overlays last; per group rect, badge,
 # title, CIDR), NODE every node (mask → icon → label lines).
 
+# A document wider than this reads poorly on a page (~900 px: 12px text at ≤ 6px); the
+# widest example is 1679 (bedrock-dx). layout.py warns above it.
+DOC_WIDE = 1800
+
 Z_RAW_BELOW = 0
 Z_GROUP = 10
 Z_NODE = 20

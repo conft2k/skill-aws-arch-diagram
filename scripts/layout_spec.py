@@ -1455,6 +1455,17 @@ class _Loader:
                     self.warn(node.src, f"{base} ({node.icon}) is inside the AZ template {node.template!r}, so it is "
                                         f"drawn once per AZ; a load balancer or firewall spans the AZs — put it "
                                         f"in the VPC on the row between them (in: <vpc>, at: [<col>, <row>])")
+        # a hop folded into another node's sub-caption (DynamoDB "Streams 켬", EventBridge "규칙")
+        for node in sp.nodes.values():
+            if node.template is not None and node.instance not in (None, 1):
+                continue
+            for ref, word in _folded_hops(node.icon, node.sub):
+                key = ("fold", node.src, ref)
+                if key in warned:
+                    continue
+                warned.add(key)
+                self.warn(node.src, f"sub-caption names {word!r}, which has its own icon ({ref}); if it is "
+                                    "a step of the flow, draw it as a node on the line instead of a caption")
         # service names in connector labels
         for ln in getattr(self, "edge_lines", []):
             for k in ("label", "verb"):
@@ -1479,6 +1490,31 @@ class _Loader:
                 if k > rows:
                     first = next(e for e in sp.edges if e.step == k)
                     self.err(first.src, f"step {k}: note.steps has only {rows} row{'s' if rows > 1 else ''}")
+
+
+# Sub-resources that are steps of a flow (a line runs through them), with the words a caption
+# uses for them; other sub-resource icons (Bucket, Table, Item …) are just the service again.
+FLOW_PARTS = {"Stream": ("stream", "streams", "스트림"), "Rule": ("rule", "rules", "규칙"),
+              "Pipes": ("pipe", "pipes", "파이프"), "Scheduler": ("scheduler", "스케줄러")}
+
+
+def _folded_hops(icon: str, sub: Sequence[str]):
+    """(ref, word) for each flow sub-resource of the node's own service its sub-caption names."""
+    if not icon or not sub or "/" not in icon:
+        return []
+    name = icon.split("/", 1)[1]
+    service, _, own = name.partition("_")          # a resource icon: its service and its own part
+    text = " ".join(sub).lower()
+    out = []
+    for part, words in FLOW_PARTS.items():
+        ref = f"resource/{service}_{part}"
+        if part == own or ref.split("/", 1)[1] not in find_icon.SETS.get("resource", {}):
+            continue
+        for w in words:
+            if re.search(r"(?<![a-z])" + re.escape(w) + r"(?![a-z])", text):
+                out.append((ref, w))
+                break
+    return out
 
 
 def load(path_or_dict, mode: Optional[str] = None, title: Optional[bool] = None) -> Spec:

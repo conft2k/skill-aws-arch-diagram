@@ -233,6 +233,10 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 
 ## Common patterns (all from `docs/examples/specs/`)
 
+- **Long pipeline** (no example yet; more than ~10 nodes in a row): fold it into lanes — `rows: [sync,
+  async]` with the synchronous path on `sync` and the event consumers on `async`, each lane
+  left → right; layout.py warns when a document passes 1800 px wide.
+
 - **AZ template** (nlb): `az` with `per`, subnets `in: az`, nodes `col:` only, an ASG
   overlay over both EC2 columns and one arrow into it; the LB (`in: vpc, at: [pub, main]`)
   and the IGW (`on: vpc, at: [igw, main]`) on the gap row.

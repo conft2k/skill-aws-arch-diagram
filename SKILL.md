@@ -399,7 +399,9 @@ draft path you draw them yourself. The decisions behind them are yours on both p
   container labels, 12px for connector/secondary labels, never smaller — see the
   guide's "Compact, not empty" and "Text size".
 - **Size the canvas for the format.** A document SVG/PNG can be as large as its content
-  needs (the reference layouts are up to 1514 × 1072). A slide is scaled to fit 16:9
+  needs (the reference layouts are up to 1514 × 1072), but keep it under ~1800 px wide: a
+  long pipeline folds into lanes (the async consumers or a later stage on their own row
+  below the main line, each lane still left → right) rather than one row of 13 columns. A slide is scaled to fit 16:9
   (below the title band if there is one), so the canvas decides the slide's text size:
   - **Slide text is 10pt or larger.** Every label on the slide — the 12px connector and
     secondary labels included — must land at **≥ 10pt**: with a title a canvas of at
