@@ -259,6 +259,8 @@ class _Model:
                 self.add(axis, v, ("origin", 0), -c, f"xy {fmt_num(c)}", f"node:{nid}")
         if axis == "x":
             self._flows()
+            if mc.badge_clear_x:
+                self._badge_clear_x()
         else:
             self._az_gaps()
         self._templates_equal(axis)
@@ -344,6 +346,8 @@ class _Model:
             return min(mc.sibling_gap, K.LABEL_CLEAR), "label clear"
         if axis == "y" and a.gid and b.nid:
             return mc.box_node_gap, "box ↔ icon gap"
+        if axis == "y" and a.nid and b.nid:
+            return mc.stack_gap, "stack gap"
         return mc.sibling_gap, "sibling gap"
 
     def _sep(self, axis, a: _Item, b: _Item, owner):
@@ -461,6 +465,27 @@ class _Model:
                 self.add("x", (f"node:{a}", 0), (f"node:{b}", 0), d,
                          f"flow pitch {fmt_num(pitch)} {a} → {b}", f"node:{b}")
             self.flow_rows.append((key[0], ids))
+
+    def _badge_clear_x(self):
+        """Slides: the nodes on a badged box's first row sit right of its badge (icon left ≥
+        badge right + ICON_CLEAR) instead of pushing the row down under it (y_after_x)."""
+        S = self.S
+        for g in self.tree:              # not overlays: an ASG's title already sets its header
+            st = K.style(g.type)
+            if not st.badge or not g.rows:
+                continue
+            if g.type not in ("public", "private"):
+                continue                 # subnets: nodes sit right under the header (ex slide nfw)
+            members = self.child_nodes[g.id]
+            first = self.spec.track(g.rows[0])
+            d = st.badge_size + K.ICON_CLEAR + S / 2
+            for nid in members:
+                n = self.spec.nodes[nid]
+                if n.xy is not None or n.row != first.id or nid in self.flow:
+                    continue
+                v, o = self.nref(nid, "x", "lo")
+                self.add("x", (f"group:{g.id}.L", 0), (v, o), d,
+                         f"badge clear x {fmt_num(d)} {g.id} ⊃ {nid}", f"group:{g.id}")
 
     def _az_gaps(self):
         """The row between two AZ boxes (6): ≥ az_gap, its tracks centered at least half,

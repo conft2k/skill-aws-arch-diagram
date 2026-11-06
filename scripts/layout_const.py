@@ -152,6 +152,8 @@ class Mode:
     box_node_gap: float     # a box's bottom border ↔ the icon of a node below it in one parent
     az_gap_center: bool     # the rows between two AZ boxes sit at least az_gap / 2 from each box
     even_instances: bool    # instances of a template on different rows get equal top / bottom insets
+    badge_clear_x: bool     # a group's first-row nodes sit right of its badge (else the row moves down)
+    stack_gap: float        # a node's label stack ↔ the icon of a node below it in one parent
     peer_gap: float         # side-by-side Region / VPC boxes
     node_pitch: float       # neighbour node centers in one container and row
     az_gap: float           # bottom of the AZ (row) above ↔ top of the AZ below, when a node of the VPC
@@ -180,6 +182,8 @@ DOCUMENT = Mode(
     box_node_gap=16,
     az_gap_center=True,
     even_instances=True,    # ex documents: both AZ boxes alike (same height, icons at the same depth)
+    badge_clear_x=False,
+    stack_gap=16,
     peer_gap=32,            # DESIGN 4.4, QR 59 "24–40" (ex gwlb VPCs 32)
     node_pitch=100,         # QR 55 (ex alb/nlb EC2s 100)
     az_gap=110,             # QR 56 (ex alb 110, nlb 110, gwlb 118, nfw 132, nlb-mtls 162)
@@ -204,6 +208,8 @@ SLIDE = Mode(
     box_node_gap=8,         # ex slides: the AZ-gap row's icon top 8 below the AZ above (main = AZ.B + 32)
     az_gap_center=False,    # ex slides: the gap row hugs the AZ above, its label stack fills the rest
     even_instances=False,   # ex slide gwlb: AZ 1 144 tall, AZ 2 152 (the ASG bottom); each AZ hugs its own
+    badge_clear_x=True,     # ex slide nfw: TGW ENI / NAT right of the subnet badge, not a row lower
+    stack_gap=8,            # ex slide nfw: Firewall RT's sub ~9 above the TGW icon
     peer_gap=24,            # QR 59
     node_pitch=92,          # DESIGN 4.4 (ex slide alb 96, nlb 92)
     az_gap=86,              # QR 56 (every slide example exactly 86)

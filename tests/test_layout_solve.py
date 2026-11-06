@@ -553,6 +553,24 @@ class ConstraintTest(unittest.TestCase):
                 self.assertLessEqual(d, hi, between)
             self.assertEqual(check(spec, g), [], between)
 
+    def test_slide_subnet_badge_clear_on_x(self):
+        """On a slide a subnet's first-row node sits right of the subnet badge (icon left ≥
+        badge + 8) instead of a row lower; in a document the old y clearance stays."""
+        def solved(mode):
+            spec = build("b", ["a"], ["r"],
+                         [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud"),
+                          dict(id="vpc", type="vpc", label="VPC", cidr="10.0.0.0/16", parent="region"),
+                          dict(id="sn", type="private", label="TGW subnet", parent="vpc")],
+                         [dict(id="eni", icon="resource/AWS-Transit-Gateway_Attachment", label="ENI", parent="sn",
+                               col="a", row="r")], mode=mode)
+            return LS.solve(spec, [])
+        g = solved("slide")
+        sn, icon = g.groups["sn"].rect, g.nodes["eni"].icon
+        self.assertGreaterEqual(icon.x0 - sn.x0, 24 + 8)
+        self.assertEqual(icon.y0 - sn.y0, K.top_inset("private", "slide", "icon"))
+        g = solved("document")
+        self.assertLess(g.nodes["eni"].icon.x0 - g.groups["sn"].rect.x0, 24 + 8)
+
     def test_one_side_pad(self):
         """pad_right widens a box on its right only; pad_left on its left only."""
         def spec_with(**kw):
