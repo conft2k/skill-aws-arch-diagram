@@ -8,6 +8,14 @@ In your draft SVG, reference icons from the bundle with the `bundle:` scheme:
 
 Then:  python scripts/embed.py draft.svg final.svg
 
+The reverse, to start a draft from an exported diagram such as a reference example:
+
+    python scripts/embed.py --unembed docs/examples/alb-reference-architecture.svg arch.draft.svg
+
+turns every inlined official icon back into its bundle: ref (a ~100 KB export becomes a
+~10 KB draft whose <image> lines show x/y). An inlined image that is not a bundled
+icon is reported and nothing is written.
+
 Each bundle: ref is replaced with a data: URI pulled from assets/icons.json,
 so the final SVG renders anywhere with no external files. The output is written
 only when every icon resolves: refs that don't resolve, image hrefs that point at
@@ -105,11 +113,45 @@ def embed(svg: str):
     return (None if report else out), embedded, report
 
 
+DATA_RE = re.compile(r'((?:xlink:)?href\s*=\s*)(["\'])data:image/(svg\+xml|png);base64,([^"\']*)\2')
+
+
+def unembed(svg: str):
+    """Turn inlined bundle icons back into bundle: refs. Returns (SVG or None, count, problems)."""
+    ref = {e["data"]: f"{s}/{n}" for s, icons in SETS.items() for n, e in icons.items()}
+    unknown, count = [], 0
+
+    def back(m):
+        nonlocal count
+        prefix, q, kind, b64 = m.groups()
+        key = base64.b64decode(b64).decode("utf-8") if kind == "svg+xml" else b64
+        if key not in ref:
+            unknown.append(f"{kind} image ({len(b64)} base64 chars)")
+            return m.group(0)
+        count += 1
+        return f"{prefix}{q}bundle:{ref[key]}{q}"
+
+    out = DATA_RE.sub(back, svg)
+    report = ["UNKNOWN (inlined image that is not a bundled icon):"] + [f"  {u}" for u in unknown] if unknown else []
+    return (None if report else out), count, report
+
+
 def main():
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    reverse = "--unembed" in args
+    args = [a for a in args if a != "--unembed"]
+    if len(args) != 2:
         print(__doc__)
         sys.exit(1)
-    src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+    src, dst = Path(args[0]), Path(args[1])
+    if reverse:
+        out, n, report = unembed(src.read_text(encoding="utf-8"))
+        if report:
+            print("\n".join(report))
+            sys.exit(f"Nothing written to {dst}.")
+        dst.write_text(out, encoding="utf-8")
+        print(f"Restored {n} bundle: ref(s) -> {dst}")
+        return
     out, embedded, report = embed(src.read_text(encoding="utf-8"))
     if report:
         print("\n".join(report))
