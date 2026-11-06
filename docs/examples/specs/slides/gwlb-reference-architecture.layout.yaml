@@ -5,13 +5,13 @@ cols: [users, igw, gwlbe, ec2, gwlb, fw]
 rows: [az1, main, az2]
 
 groups:
-  - {id: cloud,   type: cloud, pad: 6, pad_left: 8, pad_right: 8}
-  - {id: region,  type: region, label: Region, in: cloud, pad: 6, pad_left: 8, pad_right: 8}
-  - {id: appvpc,  type: vpc, label: Application VPC, cidr: 10.0.0.0/16, in: region, pad: 6, pad_left: 8, pad_right: 8}
+  - {id: cloud,   type: cloud, pad_bottom: 6}
+  - {id: region,  type: region, label: Region, in: cloud, pad_bottom: 6}
+  - {id: appvpc,  type: vpc, label: Application VPC, cidr: 10.0.0.0/16, in: region, pad_bottom: 6}
   - {id: appaz,   type: az, in: appvpc, per: [az1, az2]}
   - {id: gwlbesn, type: public, label: GWLBe subnet, in: appaz}
   - {id: appsn,   type: private, label: App subnet, in: appaz}
-  - {id: secvpc,  type: vpc, label: Security VPC, cidr: 10.1.0.0/16, in: region, pad: 6, pad_left: 8, pad_right: 8}
+  - {id: secvpc,  type: vpc, label: Security VPC, cidr: 10.1.0.0/16, in: region, pad_bottom: 6}
   - {id: secaz,   type: az, in: secvpc, per: [az1, az2]}
   - {id: applsn,  type: private, label: Appliance subnet, in: secaz}
   - {id: asg,     type: asg, label: ASG, over: [fw.*], header: right, pad_left: 64}

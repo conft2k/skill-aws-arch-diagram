@@ -392,6 +392,14 @@ class ExampleSpecs(unittest.TestCase):
         self.assertEqual(p.step_at, M.Place(M.Expr("group", "sn.1", "cx"), M.Expr("group", "vpc", "y0", offset=52)))
         self.assertEqual((p.from_side, p.to_offset), ("right", -8.0))
 
+    def test_pad_bottom(self):
+        d = base()
+        d["groups"][2]["pad_bottom"] = 6
+        d["groups"][4]["pad_bottom"] = {1: 20, 2: 30}
+        s = L.load(d)
+        self.assertEqual((s.groups["vpc"].pad_bottom, s.groups["vpc"].pad), (6.0, None))
+        self.assertEqual((s.groups["sn.1"].pad_bottom, s.groups["sn.2"].pad_bottom), (20.0, 30.0))
+
     def test_raw(self):
         d = base()
         d["raw"] = [{"layer": "below", "svg": '<text x="{inet.label.cx}" y="{inet.y1 + 30}">x</text>'}]
@@ -470,7 +478,7 @@ ERRORS = [
       "nodes, edges, note, raw)"]),
     ("unknown group key", lambda d: d["groups"][1].update(lable="x"),
      ["groups[1] region: unknown key 'lable' (did you mean 'label'?) (known: id, type, label, cidr, in, per, "
-      "only, over, span, pad, pad_top, pad_left, pad_right, min_w, min_h, dash, header)"]),
+      "only, over, span, pad, pad_top, pad_left, pad_right, pad_bottom, min_w, min_h, dash, header)"]),
     ("type", lambda d: d.update(S="big"),
      ["spec: S: expected a positive number (icon size, default 48), got 'big'"]),
     ("id characters", lambda d: d["nodes"][0].update(id="nat.gw"),

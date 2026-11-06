@@ -179,6 +179,23 @@ class _Model:
             return one
         return self.pad_node(gid) if node else self.pad(gid)
 
+    def bottom_pad(self, gid):
+        """Bottom padding below a child box: pad_bottom, else pad / the mode's."""
+        g = self.spec.groups[gid]
+        return g.pad_bottom if g.pad_bottom is not None else self.pad(gid)
+
+    def node_bottom(self, gid, it: _Item):
+        """(ref, d) keeping a node above gid's bottom border: label_bottom from its last
+        baseline, or pad_bottom from its footprint bottom when that is farther."""
+        g = self.spec.groups[gid]
+        base, lb = self.hi(it, "y", base=True), self.mc.label_bottom
+        if g.pad_bottom is None or it.border:
+            return base, lb, f"label_bottom {fmt_num(lb)}"
+        bot = self.hi(it, "y")
+        if bot[1] + g.pad_bottom > base[1] + lb:
+            return bot, g.pad_bottom, f"pad_bottom {fmt_num(g.pad_bottom)}"
+        return base, lb, f"label_bottom {fmt_num(lb)}"
+
     def rng(self, axis, first, last):
         idx = self.ci if axis == "x" else self.ri
         if first is None or first not in idx:
@@ -293,7 +310,7 @@ class _Model:
             else:
                 top = max(K.top_inset(g.type, mc.name, "box", cidr), g.pad_top or 0)
                 self.add(axis, gl, (f"group:{cid}.T", 0), top, f"top inset {fmt_num(top)} {gid} ⊃ {cid}", own)
-            p = self.side_pad(gid, "R") if axis == "x" else self.pad(gid)
+            p = self.side_pad(gid, "R") if axis == "x" else self.bottom_pad(gid)
             self.add(axis, (f"group:{cid}.{R}", 0), gr, p, f"pad {fmt_num(p)} {cid} ⊂ {gid}", own)
         for nid in self.child_nodes[gid]:
             it = self.item_node(nid)
@@ -305,8 +322,8 @@ class _Model:
             else:
                 top = max(K.top_inset(g.type, mc.name, "icon", cidr), g.pad_top or 0)
                 self.add(axis, gl, self.lo(it, axis), top, f"icon inset {fmt_num(top)} {gid} ⊃ {nid}", own)
-                self.add(axis, self.hi(it, axis, base=True), gr, mc.label_bottom,
-                         f"label_bottom {fmt_num(mc.label_bottom)} {nid} ⊂ {gid}", own)
+                ref, d, what = self.node_bottom(gid, it)
+                self.add(axis, ref, gr, d, f"{what} {nid} ⊂ {gid}", own)
         if axis == "x":
             need = []
             if g.label:
@@ -323,7 +340,7 @@ class _Model:
         else:
             hdr = max(st.badge_size if st.badge else 0,
                       K.TITLE_DY + K.GLYPH_DESCENT * st.title_size if g.label else 0)
-            need = [(_up(hdr) + self.pad(gid), "header height")]
+            need = [(_up(hdr) + self.bottom_pad(gid), "header height")]
             if g.min_h:
                 need.append((g.min_h, "min_h"))
             for w, what in need:
@@ -643,8 +660,8 @@ class _Model:
                     top = max(top, st.badge_size + K.ICON_CLEAR)
                 self.add("y", gl, self.lo(it, "y"), top,
                          f"{'header' if under else 'overlay'} inset {fmt_num(top)} {gid} ⊃ {m}", own)
-                self.add("y", self.hi(it, "y", base=True), gr, mc.label_bottom,
-                         f"label_bottom {fmt_num(mc.label_bottom)} {m} ⊂ {gid}", own)
+                ref, d, what = self.node_bottom(gid, it)
+                self.add("y", ref, gr, d, f"{what} {m} ⊂ {gid}", own)
             for s in self._overlay_first(g):
                 if g.header == "below":
                     ss = K.style(self.spec.groups[s].type)

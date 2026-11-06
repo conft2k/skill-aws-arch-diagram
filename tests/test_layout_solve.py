@@ -607,6 +607,37 @@ class ConstraintTest(unittest.TestCase):
         self.assertGreaterEqual(gaps(left)[0], 60 + 24)
         self.assertLess(gaps(left)[1], 60 + 24)              # the right side keeps its own pad
 
+    def test_pad_bottom(self):
+        """pad_bottom replaces pad below a child box only (the sides keep pad); below a node
+        it grows the box past label_bottom but never shrinks it under that."""
+        def spec_with(**kw):
+            return build("padb", ["a"], ["r"],
+                         [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud"),
+                          dict(id="vpc", type="vpc", label="VPC", cidr="10.0.0.0/16", parent="region", **kw),
+                          dict(id="sn", type="private", label="App subnet", parent="vpc")],
+                         [dict(id="ec2", icon="service/Amazon-EC2", label="EC2", parent="sn", col="a", row="r")])
+        def gaps(g, inner, outer):
+            i, o = g.groups[inner].rect, g.groups[outer].rect
+            return i.x0 - o.x0, o.x1 - i.x1, o.y1 - i.y1
+        bl, br, bb = gaps(LS.solve(spec_with(), []), "sn", "vpc")
+        self.assertEqual(bb, K.DOCUMENT.pad)
+        g = LS.solve(spec_with(pad_bottom=6), [])
+        self.assertEqual(gaps(g, "sn", "vpc"), (bl, br, 6))
+        self.assertEqual(check(spec_with(pad_bottom=6), g), [])
+        g = LS.solve(spec_with(pad_bottom=40), [])
+        self.assertEqual(gaps(g, "sn", "vpc"), (bl, br, 40))
+        # nodes: label_bottom stays the floor, a larger pad_bottom wins from the footprint bottom
+        def node_gap(**kw):
+            spec = spec_with()
+            for k, v in kw.items():
+                setattr(spec.groups["sn"], k, v)
+            g = LS.solve(spec, [])
+            n = g.nodes["ec2"]
+            return g.groups["sn"].rect.y1 - n.lines[-1].y, g.groups["sn"].rect.y1 - n.stack().y1
+        self.assertEqual(node_gap()[0], K.DOCUMENT.label_bottom)
+        self.assertEqual(node_gap(pad_bottom=2)[0], K.DOCUMENT.label_bottom)
+        self.assertTrue(40 <= node_gap(pad_bottom=40)[1] < 41)   # from the footprint bottom (rounded up)
+
     def test_requirements_and_colspan(self):
         spec = nfw_spec()
         reqs = [Requirement("x", "node:igw", "node:inet", 48 + 24 + 4 + 24 + 4, "arrow 48 into inet", "edge:6"),
