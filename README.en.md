@@ -58,10 +58,10 @@ their SVGs and a render of each slide are in [`docs/examples/slides/`](docs/exam
 | ![AWS Network Firewall centralized reference architecture](docs/examples/nfw-reference-architecture.png) | ![NLB mTLS reference architecture](docs/examples/nlb-mtls-reference-architecture.png) |
 | Centralized inspection: spoke and firewall route tables on a Transit Gateway, one inspection VPC with a firewall endpoint per AZ inspecting both VPC-to-VPC traffic and Internet egress through NAT | Client-certificate verification: an ELB trust store built from a CA bundle and CRL in S3 on the :443 listener, forking to one EC2 per AZ; the landscape layout with the step legend in a left pane |
 
-| Bedrock over Direct Connect |
-|---|
-| ![Private Amazon Bedrock access over a Direct Connect private VIF](docs/examples/bedrock-dx-reference-architecture.png) |
-| Claude Code on premises calls Bedrock privately: DX private VIF → Direct Connect gateway → VGW → interface endpoints for bedrock-runtime, bedrock and sts, names resolved through a Route 53 Resolver inbound endpoint; global cross-Region inference from Seoul, a second-Region endpoint behind the same DX gateway, and the internet-bound aws sso login sign-in, each as a numbered step |
+| Bedrock over Direct Connect | Serverless order pipeline |
+|---|---|
+| ![Private Amazon Bedrock access over a Direct Connect private VIF](docs/examples/bedrock-dx-reference-architecture.png) | ![Serverless event-driven order pipeline folded into lanes](docs/examples/serverless-order-pipeline.png) |
+| Claude Code on premises calls Bedrock privately: DX private VIF → Direct Connect gateway → VGW → interface endpoints for bedrock-runtime, bedrock and sts, names resolved through a Route 53 Resolver inbound endpoint; global cross-Region inference from Seoul, a second-Region endpoint behind the same DX gateway, and the internet-bound aws sso login sign-in, each as a numbered step | A long pipeline folded into lanes: a request lane (CloudFront with AWS WAF → API Gateway with a Cognito authorizer → Lambda → DynamoDB → Streams → Pipes → event bus), then an analytics lane (SQS → Lambda → Data Firehose → S3) and a fulfillment lane (Step Functions → payment Lambda · SNS → subscriber Lambda → SES, a stock Lambda in a two-AZ VPC → RDS Proxy → Aurora PostgreSQL, Secrets Manager over interface endpoints) fed by one rule; the order → payment → mail flow as numbered steps |
 
 ## Install
 

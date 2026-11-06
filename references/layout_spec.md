@@ -254,9 +254,12 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 
 ## Common patterns (all from `docs/examples/specs/`)
 
-- **Long pipeline** (no example yet; more than ~10 nodes in a row): fold it into lanes — `rows: [sync,
-  async]` with the synchronous path on `sync` and the event consumers on `async`, each lane
-  left → right; layout.py warns when a document passes 1800 px wide.
+- **Long pipeline** (serverless-order-pipeline; more than ~10 nodes in a row): fold it into lanes —
+  one row per lane (request `sync`, then `ana` and `ful` for the rule's two consumers), each
+  lane left → right on shared columns. The one wrap edge goes back left in the corridor
+  above the next lane (`shape: VHV, from_side: bottom, to_side: top, bend_y: "gap(auth,ana)"`,
+  room from `min_gap_before` on the lane's row); a fork down into per-AZ targets takes
+  `from_offset: 0` so both branches share one stem. layout.py warns past 1800 px wide.
 
 - **AZ template** (nlb): `az` with `per`, subnets `in: az`, nodes `col:` only, an ASG
   overlay over both EC2 columns and one arrow into it; the LB (`in: vpc, at: [pub, main]`)

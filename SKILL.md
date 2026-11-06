@@ -92,6 +92,7 @@ cp ${CLAUDE_SKILL_DIR}/docs/examples/specs/nfw-reference-architecture.layout.yam
 | `tgw-reference-architecture.svg` | `tgw-reference-architecture.layout.yaml` | on-premises CGW → Internet → Site-to-Site VPN → TGW A with four VPCs as single icons, TGW peering (the peering connection icon in the gap between the Regions) to TGW B, attachment types labeled once, a route-table node per TGW, one 4-step flow on the attachment lines | TGW hub and spoke, TGW peering, multi-Region, Site-to-Site VPN |
 | `nlb-mtls-reference-architecture.svg` | `nlb-mtls-reference-architecture.layout.yaml` | client → IGW → NLB forking to one EC2 per AZ, security groups, ELB trust store fed from S3, ACM, subnet CIDRs, steps in a left legend pane | mTLS or trust stores, security groups, landscape figure, fork instead of a target-group box |
 | `bedrock-dx-reference-architecture.svg` | `bedrock-dx-reference-architecture.layout.yaml` | on-premises Claude Code → Direct Connect (private VIF) → DX gateway → VGW → interface endpoints (bedrock-runtime, bedrock, sts) and Resolver inbound in a 2-AZ VPC, a second-Region VPC, Bedrock global cross-Region inference, 8 steps in a wide left pane | Direct Connect, hybrid DNS, interface endpoints / PrivateLink, private Bedrock access |
+| `serverless-order-pipeline.svg` | `serverless-order-pipeline.layout.yaml` | a serverless event pipeline of ~25 nodes folded into lanes: request lane (Users → CloudFront + WAF → API Gateway + Cognito → Lambda → DynamoDB → Streams → Pipes → event bus), the bus wrapping back left to a rule that feeds an analytics lane (SQS → Lambda → Firehose → S3) and a fulfillment lane (Step Functions → Lambda · SNS → Lambda → SES) above a 2-AZ VPC (Lambda per AZ → RDS Proxy → Aurora writer/readers, Secrets Manager endpoints), CloudWatch · X-Ray on the top row, 8 steps in a bottom panel | serverless, event-driven or any pipeline of more than ~8 hops (fold it into lanes instead of one long row), VPC-attached Lambda, RDS Proxy |
 | `../example.svg` | `example.layout.yaml` | the minimal skeleton: one VPC, 2 AZs, ALB, ASG of two EC2, IGW (slide spacing) | a topology none of the above resembles |
 
 `slides/` holds slide-size versions of the NLB, ALB, GWLB, NFW and TGW examples
@@ -502,7 +503,7 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
   `fetch_icons.py`).
 - `scripts/macos_cairo.py` — imported before cairosvg so it finds Homebrew's cairo on
   Apple Silicon without shell setup.
-- `docs/examples/` — checked NLB, ALB, GWLB, TGW, Network Firewall, NLB mTLS and Bedrock-over-DX reference layouts
+- `docs/examples/` — checked NLB, ALB, GWLB, TGW, Network Firewall, NLB mTLS and Bedrock-over-DX reference layouts and the serverless order pipeline in lanes
   (exported SVGs with inlined icons + PNG; copy them as drafts on the draft path); `specs/`
   has the layout spec that regenerates each of them and the skeleton (copy one in step 2);
   `slides/` has slide-size versions of five of them, the deck made from those and a

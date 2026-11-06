@@ -54,10 +54,10 @@ AWS가 만들거나 보증한 도구가 아닙니다. 아이콘은 AWS 소유이
 | ![AWS Network Firewall 중앙 집중형 참조 아키텍처](docs/examples/nfw-reference-architecture.png) | ![NLB mTLS 참조 아키텍처](docs/examples/nlb-mtls-reference-architecture.png) |
 | 중앙 검사: Transit Gateway의 Spoke RT · Firewall RT, AZ별 방화벽 엔드포인트를 둔 검사 VPC 하나에서 VPC 간 트래픽과 NAT를 거친 인터넷 이그레스를 함께 검사 | 클라이언트 인증서 검증: S3의 CA 번들·CRL로 만든 ELB 신뢰 저장소를 :443 리스너에 연결하고, AZ별 EC2로 포크. 단계 범례를 왼쪽 패널에 둔 가로형 레이아웃 |
 
-| Bedrock over Direct Connect |
-|---|
-| ![Direct Connect 전용 VIF로 Bedrock을 사설 호출하는 참조 아키텍처](docs/examples/bedrock-dx-reference-architecture.png) |
-| 온프레미스의 Claude Code가 DX 전용 VIF → Direct Connect gateway → VGW → bedrock-runtime · bedrock · sts 인터페이스 엔드포인트로 Bedrock을 사설 호출. Route 53 Resolver inbound로 이름 해석, 서울은 global 교차 리전 추론, 같은 DX gateway의 두 번째 리전 엔드포인트, 인터넷을 거치는 aws sso login 구간까지 단계별로 표시 |
+| Bedrock over Direct Connect | 서버리스 주문 파이프라인 |
+|---|---|
+| ![Direct Connect 전용 VIF로 Bedrock을 사설 호출하는 참조 아키텍처](docs/examples/bedrock-dx-reference-architecture.png) | ![레인으로 접은 서버리스 이벤트 기반 주문 파이프라인](docs/examples/serverless-order-pipeline.png) |
+| 온프레미스의 Claude Code가 DX 전용 VIF → Direct Connect gateway → VGW → bedrock-runtime · bedrock · sts 인터페이스 엔드포인트로 Bedrock을 사설 호출. Route 53 Resolver inbound로 이름 해석, 서울은 global 교차 리전 추론, 같은 DX gateway의 두 번째 리전 엔드포인트, 인터넷을 거치는 aws sso login 구간까지 단계별로 표시 | 긴 파이프라인을 레인으로 접은 예: 요청 레인(CloudFront · AWS WAF → API Gateway(Cognito authorizer) → Lambda → DynamoDB → Streams → Pipes → 이벤트 버스), 규칙에서 갈라지는 분석 레인(SQS → Lambda → Data Firehose → S3)과 처리 레인(Step Functions → 결제 Lambda · SNS → 구독 Lambda → SES, 두 AZ VPC의 재고 Lambda → RDS Proxy → Aurora PostgreSQL, Secrets Manager 인터페이스 엔드포인트). 주문 → 결제 → 메일 흐름을 단계 번호로 표시 |
 
 ## 설치
 
