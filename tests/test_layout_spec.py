@@ -332,6 +332,23 @@ class ExampleSpecs(unittest.TestCase):
         self.assertEqual([(n.label, n.sub, n.dx) for n in (s.nodes["ec2.1"], s.nodes["ec2.2"])],
                          [("Primary", ["AZ 1"], 0.0), ("Standby", ["AZ 2"], 8.0)])
 
+    def test_only(self):
+        """`only:` keeps an item in some instances; a group's `only` drops what is inside it;
+        a.* pairs by shared number; per-instance maps need values only for kept instances."""
+        d = base()
+        d["groups"].append({"id": "db", "type": "private", "label": "DB subnet", "in": "az", "only": [2]})
+        d["nodes"] += [{"id": "writer", "icon": "service/Amazon-Aurora", "label": {1: "Writer"}, "in": "sn",
+                        "col": "c", "only": 1},
+                       {"id": "reader", "icon": "service/Amazon-Aurora", "label": "Reader", "in": "db", "col": "c"}]
+        d["edges"] += [{"e": "ec2.* -> writer.*"}, {"e": "ec2.* -> reader.*"}]
+        s = L.load(d)
+        self.assertEqual([g for g in s.groups if g.startswith("db")], ["db.2"])
+        self.assertEqual(s.groups["az.2"].children, ["sn.2", "db.2"])
+        self.assertEqual([n for n in s.nodes if n.startswith(("writer", "reader"))], ["writer.1", "reader.2"])
+        self.assertEqual(s.nodes["writer.1"].label, "Writer")
+        self.assertEqual([(e.a, e.b) for e in s.edges if e.b.startswith(("writer", "reader"))],
+                         [("ec2.1", "writer.1"), ("ec2.2", "reader.2")])
+
     def test_edge_forms(self):
         d = base()
         d["nodes"].append({"id": "s3", "icon": "service/Amazon-Simple-Storage-Service", "label": "S3",
@@ -428,7 +445,7 @@ ERRORS = [
       "nodes, edges, note, raw)"]),
     ("unknown group key", lambda d: d["groups"][1].update(lable="x"),
      ["groups[1] region: unknown key 'lable' (did you mean 'label'?) (known: id, type, label, cidr, in, per, "
-      "over, span, pad, pad_top, min_w, min_h, dash, header)"]),
+      "only, over, span, pad, pad_top, min_w, min_h, dash, header)"]),
     ("type", lambda d: d.update(S="big"),
      ["spec: S: expected a positive number (icon size, default 48), got 'big'"]),
     ("id characters", lambda d: d["nodes"][0].update(id="nat.gw"),
@@ -490,6 +507,17 @@ ERRORS = [
      ["nodes[0] ec2: label: no value for instance 2 (give 1..2)"]),
     ("per-instance value outside a template", lambda d: d["nodes"][2].update(label={1: "A", 2: "B"}),
      ["nodes[2] inet: label: per-instance values ({1: …, 2: …}) are only for items inside a per template"]),
+    ("only outside a template", lambda d: d["nodes"][2].update(only=[1]),
+     ["nodes[2] inet: only: is for items inside a per template (it picks the instances to draw)"]),
+    ("only on the template group", lambda d: d["groups"][3].update(only=[1]),
+     ["groups[3] az: only: the template group itself is drawn once per `per` row; shorten `per` instead"]),
+    ("only names a missing instance", lambda d: d["nodes"][0].update(only=[3]),
+     ["nodes[0] ec2: only: instance 3 does not exist (the template has 2 instances)"]),
+    ("only not numbers", lambda d: d["nodes"][0].update(only="az1"),
+     ["nodes[0] ec2: only: expected instance numbers 1..2 (e.g. only: [1]), got 'az1'"]),
+    ("edge to an instance left out", lambda d: (d["nodes"][0].update(only=[1]),
+                                                d["edges"].append({"e": "inet -> ec2.2"})),
+     ["edges[2] inet -> ec2.2: e: 'ec2.2' is left out by `only:` (nodes[0] ec2); drawn instances: ec2.1"]),
     ("expression reference", lambda d: d["edges"][1].update(bend_x="igx.cx+8"),
      ["edges[1] inet -> igw: bend_x: expression 'igx.cx+8': no node or group 'igx'"]),
     ("flow on a column", lambda d: d.update(cols=[{"id": "a", "flow": 160}, "b", "c"]),

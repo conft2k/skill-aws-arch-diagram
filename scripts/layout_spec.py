@@ -6,7 +6,7 @@
 load() reads the file (PyYAML for .yaml/.yml, json for .json), checks the schema (unknown
 keys, types, references, id characters, unique track names), applies defaults, expands
 `per` templates (descendant groups and nodes copied as `<id>.<n>`, `{n}` in labels, `{1: …,
-2: …}` per-instance values), parses edge strings (-> <-> -- ..> <..> .., comma targets),
+2: …}` per-instance values, `only: [n, …]` to keep an item in some instances), parses edge strings (-> <-> -- ..> <..> .., comma targets),
 pairs `*` patterns, resolves step / step_each / steps, resolves icons (full `set/name`
 refs checked against the bundle; aliases through find_icon.search, a unique best score
 ≥ 95 only), parses expressions, and lints (DESIGN 4.1). Every problem found is collected
@@ -51,8 +51,9 @@ LB_PREFIX = "resource/Elastic-Load-Balancing_"
 
 TOP_KEYS = ("name", "mode", "title", "S", "font", "cols", "rows", "groups", "nodes", "edges", "note", "raw")
 TRACK_KEYS = ("id", "min_gap_before", "min_w", "flow")
-GROUP_KEYS = ("id", "type", "label", "cidr", "in", "per", "over", "span", "pad", "pad_top", "min_w", "min_h", "dash", "header")
-NODE_KEYS = ("id", "icon", "label", "sub", "in", "at", "col", "row", "on", "dx", "dy", "xy")
+GROUP_KEYS = ("id", "type", "label", "cidr", "in", "per", "only", "over", "span", "pad", "pad_top", "min_w", "min_h",
+              "dash", "header")
+NODE_KEYS = ("id", "icon", "label", "sub", "in", "only", "at", "col", "row", "on", "dx", "dy", "xy")
 EDGE_KEYS = ("e", "label", "verb", "step", "step_at", "steps", "step_each", "label_at", "trunk", "fork", "shape",
              "bend_x", "bend_y", "from_side", "to_side", "from_offset", "to_offset", "points")
 NOTE_KEYS = ("place", "width", "steps", "summary", "rows")
@@ -60,7 +61,7 @@ RAW_KEYS = ("layer", "svg")
 PLACE_KEYS = ("x", "y", "anchor")
 SPAN_KEYS = ("cols", "rows")
 # Fields a template item may give per instance ({1: …, 2: …}).
-NO_PER_INSTANCE = ("id", "type", "in", "per", "over", "span", "header", "on")
+NO_PER_INSTANCE = ("id", "type", "in", "per", "only", "over", "span", "header", "on")
 
 _OFFSET = r"\s*(?:(?P<sign>[+-])\s*(?P<num>\d+(?:\.\d+)?))?\s*$"
 NUM_RE = re.compile(r"^\s*[+-]?\d+(?:\.\d+)?\s*$")
@@ -601,7 +602,8 @@ class _Loader:
                 return default
             vals = {int(n): x for n, x in v.items()}
             extra = sorted(n for n in vals if not 1 <= n <= k)
-            missing = [n for n in range(1, k + 1) if n not in vals]
+            keep = r.get("only")
+            missing = [n for n in range(1, k + 1) if n not in vals and (keep is None or n in keep)]
             if extra:
                 self.err(loc, f"{key}: instance {extra[0]} does not exist (the template has {k} instances)")
             if missing:
@@ -610,6 +612,8 @@ class _Loader:
                 return default
             out = _PerInst()
             for n in range(1, k + 1):
+                if n not in vals:
+                    continue
                 try:
                     out[n] = conv(vals[n])
                 except _Conv as e:
@@ -681,10 +685,41 @@ class _Loader:
             self.err(r["loc"], f"{key}: {{n}} is the instance number; only items inside a per template have one")
         return s
 
+    def only(self, r: dict, root: bool = False) -> None:
+        """`only: [n, …]` (or one n): the template instances an item inside a per template is
+        drawn in; the others leave it (and, for a group, everything inside it) out."""
+        d, loc = r["d"], r["loc"]
+        r["only"] = None
+        if "only" not in d:
+            return
+        v = d["only"]
+        k = self.count(r["tmpl"])
+        if not k:
+            self.err(loc, "only: is for items inside a per template (it picks the instances to draw)")
+            return
+        if root:
+            self.err(loc, "only: the template group itself is drawn once per `per` row; shorten `per` instead")
+            return
+        vals = v if isinstance(v, list) else [v]
+        if not vals or not all(isinstance(n, int) and not isinstance(n, bool) for n in vals):
+            self.err(loc, f"only: expected instance numbers 1..{k} (e.g. only: [1]), got {v!r}")
+            return
+        bad = [n for n in vals if not 1 <= n <= k]
+        if bad:
+            self.err(loc, f"only: instance {bad[0]} does not exist (the template has {k} instances)")
+            return
+        if len(set(vals)) != len(vals):
+            self.err(loc, f"only: instance repeated in {v!r}")
+            return
+        r["only"] = set(vals)
+        if len(vals) == k:
+            self.warn(loc, f"only: lists every instance (1..{k}); drop it")
+
     def group_fields(self) -> None:
         for gid in self.gorder:
             r = self.graw[gid]
             d, loc = r["d"], r["loc"]
+            self.only(r, root=r["tmpl"] == gid)
             st = K.GROUP_STYLES.get(d.get("type"))
             r["label"] = self.field(r, "label", self.c_label) if "label" in d else (st.label if st else None)
             r["label_default"] = "label" not in d
@@ -733,6 +768,7 @@ class _Loader:
         for nid in self.norder:
             r = self.nraw[nid]
             d, loc = r["d"], r["loc"]
+            self.only(r)
             if "icon" not in d:
                 self.err(loc, "icon: required (a full `set/name` ref, e.g. service/Amazon-EC2)")
             r["icon"] = self.field(r, "icon", self.c_text)
@@ -846,6 +882,8 @@ class _Loader:
             if p is not None:
                 self.children[p].append(gid)
         self.inst: Dict[str, List[Tuple[int, str]]] = {}   # templated base id → [(n, id)]
+        self.dropped: Dict[str, str] = {}                  # instance id left out by `only` → its src
+        self.restricted: set = set()                       # base ids with `only` (directly or by a parent)
 
         def emit(base: str, n: Optional[int], parent: Optional[str], depth: int) -> None:
             r = self.graw[base]
@@ -854,6 +892,15 @@ class _Loader:
                     emit(base, k, parent, depth)
                 return
             gid = _inst_id(base, n)
+            if n is not None and ((r.get("only") is not None and n not in r["only"])
+                                  or (parent is not None and parent in self.dropped)):
+                self.dropped[gid] = r["loc"]
+                self.restricted.add(base)
+                for c in self.children[base]:
+                    emit(c, n, gid, depth + 1)
+                return
+            if parent is not None and parent in self.dropped:
+                return
             if n is not None:
                 self.inst.setdefault(base, []).append((n, gid))
             label = _pick(r["label"], n)
@@ -869,6 +916,8 @@ class _Loader:
                       pad=_pick(r["pad"], n), pad_top=_pick(r["pad_top"], n), min_w=_pick(r["min_w"], n), min_h=_pick(r["min_h"], n),
                       dash=_pick(r["dash"], n), template=r["tmpl"], instance=n, depth=depth, src=r["loc"])
             sp.groups[gid] = g
+            if r.get("only") is not None:
+                self.restricted.add(base)
             if parent is not None:
                 sp.groups[parent].children.append(gid)
             for c in self.children[base]:
@@ -888,6 +937,15 @@ class _Loader:
             k = self.count(r["tmpl"])
             for n in (range(1, k + 1) if k else [None]):
                 iid = _inst_id(nid, n)
+                pid = None
+                if r["parent"] is not None:
+                    pid = _inst_id(r["parent"], n if self.graw[r["parent"]]["tmpl"] else None)
+                if n is not None and ((r.get("only") is not None and n not in r["only"]) or pid in self.dropped):
+                    self.dropped[iid] = r["loc"]
+                    self.restricted.add(nid)
+                    continue
+                if r.get("only") is not None:
+                    self.restricted.add(nid)
                 if n is not None:
                     self.inst.setdefault(nid, []).append((n, iid))
                 res = _pick(r.get("icon_res"), n)
@@ -945,6 +1003,11 @@ class _Loader:
                 return None
             obj = sp.nodes.get(pat) or sp.groups.get(pat)
             return [(obj.instance, pat)]
+        if pat in self.dropped:
+            base = pat.rsplit(".", 1)[0]
+            have = ", ".join(i for _, i in self.inst.get(base, [])) or "none"
+            self.err(loc, f"{key}: {pat!r} is left out by `only:` ({self.dropped[pat]}); drawn instances: {have}")
+            return None
         if pat in self.inst:
             ids = [i for _, i in self.inst[pat]]
             self.err(loc, f"{key}: {pat!r} is a per template ({', '.join(ids)}); write {pat}.* or one instance "
@@ -1113,9 +1176,19 @@ class _Loader:
             if a_pat.endswith(".*") and b_pat.endswith(".*"):
                 na, nb = [n for n, _ in A], [n for n, _ in B]
                 if na != nb:
-                    self.err(loc, f"e: {a_pat} has {len(na)} instances and {b_pat} has {len(nb)}; "
-                                  "a.* OP b.* pairs instances with the same number")
-                    return None
+                    common = [n for n in na if n in nb]
+                    cut = {a_pat[:-2], b_pat[:-2]} & self.restricted
+                    if not cut:
+                        self.err(loc, f"e: {a_pat} has {len(na)} instances and {b_pat} has {len(nb)}; "
+                                      "a.* OP b.* pairs instances with the same number")
+                        return None
+                    if not common:
+                        self.err(loc, f"e: {a_pat} is drawn in instance {', '.join(map(str, na))} and {b_pat} in "
+                                      f"{', '.join(map(str, nb))} (`only:`), so no number pairs them; name the "
+                                      f"instances, e.g. {A[0][1]} -> {B[0][1]}")
+                        return None
+                    A = [(n, i) for n, i in A if n in common]
+                    B = [(n, i) for n, i in B if n in common]
                 out += [(a, b) for (_, a), (_, b) in zip(A, B)]
             else:
                 out += [(a, b) for _, a in A for _, b in B]

@@ -84,9 +84,14 @@ The type fixes border color, width, dash, badge and header insets (quick referen
 - `label`: the title; `cidr`: drawn as its own 12px line under the title.
 - `per: [az1, az2]`: a template — the group and everything inside it is copied once per
   row, ids get `.1`, `.2`, `{n}` in text becomes the instance number. Any field but `id,
-  type, in, per, over, span, header, on` may differ per instance: `cidr: {1: 10.0.0.0/24,
+  type, in, per, only, over, span, header, on` may differ per instance: `cidr: {1: 10.0.0.0/24,
   2: 10.0.1.0/24}`. Nodes inside give `col:` only (the row is the instance's). One
   template level only.
+- `only: [1]` (or `only: 2`) on a group or node inside a template draws it in those
+  instances only: the Aurora writer in AZ 1, a reader in AZ 2, a subnet one AZ lacks. A
+  group's `only` leaves out everything inside it. `a.* -> b.*` then pairs the shared
+  numbers; with none shared, name the instances (`writer.1 ..> reader.2`). Per-instance
+  maps need values only for the kept instances.
 - `over: [ec2a.*, ec2b.*]`: an overlay drawn around its member nodes, outside the
   containment tree (no `in`) — `asg` for an Auto Scaling group / target group, any other
   type (`generic` with a `dash`) for a box with no group icon, such as an ECS service. `header: right` (default) or `below`
