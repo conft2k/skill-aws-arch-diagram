@@ -510,6 +510,36 @@ class Synthetic(unittest.TestCase):
         self.assertFalse(lab.x0 - 4 < x < lab.x1 + 4 or 352 < x < 408, x)
         self.assertEqual(warns, [])
 
+    def test_same_side_hvh_out_and_back(self):
+        """HVH right → right between two nodes of one column, no bend_x: the line goes out
+        of both right sides and back, its leg clear of the wide label and HUG_CLEAR inside
+        the box holding both ends (not a U round the other side)."""
+        spec, geom = self.setup(blocker=False)
+        spec.groups = {"sn": M.Group("sn", "private", label=None, nodes=["x", "y"])}
+        spec.nodes["x"].parent = spec.nodes["y"].parent = "sn"
+        spec.nodes["x"].label = "a very wide label"
+        spec.nodes["y"].col, spec.nodes["y"].row = "a", "s"
+        geom.groups = {"sn": M.GroupGeom("sn", M.Box(40, 150, 220, 470))}
+        geom.nodes["x"].lines = [M.TextLine("a very wide label", 100, 242, 14, K.INK, "", "middle")]
+        geom.nodes["y"] = M.NodeGeom("y", 100, 400, M.Box(76, 376, 124, 424),
+                                     [M.TextLine("Y", 100, 442, 14, K.INK, "", "middle")])
+        spec.edges = [M.Edge(0, "x", "y", "->", shape="HVH", from_side="right", to_side="right")]
+        els, warns = R.draw(spec, geom)
+        pts = points(lines_of(els, 0)[0])
+        self.assertEqual(len(pts), 4, pts)
+        port = 124 + K.END_GAP
+        self.assertEqual((pts[0], pts[-1]), ((port, 200), (port, 400)))
+        bend = pts[1][0]
+        self.assertEqual(pts[2][0], bend)
+        self.assertGreaterEqual(bend, port + K.MIN_ARROW)
+        self.assertGreaterEqual(bend, geom.nodes["x"].lines[0].box(conservative=True).x1 + 4)
+        self.assertLessEqual(bend, 220 - K.HUG_CLEAR)
+        self.assertFalse(any("instead of" in w for w in warns), warns)
+        # with no room inside the box the bend still stays HUG_CLEAR off its border
+        geom.groups["sn"] = M.GroupGeom("sn", M.Box(40, 150, 196, 470))
+        pts = points(lines_of(R.draw(spec, geom)[0], 0)[0])
+        self.assertTrue(all(abs(p[0] - 196) >= K.HUG_CLEAR for p in pts[1:3]), pts)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

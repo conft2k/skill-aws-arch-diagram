@@ -181,6 +181,10 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   `shape: H|V|HVH|VHV|HV|VH`, `bend_x` / `bend_y` (an expression or `gap`), `from_side` /
   `to_side` (`left|right|top|bottom`), `from_offset` / `to_offset` (px along the side),
   `points: [[x, y], …]` (the whole polyline, ends included; `e:` still names the ends).
+  The same side at both ends of a `HVH` / `VHV` (`from_side: right, to_side: right`)
+  draws an out-and-back on that side without `bend_x`: the leg sits at the nearest spot
+  past both end segments that clears the labels along it, ≥ 12 from parallel borders and
+  inside the box holding both ends — give that box room (`pad_right`) for the line's label.
 
 ```yaml
 # from: nfw-reference-architecture.layout.yaml

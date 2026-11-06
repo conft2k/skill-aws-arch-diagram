@@ -851,6 +851,10 @@ def _bends(ctx: _Ctx, x: _Edge, shape: str, pa: Pt, pb: Pt) -> List[float]:
             return [M.eval_expr(hint, ctx.geom)]
         except (KeyError, ValueError):
             pass
+    if shape in (HVH, VHV):
+        sa, sb = x.sides(shape)
+        if sa == sb:
+            return _out_and_back(ctx, x, leg_x, i, pa, pb, sa)
     a, b = pa[i], pb[i]
     d = 1 if b >= a else -1
     if shape in (H, V):          # a jog: the bend runs along the other axis
@@ -910,6 +914,41 @@ def _bends(ctx: _Ctx, x: _Edge, shape: str, pa: Pt, pb: Pt) -> List[float]:
                         push(v)
     if not out and lo <= hi:
         push((lo + hi) / 2)
+    return out
+
+
+def _out_and_back(ctx: _Ctx, x: _Edge, leg_x: bool, i: int, pa: Pt, pb: Pt, side: str) -> List[float]:
+    """Bends of a HVH / VHV out of the same side of both ends and back (from_side = to_side,
+    e.g. a replication line beside one column): beyond both ports by the end segments,
+    clear of icons and labels along the leg, trunk_clear then HUG_CLEAR from parallel
+    borders; nearest first, up to 15 nudges out and HUG_CLEAR inside the innermost box
+    holding both ends (or the canvas)."""
+    m, geom = ctx.m, ctx.geom
+    sgn = 1 if side in ("right", "bottom") else -1
+    min_a = K.MIN_ARROW if x.hs else MIN_SEG
+    min_b = K.MIN_ARROW if x.he else MIN_SEG
+    near = (max if sgn > 0 else min)(pa[i] + sgn * min_a, pb[i] + sgn * min_b)
+    far = near + sgn * 15 * NUDGE
+    common = _nonshared(ctx.spec, x.e)[2]
+    if common:
+        r = geom.groups[common[0]].rect
+        wall = (r.x1 if sgn > 0 else r.x0) if leg_x else (r.y1 if sgn > 0 else r.y0)
+    else:
+        wall = ((geom.canvas_w if leg_x else geom.canvas_h) if sgn > 0 else 0.0)
+    wall -= sgn * K.HUG_CLEAR
+    far = min(far, wall) if sgn > 0 else max(far, wall)
+    lo, hi = sorted((near, far))
+    if (far - near) * sgn < 0:
+        return []
+    out: List[float] = []
+    for clear in (m.trunk_clear, K.HUG_CLEAR):
+        free = _free(ctx, leg_x, lo, hi, pa[1 - i], pb[1 - i], clear)
+        for f0, f1 in sorted(free, key=lambda iv: abs((iv[0] if sgn > 0 else iv[1]) - near)):
+            start = math.ceil(f0 * 2) / 2 if sgn > 0 else math.floor(f1 * 2) / 2
+            for k in range(4):
+                v = start + sgn * k * NUDGE
+                if f0 - 1e-6 <= v <= f1 + 1e-6 and all(abs(v - u) > 0.25 for u in out):
+                    out.append(v)
     return out
 
 
