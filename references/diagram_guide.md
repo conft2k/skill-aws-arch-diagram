@@ -506,6 +506,13 @@ a target group spanning the AZs with a zonal EC2 instance in each (it is
     "TGW A RT") next to its TGW, with no line (a route table is a property of the TGW),
     its propagations and static routes as 12px sub-captions ("VPC·VPN 경로 전파",
     "10.16.0.0/13 → peering").
+  - **A TGW route table drawn as a table of routes may overlap containers** — an
+    exception to the nesting convention (and to "only the IGW and VGW straddle a
+    border"). Put it as close to its
+    TGW as the layout allows, even across a Region, AWS Cloud or VPC border, drawn last
+    (on top) on a white background rectangle that hides the borders beneath it. It must
+    still never cover an icon, a connector, a step badge or a label. Use this to keep
+    the table beside the TGW instead of stretching containers to make room for it.
   - **Show one representative flow** — the path that crosses the most attachment types
     (e.g. on-premises → a VPC in the remote Region) — as step badges on the attachment
     lines it uses, explained in the step legend with the route that sends it each way
