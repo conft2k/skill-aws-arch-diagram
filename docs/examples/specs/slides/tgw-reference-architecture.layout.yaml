@@ -1,12 +1,10 @@
 # TGW reference slide: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it
 name: tgw-reference-architecture
 mode: slide
-cols: [cgw, inet, vpn, a1, {id: a2, min_gap_before: 94}, {id: a3, min_gap_before: 94}, peer, b1, {id: bm, min_gap_before: 57}, {id: b2, min_gap_before: 54}]
+cols: [cgw, inet, vpn, a1, a2, a3, peer, b1, b2]
 rows: [top, {id: main, min_gap_before: 140}, bot]
-# a2/a3 at 94: the slide's spoke pitch (93 trips 'text too close') (TGW A RT is placed by xy, so its widest line no longer
-# sets the a1→a2→a3 sibling gaps); bm: TGW B and its RT on their own column between DR and Analytics
-# (at: [b1..b2] reserves the RT's half width from both b1 and b2); main at 140 below top: room for the
-# 'VPC attachment' verb right of the Prod spoke's vertical piece (the 84px horizontal pieces are too short)
+# main at 140 below top: 10px between the 'VPC attachment' verb (above the Prod spoke's horizontal piece)
+# and Prod VPC's CIDR line; the bend gutters alone give 130, which leaves 5 and reads as a third caption line
 
 groups:
   - {id: onprem, type: onprem, label: On-premises}
@@ -23,25 +21,25 @@ nodes:
   - {id: prod, icon: service/Amazon-Virtual-Private-Cloud, label: Prod VPC, sub: 10.2.0.0/16, in: ra, at: [a3, top]}
   - {id: dev,  icon: service/Amazon-Virtual-Private-Cloud, label: Dev VPC, sub: 10.3.0.0/16, in: ra, at: [a1, bot]}
   - {id: test, icon: service/Amazon-Virtual-Private-Cloud, label: Test VPC, sub: 10.4.0.0/16, in: ra, at: [a3, bot]}
-  - {id: rta,  icon: resource/Amazon-Route-53_Route-Table, label: TGW A RT, sub: ["VPC·VPN 경로 전파", "10.16.0.0/13 → peering"], in: ra, xy: [569, 336]}   # = [col.a2, row.bot]; xy because on [a2, bot] its widest sub line sets the a1→a2 and a2→a3 sibling gaps to 134 each (canvas 1183px)
+  - {id: rta,  icon: resource/Amazon-Route-53_Route-Table, label: TGW A RT, sub: ["VPC·VPN 경로 전파", "10.16.0.0/13 → peering"], in: ra, at: [a2, bot]}   # its long last line sits below Dev / Test VPC's two-line labels and takes no room between them
   - {id: peer, icon: resource/Amazon-VPC_Peering-Connection, label: TGW peering, sub: peering attachment, in: cloud, at: [peer, main]}
-  - {id: tgwb, icon: service/AWS-Transit-Gateway, label: Transit Gateway B, in: rb, at: [bm, main]}
+  - {id: tgwb, icon: service/AWS-Transit-Gateway, label: Transit Gateway B, in: rb, at: [b1..b2, main]}
   - {id: dr,   icon: service/Amazon-Virtual-Private-Cloud, label: DR VPC, sub: 10.16.0.0/16, in: rb, at: [b1, top]}
   - {id: ana,  icon: service/Amazon-Virtual-Private-Cloud, label: Analytics VPC, sub: 10.17.0.0/16, in: rb, at: [b2, top]}
-  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16", "→ peering"], in: rb, at: [bm, bot]}
+  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16", "→ peering"], in: rb, at: [b1..b2, bot]}   # its labels take room from the span's center
 
 edges:                       # topology diagram: '--' = solid 1.5px, no arrowheads
   - {e: "cgw -- inet"}
   - {e: "inet -- vpn", label: IPsec, step: 1}
   - {e: "vpn -- tgwa", verb: VPN attachment, step: 2}
   - {e: "tgwa -- svcs"}                       # VHV by rule 5's hub exception (TGW A's left/right sides hold the VPN and peering lines; headless spokes leave its top / bottom); same for the other three spokes
-  - {e: "tgwa -- prod", verb: VPC attachment}   # the attachment type named once, right of the spoke at TGW A
+  - {e: "tgwa -- prod", verb: VPC attachment}   # the attachment type named once, above the Prod spoke's horizontal piece
   - {e: "tgwa -- dev"}
   - {e: "tgwa -- test"}
   - {e: "tgwa -- peer", step: 3, step_at: gap}              # badge between Region A's border and the peering icon, not mid of the longer piece inside Region A
   - {e: "peer -- tgwb"}
-  - {e: "tgwb -- dr", step: 4, shape: VHV}   # the rule picks VH into DR's side; the slide draws both spokes VHV
-  - {e: "tgwb -- ana", shape: VHV}
+  - {e: "tgwb -- dr", step: 4}               # TGW B under the span: both spokes go up out of its top and jog to DR / Analytics
+  - {e: "tgwb -- ana"}
 
 note:
   steps:
