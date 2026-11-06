@@ -1,0 +1,36 @@
+# Internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and regional ACM / CloudWatch / S3
+name: nlb-reference-architecture
+mode: document
+cols: [users, r53, igw, pub, app1, app2]
+rows: [{id: svc, flow: 160}, az1, main, az2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc,    type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: az,     type: az, in: vpc, per: [az1, az2]}
+  - {id: pubsn,  type: public, label: Public subnet, in: az}
+  - {id: appsn,  type: private, label: App subnet, in: az}
+  - {id: asg,    type: asg, label: ASG · target group, over: [ec2a.*, ec2b.*], header: right}
+
+nodes:
+  - {id: users, icon: resource/Users, label: Users, at: [users, main]}
+  - {id: r53,   icon: service/Amazon-Route-53, label: Route 53, sub: Alias → NLB, in: cloud, at: [r53, svc]}
+  - {id: acm,   icon: service/AWS-Certificate-Manager, label: ACM, sub: TLS 리스너 인증서, in: region, row: svc}
+  - {id: cw,    icon: service/Amazon-CloudWatch, label: CloudWatch, sub: 지표 · 경보, in: region, row: svc}
+  - {id: s3,    icon: service/Amazon-Simple-Storage-Service, label: S3, sub: NLB 액세스 로그, in: region, row: svc}
+  - {id: nat,   icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubsn, col: pub}
+  - {id: ec2a,  icon: service/Amazon-EC2, label: EC2, in: appsn, col: app1}
+  - {id: ec2b,  icon: service/Amazon-EC2, label: EC2, in: appsn, col: app2}
+  - {id: nlb,   icon: resource/Elastic-Load-Balancing_Network-Load-Balancer, label: NLB, in: vpc, at: [pub, main]}
+  - {id: igw,   icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
+
+edges:
+  - {e: "users -> igw", label: "TLS :443"}
+  - {e: "igw -> nlb"}
+  - {e: "nlb -> asg", label: "TCP :8080"}
+  - {e: "users ..> r53", verb: DNS 조회}
+  - {e: "asg ..> nat.*", verb: 아웃바운드}
+
+note:
+  summary: "Internet-facing NLB · TLS 종료 · 라우팅: Public subnet 0.0.0.0/0 → IGW, App subnet 0.0.0.0/0 → NAT gateway (같은 AZ)"

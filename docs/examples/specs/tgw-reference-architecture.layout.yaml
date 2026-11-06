@@ -1,0 +1,47 @@
+# TGW reference: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it
+name: tgw-reference-architecture
+mode: document
+cols: [cgw, inet, vpn, a1, a2, a3, peer, b1, b2]
+rows: [top, main, bot]
+
+groups:
+  - {id: onprem, type: onprem, label: On-premises}
+  - {id: cloud,  type: cloud}
+  - {id: ra,     type: region, label: Region ap-northeast-2, in: cloud}
+  - {id: rb,     type: region, label: Region ap-northeast-1, in: cloud}
+
+nodes:
+  - {id: cgw,  icon: resource/Amazon-VPC_Customer-Gateway, label: Customer gateway, sub: 192.168.0.0/16, in: onprem, at: [cgw, main]}
+  - {id: inet, icon: resource/Internet, label: Internet, at: [inet, main]}
+  - {id: vpn,  icon: service/AWS-Site-to-Site-VPN, label: Site-to-Site VPN, at: [vpn, main]}
+  - {id: tgwa, icon: service/AWS-Transit-Gateway, label: Transit Gateway A, in: ra, at: [a2, main]}
+  - {id: svcs, icon: service/Amazon-Virtual-Private-Cloud, label: Services VPC, sub: 10.1.0.0/16, in: ra, at: [a1, top]}
+  - {id: prod, icon: service/Amazon-Virtual-Private-Cloud, label: Prod VPC, sub: 10.2.0.0/16, in: ra, at: [a3, top]}
+  - {id: dev,  icon: service/Amazon-Virtual-Private-Cloud, label: Dev VPC, sub: 10.3.0.0/16, in: ra, at: [a1, bot]}
+  - {id: test, icon: service/Amazon-Virtual-Private-Cloud, label: Test VPC, sub: 10.4.0.0/16, in: ra, at: [a3, bot]}
+  - {id: rta,  icon: resource/Amazon-Route-53_Route-Table, label: TGW A RT, sub: ["VPC·VPN 경로 전파", "10.16.0.0/13 → peering"], in: ra, at: [a2, bot]}
+  - {id: peer, icon: resource/Amazon-VPC_Peering-Connection, label: TGW peering, sub: peering attachment, in: cloud, at: [peer, main]}
+  - {id: tgwb, icon: service/AWS-Transit-Gateway, label: Transit Gateway B, in: rb, at: [b1..b2, main]}
+  - {id: dr,   icon: service/Amazon-Virtual-Private-Cloud, label: DR VPC, sub: 10.16.0.0/16, in: rb, at: [b1, top]}
+  - {id: ana,  icon: service/Amazon-Virtual-Private-Cloud, label: Analytics VPC, sub: 10.17.0.0/16, in: rb, at: [b2, top]}
+  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16 → peering"], in: rb, at: [b1..b2, bot]}
+
+edges:                       # topology diagram: '--' = solid 1.5px, no arrowheads
+  - {e: "cgw -- inet"}
+  - {e: "inet -- vpn", label: IPsec, step: 1}
+  - {e: "vpn -- tgwa", verb: VPN attachment, step: 2}
+  - {e: "tgwa -- svcs", verb: VPC attachment, shape: VHV}   # DESIGN 4.5 rule 5 picks VH (TGW A's left/right sides hold the VPN and peering lines); the draft leaves the TGW top and ends at the VPC's bottom
+  - {e: "tgwa -- prod", shape: VHV}                         # same as tgwa -- svcs
+  - {e: "tgwa -- dev", shape: VHV}                          # rule 5 VH would leave the TGW bottom straight through TGW A RT; the draft ends at the VPC's top
+  - {e: "tgwa -- test", shape: VHV}                         # same as tgwa -- dev
+  - {e: "tgwa -- peer", step: 3, step_at: gap}              # badge in the 776–816 run between Region A's border and the peering icon, not mid of the longer 644–776 piece
+  - {e: "peer -- tgwb"}
+  - {e: "tgwb -- dr", step: 4}
+  - {e: "tgwb -- ana"}
+
+note:
+  steps:
+    - [Customer gateway → VPN, "온프레미스 192.168.0.0/16의 트래픽을 고객 게이트웨이가 IPsec 터널로 Site-to-Site VPN에 보내고, 두 쪽은 BGP로 경로를 교환합니다."]
+    - [VPN → TGW A, "VPN attachment로 TGW A에 들어오고, 온프레미스 경로는 BGP로 TGW A RT에 전파됩니다. 스포크 VPC 서브넷 RT: 10.0.0.0/8 · 192.168.0.0/16 → TGW."]
+    - [TGW A → TGW B, "TGW A RT의 정적 경로 10.16.0.0/13 → peering으로 AWS 백본을 거쳐 ap-northeast-1의 TGW B에 닿습니다. 피어링은 경로 전파가 없어 양쪽 다 정적 경로입니다."]
+    - [TGW B → DR VPC, "TGW B RT에 전파된 10.16.0.0/16 경로로 VPC attachment를 지나 DR VPC에 닿고, 반환은 TGW B RT의 정적 경로 192.168.0.0/16 → peering으로 같은 길입니다."]

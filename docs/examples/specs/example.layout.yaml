@@ -1,0 +1,23 @@
+# Skeleton (docs/example.svg): one VPC over two AZs, IGW → internet-facing ALB → an Auto Scaling group / target group of one EC2 per AZ
+name: example
+mode: document
+cols: [igw, pub, app]
+rows: [az1, main, az2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+  - {id: vpc,    type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: az,     type: az, in: vpc, per: [az1, az2]}
+  - {id: pubsn,  type: public, label: Public subnet, in: az}
+  - {id: appsn,  type: private, label: App subnet, in: az}
+  - {id: asg,    type: asg, label: ASG · target group, over: [ec2.*], header: right}
+
+nodes:
+  - {id: ec2, icon: service/Amazon-EC2, label: EC2, in: appsn, col: app}
+  - {id: alb, icon: resource/Elastic-Load-Balancing_Application-Load-Balancer, label: ALB, in: vpc, at: [pub, main]}
+  - {id: igw, icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
+
+edges:
+  - {e: "igw -> alb"}
+  - {e: "alb -> asg"}

@@ -1,0 +1,41 @@
+# ALB 3-tier: Users → IGW → internet-facing ALB → one ASG / target group over two AZs → RDS Multi-AZ, with Route 53 and the regional services row (ACM, WAF, CloudWatch, S3)
+name: alb-reference-architecture
+mode: document
+cols: [users, r53, igw, pub, app1, app2, db]
+rows: [{id: svc, flow: 160}, az1, main, az2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc,    type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: az,     type: az, in: vpc, per: [az1, az2]}
+  - {id: pubsn,  type: public, label: Public subnet, in: az}
+  - {id: appsn,  type: private, label: App subnet, in: az}
+  - {id: dbsn,   type: private, label: DB subnet, in: az}
+  - {id: asg,    type: asg, label: ASG · target group, over: [ec2a.*, ec2b.*], header: right}
+
+nodes:
+  - {id: users, icon: resource/Users, label: Users, at: [users, main]}
+  - {id: r53,   icon: service/Amazon-Route-53, label: Route 53, sub: alias → ALB, in: cloud, at: [r53, svc]}   # gridded node on the flow row: left of the Region, same cy as the services
+  - {id: acm,   icon: service/AWS-Certificate-Manager, label: ACM, sub: HTTPS 리스너 인증서, in: region, row: svc}
+  - {id: waf,   icon: service/AWS-WAF, label: AWS WAF, sub: ALB에 연결한 Web ACL, in: region, row: svc}
+  - {id: cw,    icon: service/Amazon-CloudWatch, label: CloudWatch, sub: 지표 · 경보, in: region, row: svc}
+  - {id: s3,    icon: service/Amazon-Simple-Storage-Service, label: S3, sub: ALB 액세스 로그, in: region, row: svc}
+  - {id: nat,   icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubsn, col: pub}
+  - {id: ec2a,  icon: service/Amazon-EC2, label: EC2, in: appsn, col: app1}
+  - {id: ec2b,  icon: service/Amazon-EC2, label: EC2, in: appsn, col: app2}
+  - {id: rds,   icon: service/Amazon-RDS, label: {1: RDS Primary, 2: RDS Standby}, in: dbsn, col: db}
+  - {id: alb,   icon: resource/Elastic-Load-Balancing_Application-Load-Balancer, label: ALB, in: vpc, at: [pub, main]}
+  - {id: igw,   icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
+
+edges:
+  - {e: "users -> igw", label: "HTTPS :443"}
+  - {e: "igw -> alb"}
+  - {e: "alb -> asg", label: "HTTP :80"}
+  - {e: "asg -> rds.1", label: SQL}
+  - {e: "users ..> r53", verb: DNS 조회}
+  - {e: "asg ..> nat.*", verb: 아웃바운드}
+  - {e: "rds.1 ..> rds.2", verb: 동기식 복제, label_at: left}   # vertical line: the draft puts the label left of it (anchor end); DESIGN 4.6 names no default side
+
+note:
+  summary: "Internet-facing ALB · 두 AZ에 걸친 단일 관리형 로드 밸런서 · AWS WAF 연결 · RDS Multi-AZ"
