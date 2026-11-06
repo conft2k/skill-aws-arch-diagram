@@ -1,0 +1,813 @@
+"""Data model and module contract of the layout engine (spec → draft SVG).
+
+The engine turns a declarative spec (`<name>.layout.yaml`) into a draft SVG that passes
+check_layout.py and export.py. It is split into modules that are developed in parallel;
+this docstring is the contract they share. Constants (numbers, colors, group styles, z
+layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1).
+
+=========================================================================================
+1. Modules and signatures
+=========================================================================================
+
+  layout_spec.py   (W1)
+    load(path_or_dict, mode=None, title=None) -> Spec
+        path_or_dict: a .yaml/.yml/.json path (str or Path) or an already parsed dict.
+        mode: "document" | "slide" overrides the spec's `mode` (CLI --mode); title: bool
+        overrides `title` (CLI --title/--no-title). Returns a fully expanded, validated
+        Spec: templates (`per`) instantiated, `*` edges paired, per-instance values
+        picked, defaults applied, icons resolved to full `set/name` refs, expressions
+        parsed into Expr. Raises SpecError(problems) with every problem found (not just
+        the first). Non-fatal lint goes to Spec.warnings.
+    parse_expr(s) -> Expr        the expression grammar of section 6 (also used by W5 for raw).
+
+  layout_route.py  (W3)
+    plan(spec) -> list[Requirement]
+        Picks every edge's shape (pure function of the spec) and returns the space the
+        routes need as difference constraints: gutters, label runs, arrow segments,
+        trunk corridors. Reads Spec only.
+    draw(spec, geom, skip=None) -> (list[Element], list[str])
+        Routes every edge on the solved Geometry and returns its Elements (z Z_EDGE,
+        Z_EDGE_LABEL, Z_BADGE) and warnings. skip: {edge n: k} skips the first k
+        candidates of edge n (the W5 feedback loop's "use the next candidate"). Must make
+        the same shape choices as plan() (recompute them; no module state).
+
+  layout_solve.py  (W2)
+    solve(spec, reqs, note_block=None) -> Geometry
+        Footprints, constraint generation (DESIGN 4.3 items 1-11) + reqs, longest-path
+        solve per axis, hug, border nodes, flow rows, overlays, colspan, canvas. With
+        note_block it also applies note_block.requirements (W5 passes them inside reqs as
+        well; duplicates are harmless) and sizes the canvas for the note (section 4).
+        Raises SolveError(problems) on a positive cycle, naming the Requirement.why/owner
+        and spec ids of the constraints in it (after dropping soft requirements first).
+    draw(spec, geom) -> list[Element]
+        The Elements of every group (z Z_GROUP: rect, badge, title, CIDR, in Geometry.groups
+        order) and node (z Z_NODE: mask, icon, label lines, in Geometry.nodes order),
+        built with the el_* factories below from Geometry alone.
+        (Added to the design's list: W2 owns header and label geometry, so it also draws it.)
+
+  layout_note.py   (W4)
+    block(spec, geom, place=None, width=None) -> NoteBlock
+        Decides the note's place ("panel" | "pane" | "lines" | "none") by the auto rule
+        (DESIGN 4.7) unless spec.note.place or `place` fixes it, its size, its Elements
+        (z Z_NOTE, owner "note") positioned for *this* geom, and the Requirements the
+        place needs (pane coupling). `width` fixes the pane width. Pure: no geom mutation.
+
+  layout.py        (W5)  CLI, pipeline, emit, in-process check, feedback loop, --explain.
+    The pipeline (W5 owns it; the others rely on this call order):
+        spec  = layout_spec.load(path, mode, title)
+        reqs  = layout_route.plan(spec)
+        geom0 = layout_solve.solve(spec, reqs)                       # no note yet
+        nb0   = layout_note.block(spec, geom0)                       # place, size, reqs
+        geom  = layout_solve.solve(spec, reqs + nb0.requirements, note_block=nb0)
+        nb    = layout_note.block(spec, geom, place=nb0.place, width=nb0.w if nb0.place == "pane" else None)
+        edges, warns = layout_route.draw(spec, geom)
+        elements = layout_solve.draw(spec, geom) + edges + nb.elements + raw elements
+        svg = emit(spec, geom, elements)        # stable sort by z, wrap owners in <g id>
+        then check_layout.run_checks / Advisor in process; on fixable kinds add
+        Requirements or `skip` entries and go back to solve (≤ 5 rounds, DESIGN 4.10).
+    nb.requirements must hold on geom (same place and width as nb0); W5 asserts that.
+    spec.note is None → W4 returns NoteBlock("none").
+
+  layout_const.py / layout_model.py (W0)  this contract. W6 (docs/examples/specs/*.yaml,
+    tests/compare_structure.py) relies on the spec format (DESIGN 2-3, as refined in
+    section 9 below) and on layout_const.group_type_of() to name a draft rect's group type.
+
+=========================================================================================
+2. Coordinates and units
+=========================================================================================
+Every coordinate in Geometry, Element, Requirement and NoteBlock is an absolute canvas px
+in the final SVG's user space: viewBox "0 0 canvas_w canvas_h", origin top-left, x right,
+y down. Never relative to a group, never translate(). Floats; Element numbers are written
+with fmt_num (≤ 2 decimals, integers without ".0"). Lengths are px at the spec's S (48 by
+default); text sizes are px.
+
+=========================================================================================
+3. Who fills what
+=========================================================================================
+Spec / Track / Group / Node / Edge / NoteSpec / RawSpec / Expr   — W1 fills, all read.
+Requirement   — W3 (plan) and W4 (block) create; W5 may add (feedback); W2 consumes.
+Geometry, GroupGeom, NodeGeom, TextLine, Box — W2 fills; W3, W4, W5 read; nobody mutates
+                a Geometry after solve returns (W5 re-solves instead).
+NoteBlock     — W4 fills; W2 reads place/w/h/below() for the canvas; W5 emits elements.
+Element       — W2 (groups, nodes), W3 (edges, edge labels, badges), W4 (note),
+                W5 (raw); W5 emits.
+
+Geometry fields each reader uses:
+  W3 draw:  nodes[*].icon/cx/cy/lines/stack()/mask/side, groups[*].rect/header(),
+            cols/rows/col_extent/row_extent, canvas_w/h (bend search, obstacles, ports).
+  W4 block: drawing (bottom, for panel/lines y), groups[cloud].rect (pane y, lines x),
+            canvas_w (panel width), cols/col_extent and nodes (pane width "left column",
+            client node), mode via spec.
+  W5:       canvas_w/h, explain, warnings, everything for expression evaluation (eval_expr).
+
+=========================================================================================
+4. Requirement variables, and the note in the canvas
+=========================================================================================
+A Requirement says  value(b) − value(a) ≥ d  on one axis (d may be negative; an equality
+is two Requirements). Variable names (strings):
+  "origin"                       the canvas origin, fixed 0 (both axes)
+  "col:<track>" / "row:<track>"  a track center (x / y)
+  "group:<gid>.L" / ".R"         a group rect's left / right edge (x axis)
+  "group:<gid>.T" / ".B"         its top / bottom edge (y axis)
+  "node:<nid>"                   the node's icon center on that axis (track center + dx/dy,
+                                 a flow-row node's solved center, a border node's border).
+W2 maps "node:<nid>" of a colspan node (center between X_b1 and X_b2) conservatively:
+as `a` it uses X_b2, as `b` it uses X_b1, so the requirement holds for any center in
+the span (DESIGN 4.3 #7). Node footprint widths are not variables: a requirer adds the
+half widths it needs into d (icon edge = S/2 + END_GAP; labels by layout_text_width).
+
+Canvas (W2): every drawn thing ≥ canvas_margin from "origin" on both axes, and
+  canvas_w = max(drawing.x1, pane rect x1) + canvas_margin
+  canvas_h = max(drawing.y1 + canvas_margin, drawing.y1 + note_block.below(),
+                 pane: cloud.y0 + note_block.h + canvas_margin)
+  drawing = union of every group rect and node footprint (no edges, no note).
+Note rects (W4 computes them; W2 needs only place/w/h):
+  panel  Box(PANEL_X, drawing.y1 + PANEL_GAP, canvas_w − PANEL_X, … + h); below() = 16 + h + 16
+  pane   Box(PANE_X, cloud.y0, PANE_X + w, cloud.y0 + h); below() = 0
+  lines  h = canvas bottom − drawing.y1 (first badge cy = drawing.y1 + 18 … last baseline + 4); below() = h
+  none   below() = 0
+"cloud" is spec.cloud_id(), the first group of type cloud. Pane Requirements (W4):
+  x: origin → group:<cloud>.L ≥ PANE_X + w + PANE_GAP;  the client node pinned to
+     PANE_X + w/2 (two requirements) when it is a top-level node under the pane;
+  y: group:<cloud>.T → node:<client> ≥ h + PANE_CLIENT_GAP + S/2;
+     group:<cloud>.T → group:<g>.T ≥ h + PANE_OUTER_GAP for a top-level group under it.
+
+=========================================================================================
+5. z order, Element ids and <g> wrapping
+=========================================================================================
+Layers (layout_const.Z_*), emitted in ascending z; inside a layer, in production order
+(W2 groups then nodes, W3 edges in Edge.n order, W4 note, W5 raw):
+  Z_RAW_BELOW  raw `layer: below`, right after the background rect
+  Z_GROUP      groups outer → inner (Geometry.groups order: containment preorder, overlay
+               groups last); each: rect, badge image, title, CIDR line
+  Z_NODE       nodes in Geometry.nodes order; each: mask rect (border nodes) → icon → label
+               → sub lines
+  Z_EDGE       connector lines (line / polyline), Edge.n order
+  Z_EDGE_LABEL connector labels (label, verb)
+  Z_BADGE      step badges (circle, then digit)
+  Z_NOTE       note rect and text
+  Z_RAW_ABOVE  raw `layer: above`
+Element.owner is the id of what the element draws:
+  "group:<gid>"  "node:<nid>"  "edge:<n>" (n = Edge.n, 0-based)  "note"  "raw:<i>"
+Each producer emits an owner's elements contiguously within a layer. emit() wraps each
+run in <g id="...">: the owner itself in its home layer (group → Z_GROUP, node → Z_NODE,
+edge → Z_EDGE, note → Z_NOTE, raw → its layer), and "<owner>:<part>" in any other layer,
+part = layout_const.Z_PART[z] ("edge:3:label", "edge:3:badge"; any other layer "z<z>").
+So every id is unique and maps back with split_eid(). Spec ids match [A-Za-z0-9_-]+
+(W1 enforces): "." is reserved for template instances ("nat.1"), "*" for edge patterns,
+":" for element ids. svg2pptx accepts <g> with id only (no transform, no presentation
+attributes). check_layout reports an element's own id only, so W5 maps an Issue's
+elements to spec ids through their enclosing <g>.
+
+The root header (W5): <svg viewBox="0 0 W H" xmlns=… font-family=spec.font>, one comment
+"generated by layout.py from <file> — edit the spec and re-run; hand edits are lost on
+regeneration", <defs> with MARKER_ARROW (+ MARKER_ARROW_START only if some element has a
+marker-start), the background <rect width=W height=H fill="#FFFFFF"/>. Output is a pure
+function of the spec: same spec → byte-identical draft (sorted nothing by hash/set order).
+
+=========================================================================================
+6. Expressions (escape hatches: bend_x/bend_y, points, step_at/label_at [x, y], raw {…})
+=========================================================================================
+  <number>                               Expr("num", offset=v)
+  <id>.(x0|x1|cx|y0|y1|cy) [±n]          node id → its icon box; group id → its rect
+  <nid>.label.(x0|x1|cx|y0|y1|cy) [±n]   the node's label stack (stack(), 0.55 em)
+  col.<track> / row.<track> [±n]         a track center
+  gap(<a>,<b>) [±n]                      middle of the widest free corridor between two
+                                         tracks of one axis (Geometry.gap)
+Track ids are unique across cols and rows (W1 enforces), so gap() knows its axis.
+eval_expr(expr, geom) below evaluates one (W3 for hints, W5 for raw).
+
+=========================================================================================
+7. Text width
+=========================================================================================
+  text_width(s, size)         = check_layout.text_width: 0.55 em Latin, 1.0 em Hangul/CJK/
+                                arrows. Use it where the result must agree with the checker
+                                and the examples: glyph boxes for obstacle tests, the note
+                                description column (56 + widest hop + 16) and slide line flow.
+  layout_text_width(s, size)  conservative 0.6 em Latin (wide characters unchanged). Use it
+                                to reserve space: node footprints, header width constraints,
+                                label runs, mask widths, pane wrapping.
+Both live here (layout_model), importing check_layout (which loads the icon bundle via
+find_icon on import, ~0.1 s); layout_const stays import-free.
+
+=========================================================================================
+8. Errors
+=========================================================================================
+LayoutError(problems) base; SpecError (W1) and SolveError (W2) subclass it. `problems`
+is a list of one-line strings, each starting with the spec location ("nodes[3] nat: ...",
+"edges[5]: ...", "groups[2] az: ..."). W5 prints them and exits 1.
+
+=========================================================================================
+9. Decisions that refine the design (DESIGN = the layout-engine design document)
+=========================================================================================
+ a. Documents pad 16 at every nesting level (DESIGN 4.4 had 20 for Cloud→Region and
+    Region→VPC sides): alb, nlb-mtls and bedrock-dx use 16 there (examples win).
+ b. Connector label below its line: baseline +16 (DESIGN 15; every example 16). Slide
+    vertical-piece label 8 from the line (document 10).
+ c. Slide shrink steps (DESIGN 4.8 "pad → 8, AZ gap → 86, pitch → 92") dropped: slide mode
+    already solves at those minima and the solution is minimal, so there is nothing to
+    shrink. W5 reports layout_const.slide_pt(); below 10pt it fails with the --explain
+    evidence (widest column, the label behind it, px over).
+ d. The note is computed twice (geom0, then the final geom with place/width fixed) and
+    reaches the canvas through NoteBlock.below() / pane h (section 4). Panel y = drawing
+    bottom + 16, which is the Cloud bottom in every example.
+ e. W2 also draws groups and nodes (layout_solve.draw); W3.draw takes skip= for the
+    feedback loop; W1.load takes title=; Requirement.soft for preferences (arrow 48 soft
+    + 20 hard): W2 drops soft requirements before reporting a cycle.
+ f. Overlay (ASG) top inset (+30/+28) binds only member icons under its header title;
+    other members keep ≥ 8 below the ASG top (ex gwlb +26 / +20).
+ g. Default font-family is the examples' fixed string (layout_const.FONT_FAMILY_DEFAULT);
+    W1 reorders only when Noto Sans CJK KR is not installed, so output stays stable.
+ h. edge.label_at None = auto (above; below when the hop has a badge). Edge.step is the
+    badge on that instance after step / step_each / steps resolution.
+ i. Track ids are unique across cols and rows; spec ids match [A-Za-z0-9_-]+ (section 5).
+ j. Positions the examples computed from text widths (panel description column, slide
+    line flow) use text_width (0.55 em), not the conservative layout_text_width.
+ k. Subnet / VPC / AZ icon top +32 doc, +28 slide; Cloud → Region +40 doc. Two examples
+    are tighter on purpose (bedrock-dx Region +34, the skeleton's AZ 2 EC2 +30); the
+    engine keeps the table value (tests/test_layout_model.py TIGHTER).
+"""
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Tuple, Union
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import check_layout  # noqa: E402  (text_width, seg_hits_box; loads the icon bundle)
+import layout_const as K  # noqa: E402
+
+Number = Union[int, float]
+
+
+# =======================================================================================
+# Errors
+
+class LayoutError(Exception):
+    def __init__(self, problems: Sequence[str]):
+        self.problems = list(problems)
+        super().__init__("\n".join(self.problems))
+
+
+class SpecError(LayoutError):
+    """W1: the spec is invalid (every problem, each prefixed with its spec location)."""
+
+
+class SolveError(LayoutError):
+    """W2: contradictory constraints (a positive cycle), named by Requirement.why/owner."""
+
+
+# =======================================================================================
+# Text width
+
+def text_width(s: str, size: float) -> float:
+    """The checker's estimate (0.55 em Latin, 1.0 em wide). See docstring section 7."""
+    return check_layout.text_width(s, size)
+
+
+def layout_text_width(s: str, size: float) -> float:
+    """Conservative estimate for reserving space: 0.6 em Latin, wide characters 1.0 em."""
+    w = 0.0
+    for c in s:
+        cw = check_layout.text_width(c, size)
+        w += cw if cw >= size * K.WIDE_EM else size * K.LAYOUT_LATIN_EM
+    return w
+
+
+# =======================================================================================
+# Input model (W1 output: expanded, validated)
+
+@dataclass(frozen=True)
+class Expr:
+    """A parsed expression (section 6). kind: "num" | "node" | "label" | "group" | "col" |
+    "row" | "gap". ref: the node/group/track id (gap: first track); ref2: gap's second
+    track; attr: x0|x1|cx|y0|y1|cy for node/label/group, "" otherwise; offset: the ±n
+    (for "num" the value itself)."""
+    kind: str
+    ref: str = ""
+    attr: str = ""
+    ref2: str = ""
+    offset: float = 0.0
+
+
+@dataclass(frozen=True)
+class Place:
+    """An explicit position: label_at {x, y, anchor} or step_at [x, y] (anchor ignored)."""
+    x: Expr
+    y: Expr
+    anchor: str = "middle"          # start | middle | end
+
+
+@dataclass
+class Track:
+    id: str
+    axis: str                       # "col" (x, left → right) | "row" (y, top → bottom)
+    index: int                      # position in spec cols / rows, 0-based
+    min_gap_before: float = 0.0     # px: center − previous center ≥ this (0 = no extra)
+    min_w: float = 0.0              # px: band width ≥ this (cols: width, rows: height)
+    flow: Optional[float] = None    # rows only: pitch (px) of a flow row, None = grid row
+
+
+@dataclass
+class Group:
+    id: str                         # expanded id ("az.2", "tgwsn.1")
+    type: str                       # key of layout_const.GROUP_STYLES
+    label: Optional[str]            # final title ({n} substituted, type default applied); None = no title
+    cidr: Optional[str] = None      # CIDR line text
+    parent: Optional[str] = None    # containing group id; None = top level (outside every group). Overlays: None
+    children: List[str] = field(default_factory=list)   # child group ids, spec order
+    nodes: List[str] = field(default_factory=list)      # ids of nodes directly inside (`in`, not `on`)
+    over: List[str] = field(default_factory=list)       # overlay member node ids (expanded); non-empty = overlay
+    header: str = "right"           # overlay: header label placement vs the subnet header it crosses (right | below)
+    cols: Optional[Tuple[str, str]] = None   # first / last col track its cells (descendants, over, span) cover; None = none
+    rows: Optional[Tuple[str, str]] = None   # same for rows (a template instance always covers its `per` row)
+    span_cols: Optional[Tuple[str, str]] = None   # spec `span` (already merged into cols/rows)
+    span_rows: Optional[Tuple[str, str]] = None
+    pad: Optional[float] = None     # px, overrides Mode.pad / pad_node for this group's children
+    min_w: Optional[float] = None   # px
+    min_h: Optional[float] = None   # px
+    dash: Optional[str] = None      # resolved stroke-dasharray (style default or spec `dash`), None = solid
+    template: Optional[str] = None  # template base id for `per` instances and their descendants ("az")
+    instance: Optional[int] = None  # 1-based AZ number n of that instance
+    depth: int = 0                  # 0 = top level
+    src: str = ""                   # spec location, "groups[4]"
+
+    @property
+    def overlay(self) -> bool:
+        return bool(self.over)
+
+
+@dataclass
+class Node:
+    id: str                         # expanded id ("nat.1")
+    icon: str                       # resolved bundle ref "set/name"
+    label: str                      # 14px label (per-instance value picked)
+    sub: List[str] = field(default_factory=list)   # 12px sub-caption lines
+    parent: Optional[str] = None    # containing group (`in`); for `on` nodes the VPC's parent; None = top level
+    col: Optional[str] = None       # col track; colspan: first track (None = flow-row node)
+    col2: Optional[str] = None      # colspan last track (`at: [b1..b2, r]`), None = no span
+    row: Optional[str] = None       # row track (template instances: the instance's `per` row)
+    on: Optional[str] = None        # border gateway: the VPC group id it straddles
+    side: Optional[str] = None      # `on` nodes: "left" | "right" border (W1 from track indices); phase 2 top|bottom
+    dx: float = 0.0                 # px nudges from the grid position
+    dy: float = 0.0
+    xy: Optional[Tuple[float, float]] = None   # absolute icon center (escape hatch); overrides col/row
+    flow_index: Optional[int] = None   # flow-row node: 0-based order among the row's nodes in the same parent
+    icon_query: Optional[str] = None   # the spec's alias when the icon was given as one (for the summary)
+    template: Optional[str] = None
+    instance: Optional[int] = None
+    src: str = ""
+
+
+@dataclass
+class Edge:
+    n: int                          # 0-based index in Spec.edges; element id "edge:<n>"
+    a: str                          # near endpoint id (node or group), as written left of OP
+    b: str                          # far endpoint id
+    op: str                         # "->" "<->" "--" "..>" "<..>" ".."
+    a_kind: str = "node"            # "node" | "group"
+    b_kind: str = "node"
+    label: Optional[str] = None     # protocol / port, 12px #232F3E
+    verb: Optional[str] = None      # verb / attachment type, 12px #545B64
+    step: Optional[int] = None      # badge number on this instance (resolved)
+    step_at: Union[str, Place] = "mid"     # mid | start | end | gap | stem | branch | Place
+    label_at: Union[None, str, Place] = None   # None = auto; above | below | left | right | Place
+    trunk: bool = False             # merge the instances of this spec line into one trunk
+    fork: Optional[str] = None      # "bus" (phase 2)
+    shape: Optional[str] = None     # H V HVH VHV HV VH (None = rule-based)
+    bend_x: Union[None, str, Expr] = None   # "gap" or an Expr
+    bend_y: Union[None, str, Expr] = None
+    from_side: Optional[str] = None  # left | right | top | bottom
+    to_side: Optional[str] = None
+    from_offset: Optional[float] = None   # px along the side from its center
+    to_offset: Optional[float] = None
+    points: Optional[List[Tuple[Expr, Expr]]] = None   # full polyline incl. ends (escape hatch)
+    line: int = 0                   # index of the spec edge this instance came from
+    k: int = 0                      # instance index within that spec edge, 0-based
+    src: str = ""                   # "edges[4]"
+
+    @property
+    def dashed(self) -> bool:
+        return K.EDGE_OPS[self.op][0]
+
+    @property
+    def head_end(self) -> bool:     # arrowhead at b (marker-end)
+        return K.EDGE_OPS[self.op][1]
+
+    @property
+    def head_start(self) -> bool:   # arrowhead at a (marker-start)
+        return K.EDGE_OPS[self.op][2]
+
+
+@dataclass
+class NoteSpec:
+    place: str = "auto"             # auto | panel | pane | lines
+    width: Optional[float] = None   # pane width; None = auto (300 / 320 / left column)
+    steps: List[Tuple[str, str]] = field(default_factory=list)   # (hop, description); number = index + 1
+    summary: Optional[str] = None   # one-line summary (panel)
+    rows: List[Tuple[str, str]] = field(default_factory=list)    # (row label, text) (panel)
+    src: str = "note"
+
+
+@dataclass
+class RawSpec:
+    layer: str                      # below | above
+    svg: str                        # fragment with {expr} placeholders, as written
+    exprs: Dict[str, Expr] = field(default_factory=dict)   # placeholder text → parsed Expr
+    src: str = ""
+
+
+@dataclass
+class Spec:
+    name: str                       # output stem (<name>.draft.svg)
+    mode: str = "document"          # document | slide
+    title: bool = True              # slide: a title band above the diagram (540 vs 600 limit)
+    S: float = K.S_DEFAULT          # node icon size
+    font: str = K.FONT_FAMILY_DEFAULT   # root font-family attribute value
+    cols: List[Track] = field(default_factory=list)
+    rows: List[Track] = field(default_factory=list)
+    groups: Dict[str, Group] = field(default_factory=dict)   # containment preorder, overlays last
+    nodes: Dict[str, Node] = field(default_factory=dict)     # spec order, template instances in place
+    edges: List[Edge] = field(default_factory=list)          # Edge.n == index
+    note: Optional[NoteSpec] = None
+    raw: List[RawSpec] = field(default_factory=list)
+    source: str = ""                # path, or "<dict>"
+    warnings: List[str] = field(default_factory=list)
+
+    @property
+    def const(self) -> K.Mode:
+        return K.mode(self.mode)
+
+    def track(self, tid: str) -> Track:
+        for t in self.cols + self.rows:
+            if t.id == tid:
+                return t
+        raise KeyError(tid)
+
+    def cloud_id(self) -> Optional[str]:
+        return next((g.id for g in self.groups.values() if g.type == "cloud"), None)
+
+    def kind(self, eid: str) -> str:
+        """"node" or "group" for an endpoint / expression id."""
+        if eid in self.nodes:
+            return "node"
+        if eid in self.groups:
+            return "group"
+        raise KeyError(eid)
+
+    def ancestors(self, gid: Optional[str]) -> List[str]:
+        """gid's chain upward, gid first (overlays: just themselves)."""
+        out = []
+        while gid is not None:
+            out.append(gid)
+            gid = self.groups[gid].parent
+        return out
+
+    def node_chain(self, nid: str) -> List[str]:
+        """The groups containing a node, innermost first."""
+        return self.ancestors(self.nodes[nid].parent)
+
+
+# =======================================================================================
+# Geometry (W2 output)
+
+@dataclass
+class Box:
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+    @classmethod
+    def xywh(cls, x: float, y: float, w: float, h: float) -> "Box":
+        return cls(x, y, x + w, y + h)
+
+    @property
+    def w(self) -> float:
+        return self.x1 - self.x0
+
+    @property
+    def h(self) -> float:
+        return self.y1 - self.y0
+
+    @property
+    def cx(self) -> float:
+        return (self.x0 + self.x1) / 2
+
+    @property
+    def cy(self) -> float:
+        return (self.y0 + self.y1) / 2
+
+    def t(self) -> Tuple[float, float, float, float]:
+        """(x0, y0, x1, y1): the tuple check_layout's helpers (seg_hits_box, ...) take."""
+        return (self.x0, self.y0, self.x1, self.y1)
+
+    def expand(self, d: float) -> "Box":
+        return Box(self.x0 - d, self.y0 - d, self.x1 + d, self.y1 + d)
+
+    def union(self, o: "Box") -> "Box":
+        return Box(min(self.x0, o.x0), min(self.y0, o.y0), max(self.x1, o.x1), max(self.y1, o.y1))
+
+    def overlaps(self, o: "Box") -> bool:
+        return self.x0 < o.x1 and o.x0 < self.x1 and self.y0 < o.y1 and o.y0 < self.y1
+
+    def contains(self, o: "Box", tol: float = 0.0) -> bool:
+        return (self.x0 - tol <= o.x0 and self.y0 - tol <= o.y0
+                and o.x1 <= self.x1 + tol and o.y1 <= self.y1 + tol)
+
+    def get(self, attr: str) -> float:
+        """x0 | x1 | cx | y0 | y1 | cy (expression attributes)."""
+        return getattr(self, attr)
+
+
+def union_all(boxes: Sequence[Box]) -> Optional[Box]:
+    out = None
+    for b in boxes:
+        out = b if out is None else out.union(b)
+    return out
+
+
+@dataclass
+class TextLine:
+    """One <text>: baseline position and style."""
+    text: str
+    x: float
+    y: float                        # baseline
+    size: float
+    fill: str
+    weight: str = ""                # "" regular | "600" | "700"
+    anchor: str = "start"           # start | middle | end
+
+    def width(self, conservative: bool = False) -> float:
+        return (layout_text_width if conservative else text_width)(self.text, self.size)
+
+    def box(self, conservative: bool = False) -> Box:
+        """Glyph box: baseline − 0.75 size to baseline + 0.25 size (QR 79)."""
+        w = self.width(conservative)
+        x0 = self.x - w / 2 if self.anchor == "middle" else self.x - w if self.anchor == "end" else self.x
+        return Box(x0, self.y - K.GLYPH_ASCENT * self.size, x0 + w, self.y + K.GLYPH_DESCENT * self.size)
+
+
+@dataclass
+class GroupGeom:
+    id: str
+    rect: Box
+    badge: Optional[Box] = None     # badge image box (top-left = rect top-left; 24, cloud 32)
+    title: Optional[TextLine] = None
+    cidr: Optional[TextLine] = None
+
+    def header(self, conservative: bool = False) -> Optional[Box]:
+        """Union of badge, title and CIDR glyph boxes (what edges and labels avoid)."""
+        parts = [self.badge] if self.badge else []
+        parts += [t.box(conservative) for t in (self.title, self.cidr) if t]
+        return union_all(parts)
+
+
+@dataclass
+class NodeGeom:
+    id: str
+    cx: float                       # icon center
+    cy: float
+    icon: Box                       # cx ± S/2, cy ± S/2
+    lines: List[TextLine] = field(default_factory=list)   # label (baseline icon.y1 + 18) then sub lines (+16 each)
+    mask: Optional[Box] = None      # border nodes: white mask (x = cx − w/2, y = icon.y0, h = S + mask_extra + 16·extra lines)
+    side: Optional[str] = None      # border nodes: left | right
+
+    def stack(self, conservative: bool = False) -> Optional[Box]:
+        return union_all([t.box(conservative) for t in self.lines])
+
+    @property
+    def last_baseline(self) -> float:
+        return self.lines[-1].y if self.lines else self.icon.y1
+
+    def footprint(self, conservative: bool = True) -> Box:
+        """Icon ∪ label stack ∪ mask: the space the node occupies (conservative by default)."""
+        return union_all([self.icon] + ([self.stack(conservative)] if self.lines else [])
+                         + ([self.mask] if self.mask else []))
+
+
+@dataclass
+class Geometry:
+    mode: str
+    S: float
+    canvas_w: float
+    canvas_h: float
+    cols: Dict[str, float]          # col track id → center x (spec order)
+    rows: Dict[str, float]          # row track id → center y
+    col_extent: Dict[str, Tuple[float, float]] = field(default_factory=dict)   # (x0, x1) union of footprints centered on the track
+    row_extent: Dict[str, Tuple[float, float]] = field(default_factory=dict)   # (y0, y1) likewise
+    groups: Dict[str, GroupGeom] = field(default_factory=dict)   # draw order = Spec.groups order
+    nodes: Dict[str, NodeGeom] = field(default_factory=dict)     # Spec.nodes order
+    drawing: Box = field(default_factory=lambda: Box(0, 0, 0, 0))   # union of group rects and node footprints
+    explain: List[str] = field(default_factory=list)   # --explain lines: which constraint set each gap
+    warnings: List[str] = field(default_factory=list)
+
+    def track(self, tid: str) -> float:
+        return self.cols[tid] if tid in self.cols else self.rows[tid]
+
+    def gap(self, a: str, b: str) -> float:
+        """Middle of the widest free corridor strictly between tracks a and b (same axis).
+
+        Obstacles: every node footprint (an interval) and every group border on that axis
+        (a point) inside the range; the widest remaining interval wins, ties → the first.
+        Escape-hatch helper (`gap(a,b)` expressions); W3 may search corridors better."""
+        x_axis = a in self.cols
+        if x_axis != (b in self.cols):
+            raise KeyError(f"gap({a},{b}): tracks on different axes")
+        lo, hi = sorted((self.track(a), self.track(b)))
+        blocks = []
+        for n in self.nodes.values():
+            f = n.footprint()
+            blocks.append((f.x0, f.x1) if x_axis else (f.y0, f.y1))
+        for g in self.groups.values():
+            r = g.rect
+            for v in ((r.x0, r.x1) if x_axis else (r.y0, r.y1)):
+                blocks.append((v, v))
+        cuts = sorted((max(lo, s), min(hi, e)) for s, e in blocks if e > lo and s < hi)
+        best, cur = None, lo
+        for s, e in cuts + [(hi, hi)]:
+            if s > cur and (best is None or s - cur > best[1] - best[0]):
+                best = (cur, s)
+            cur = max(cur, e)
+        return (best[0] + best[1]) / 2 if best else (lo + hi) / 2
+
+
+def eval_expr(e: Expr, geom: Geometry) -> float:
+    if e.kind == "num":
+        return e.offset
+    if e.kind == "node":
+        base = geom.nodes[e.ref].icon.get(e.attr)
+    elif e.kind == "label":
+        st = geom.nodes[e.ref].stack()
+        base = (st or geom.nodes[e.ref].icon).get(e.attr)
+    elif e.kind == "group":
+        base = geom.groups[e.ref].rect.get(e.attr)
+    elif e.kind == "col":
+        base = geom.cols[e.ref]
+    elif e.kind == "row":
+        base = geom.rows[e.ref]
+    elif e.kind == "gap":
+        base = geom.gap(e.ref, e.ref2)
+    else:
+        raise ValueError(f"unknown expression kind {e.kind!r}")
+    return base + e.offset
+
+
+# =======================================================================================
+# Requirements (W3 plan, W4 block, W5 feedback → W2 solve)
+
+@dataclass(frozen=True)
+class Requirement:
+    axis: str                       # "x" | "y"
+    a: str                          # variable (section 4)
+    b: str                          # variable
+    d: float                        # value(b) − value(a) ≥ d, px (may be negative)
+    why: str                        # short reason for --explain / errors ("arrow 48 + end 4 into igw")
+    owner: str                      # element id of the requirer ("edge:3", "note", "node:igw")
+    soft: bool = False              # a preference W2 may drop to break a positive cycle
+
+
+# =======================================================================================
+# The note (W4 output)
+
+@dataclass
+class NoteBlock:
+    place: str                      # panel | pane | lines | none
+    w: float = 0.0                  # rect width (panel: canvas_w − 32 of the geom it was built on)
+    h: float = 0.0                  # panel/pane: rect height; lines: canvas bottom − drawing bottom
+    rect: Optional[Box] = None      # where it sits in that geom (None for none)
+    elements: List["Element"] = field(default_factory=list)   # z Z_NOTE, owner "note"
+    requirements: List[Requirement] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+
+    def below(self) -> float:
+        """Canvas height added below the drawing's bottom (section 4)."""
+        if self.place == "panel":
+            return K.PANEL_GAP + self.h + K.PANEL_GAP
+        if self.place == "lines":
+            return self.h
+        return 0.0
+
+
+# =======================================================================================
+# Elements (→ W5 emit)
+
+@dataclass
+class Element:
+    kind: str                       # rect | image | text | line | polyline | circle | raw
+    attrs: Dict[str, Union[str, Number]]   # SVG attributes in output order; numbers → fmt_num
+    text: Optional[str] = None      # <text> content; raw: the SVG fragment
+    z: int = K.Z_GROUP
+    owner: str = ""                 # element id (section 5)
+
+
+def fmt_num(v: Number) -> str:
+    """≤ 2 decimals, integral values without a decimal point ("179.4", "222", "-8")."""
+    s = f"{float(v):.2f}".rstrip("0").rstrip(".")
+    return "0" if s in ("-0", "") else s
+
+
+def node_eid(nid: str) -> str:
+    return f"node:{nid}"
+
+
+def group_eid(gid: str) -> str:
+    return f"group:{gid}"
+
+
+def edge_eid(n: int) -> str:
+    return f"edge:{n}"
+
+
+NOTE_EID = "note"
+
+
+def raw_eid(i: int) -> str:
+    return f"raw:{i}"
+
+
+def split_eid(eid: str) -> Tuple[str, str, str]:
+    """"edge:3:label" → ("edge", "3", "label"); "node:nat.1" → ("node", "nat.1", ""); "note" → ("note", "", "")."""
+    parts = eid.split(":")
+    return (parts[0], parts[1] if len(parts) > 1 else "", parts[2] if len(parts) > 2 else "")
+
+
+def g_id(owner: str, z: int) -> str:
+    """The <g id> for an owner's run of elements in layer z (section 5)."""
+    kind = owner.split(":", 1)[0]
+    home = {"group": K.Z_GROUP, "node": K.Z_NODE, "edge": K.Z_EDGE, "note": K.Z_NOTE}.get(kind)
+    if home is None or home == z:
+        return owner
+    return f"{owner}:{K.Z_PART.get(z, f'z{z}')}"
+
+
+# Factories: one attribute order everywhere (the examples' most common order).
+
+def el_rect(box: Box, *, fill: str = "none", stroke: Optional[str] = None, width: Optional[float] = None,
+            dash: Optional[str] = None, z: int = K.Z_GROUP, owner: str = "") -> Element:
+    a: Dict[str, Union[str, Number]] = {"x": box.x0, "y": box.y0, "width": box.w, "height": box.h, "fill": fill}
+    if stroke:
+        a["stroke"] = stroke
+        a["stroke-width"] = width if width is not None else 1
+    if dash:
+        a["stroke-dasharray"] = dash
+    return Element("rect", a, z=z, owner=owner)
+
+
+def el_image(ref: str, box: Box, *, z: int = K.Z_NODE, owner: str = "") -> Element:
+    return Element("image", {"href": f"bundle:{ref}", "x": box.x0, "y": box.y0, "width": box.w, "height": box.h},
+                   z=z, owner=owner)
+
+
+def el_text(t: TextLine, *, z: int = K.Z_NODE, owner: str = "") -> Element:
+    a: Dict[str, Union[str, Number]] = {"x": t.x, "y": t.y, "font-size": t.size}
+    if t.anchor != "start":
+        a["text-anchor"] = t.anchor
+    a["fill"] = t.fill
+    if t.weight:
+        a["font-weight"] = t.weight
+    return Element("text", a, text=t.text, z=z, owner=owner)
+
+
+def _stroke(a: Dict[str, Union[str, Number]], dash: Optional[str], start: bool, end: bool,
+            color: str, width: float) -> None:
+    a["stroke"] = color
+    a["stroke-width"] = width
+    if dash:
+        a["stroke-dasharray"] = dash
+    if start:
+        a["marker-start"] = K.MARKER_START_ATTR
+    if end:
+        a["marker-end"] = K.MARKER_END_ATTR
+
+
+def el_path(points: Sequence[Tuple[float, float]], *, dash: Optional[str] = None, start: bool = False,
+            end: bool = False, color: str = K.LINE_COLOR, width: float = K.LINE_WIDTH,
+            z: int = K.Z_EDGE, owner: str = "") -> Element:
+    """A connector: <line> for two points, <polyline fill="none"> for more."""
+    if len(points) < 2:
+        raise ValueError("a path needs two points")
+    if len(points) == 2:
+        (x1, y1), (x2, y2) = points
+        a: Dict[str, Union[str, Number]] = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+        _stroke(a, dash, start, end, color, width)
+        return Element("line", a, z=z, owner=owner)
+    a = {"points": " ".join(f"{fmt_num(x)},{fmt_num(y)}" for x, y in points), "fill": "none"}
+    _stroke(a, dash, start, end, color, width)
+    return Element("polyline", a, z=z, owner=owner)
+
+
+def el_circle(cx: float, cy: float, r: float, fill: str, *, z: int = K.Z_BADGE, owner: str = "") -> Element:
+    return Element("circle", {"cx": cx, "cy": cy, "r": r, "fill": fill}, z=z, owner=owner)
+
+
+def el_badge(cx: float, cy: float, n: int, *, z: int = K.Z_BADGE, owner: str = "") -> List[Element]:
+    """A step badge: circle r 10 #232F3E, digit 12px 700 #FFFFFF at baseline cy + 4 (QR 158)."""
+    st = K.TEXT_BADGE
+    digit = TextLine(str(n), cx, cy + K.BADGE_TEXT_DY, st.size, st.fill, st.weight, "middle")
+    return [el_circle(cx, cy, K.BADGE_R, K.BADGE_FILL, z=z, owner=owner), el_text(digit, z=z, owner=owner)]
+
+
+def el_raw(svg: str, *, z: int, owner: str) -> Element:
+    return Element("raw", {}, text=svg, z=z, owner=owner)
