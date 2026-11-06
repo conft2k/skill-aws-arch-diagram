@@ -307,7 +307,11 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     100 instead of 134). plan() gives back the whole footprints where a HVH leaving a node
     sideways drops past its labels between it and the next node of its row (bedrock-dx
     PC → Internet), and asks (soft, documents) a labelled VHV's horizontal piece for its
-    label + 8 each side past a split port.
+    label + 8 each side past a split port. A node with lines through its bottom (top)
+    port — V, VHV, the vertical end of a VH / HV — keeps every same-row sibling's icon or
+    label line below (above) that port its half width + OBST_CLEAR + 1 (+ the port split:
+    PORT_TOPBOT for two lines, PORT_PITCH per extra line) from its center, so the vertical
+    line clears a neighbour's long last line (hard; the narrow band below the stack only).
 """
 from __future__ import annotations
 

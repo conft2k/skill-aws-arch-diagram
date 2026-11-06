@@ -468,6 +468,45 @@ class LabelOnLine(unittest.TestCase):
         self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg))], [])
 
 
+class VerticalPort(unittest.TestCase):
+    def test_line_out_of_the_bottom_clears_a_neighbours_long_line(self):
+        """A neighbour's long last label line sits below a node's stack (side by side by
+        line), right where a line leaves (or enters) the node's bottom: plan() keeps that
+        line clear of the vertical, so it draws straight in one pass, check clean."""
+        for mode in ("slide", "document"):
+            for e in ("y -> z", "z -> y"):
+                d = {"name": "v1", "mode": mode, "cols": ["a", "b"], "rows": ["top", "bot"],
+                     "groups": [{"id": "cloud", "type": "cloud"}],
+                     "nodes": [{"id": "x", "icon": "resource/Amazon-Route-53_Route-Table", "label": "Left RT",
+                                "sub": ["one", "a very long third line that goes far right"], "in": "cloud",
+                                "at": ["a", "top"]},
+                               {"id": "y", "icon": "service/Amazon-Virtual-Private-Cloud", "label": "Y VPC",
+                                "in": "cloud", "at": ["b", "top"]},
+                               {"id": "z", "icon": "service/Amazon-Virtual-Private-Cloud", "label": "Z VPC",
+                                "in": "cloud", "at": ["b", "bot"]}],
+                     "edges": [{"e": e}]}
+                with self.subTest(mode=mode, edge=e):
+                    spec, b = built(d)
+                    self.assertFalse([w for w in b.warnings if "instead of" in w], b.warnings)
+                    line = [el for el in b.elements if el.owner == "edge:0" and el.z == K.Z_EDGE]
+                    self.assertEqual([el.kind for el in line], ["line"])
+                    self.assertEqual(line[0].attrs["x1"], b.geom.nodes["y"].cx)
+                    long_end = b.geom.nodes["x"].cx + M.layout_text_width(d["nodes"][0]["sub"][1], 12) / 2
+                    self.assertGreaterEqual(b.geom.nodes["y"].cx - long_end, 5)
+                    self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg))], [])
+
+    def test_no_line_no_room(self):
+        """Without a line through y's bottom the long line still takes no room beside y."""
+        d = {"name": "v0", "mode": "slide", "cols": ["a", "b"], "rows": ["top"],
+             "nodes": [{"id": "x", "icon": "resource/Amazon-Route-53_Route-Table", "label": "Left RT",
+                        "sub": ["one", "a very long third line that goes far right"], "at": ["a", "top"]},
+                       {"id": "y", "icon": "service/Amazon-Virtual-Private-Cloud", "label": "Y VPC",
+                        "at": ["b", "top"]}]}
+        spec, b = built(d)
+        long_end = b.geom.nodes["x"].cx + M.layout_text_width("a very long third line that goes far right", 12) / 2
+        self.assertLess(b.geom.nodes["y"].cx, long_end)
+
+
 class CLI(unittest.TestCase):
     def run_cli(self, *args):
         p = subprocess.run([sys.executable, str(ROOT / "scripts" / "layout.py"), *map(str, args)],

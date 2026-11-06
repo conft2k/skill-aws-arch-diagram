@@ -555,6 +555,19 @@ def plan(spec: Spec) -> List[Requirement]:
             _header_reqs(spec, e.b, nb, owner, add)
         if t.dy == -1 and shape in (V, VHV, VH) and e.a_kind == "node":
             _header_reqs(spec, e.a, na, owner, add)
+    # a line leaving or entering a node through its top / bottom runs at its center (±
+    # the port split): a row neighbour's label line or icon below (above) the node's stack
+    # must clear it, which the solver's band-by-band spacing does not see (QR 74)
+    ports: Dict[Tuple[str, str], List[int]] = {}
+    for e in spec.edges:
+        t = topo[e.n]
+        if t.shape == P:
+            continue
+        for nid, kind, side in ((e.a, e.a_kind, t.side_a), (e.b, e.b_kind, t.side_b)):
+            if kind == "node" and side in VERT:
+                ports.setdefault((nid, side), []).append(e.n)
+    for (nid, side), ns in ports.items():
+        _port_reqs(spec, nid, side, len(ns), M.edge_eid(ns[0]), add)
     return reqs
 
 
@@ -585,6 +598,48 @@ def _gutter_reqs(spec: Spec, nid: str, other: _End, d: int, owner: str, add) -> 
         need = spec.const.sibling_gap + _half(spec, n) + _half(spec, o)
         a, b = (nid, o.id) if d > 0 else (o.id, nid)
         add("x", f"node:{a}", f"node:{b}", need, f"bend gutter past {nid}'s labels | {o.id}", owner)
+
+
+def _bands(spec: Spec, n) -> List[Tuple[float, float, float]]:
+    """A node's icon and label lines as (y0, y1, half width) from its icon center (the
+    solver's _Foot.bands: glyph boxes, 0.6 em widths)."""
+    S = spec.S
+    out = [(-S / 2, S / 2, S / 2)]
+    lines = ([(n.label, K.label_size(S))] if n.label else []) + [(s, K.TEXT_SUB.size) for s in n.sub]
+    for i, (s, sz) in enumerate(lines):
+        b = S / 2 + K.NODE_LABEL_DY + K.SUB_PITCH * i
+        out.append((b - K.GLYPH_ASCENT * sz, b + K.GLYPH_DESCENT * sz, M.layout_text_width(s, sz) / 2))
+    return out
+
+
+def _port_reqs(spec: Spec, nid: str, side: str, k: int, owner: str, add) -> None:
+    """`k` lines leave / enter node `nid` through its `side` (top or bottom) and run
+    vertically from its port: every same-row sibling's icon or label line past that port
+    keeps its half width + OBST_CLEAR + 1 (+ the port split) from nid's center, toward
+    whichever side it sits (v1: a neighbour's long sub line under a spoke's bottom port)."""
+    n = spec.nodes[nid]
+    if n.on or n.xy is not None or n.col is None or n.row is None:
+        return
+    ci, _ = _indices(spec)
+    lo, hi = sorted((ci[n.col], ci[n.col2 or n.col]))
+    spread = 0.0 if k < 2 else max(K.PORT_TOPBOT, K.PORT_PITCH * (k - 1))
+    port = _off(spec, nid, "node", side)            # icon center → port, along the line
+    for o in spec.nodes.values():
+        if o.id == nid or o.parent != n.parent or o.on or o.xy is not None or o.col is None or o.row != n.row:
+            continue
+        olo, ohi = sorted((ci[o.col], ci[o.col2 or o.col]))
+        if lo <= ohi and olo <= hi:
+            continue
+        off = o.dy - n.dy
+        half = 0.0
+        for y0, y1, h in _bands(spec, o):
+            if (side == "bottom" and y1 + off > port - OBST_CLEAR) or (side == "top" and y0 + off < -port + OBST_CLEAR):
+                half = max(half, h)
+        if not half:
+            continue
+        need = math.ceil(half + OBST_CLEAR + 1 + spread - 1e-9)
+        a, b = (o.id, nid) if ohi < lo else (nid, o.id)
+        add("x", f"node:{a}", f"node:{b}", need, f"line through {nid}'s {side} clear of {o.id}", owner)
 
 
 def _header_reqs(spec: Spec, nid: str, groups: Sequence[str], owner: str, add) -> None:
