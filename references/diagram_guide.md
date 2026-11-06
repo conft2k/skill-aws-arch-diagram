@@ -448,7 +448,9 @@ a target group spanning the AZs with a zonal EC2 instance in each (it is
 
 - **Traffic flows left to right.** When the diagram shows how traffic moves (requests,
   packets, data), lay it out so the flow reads left → right: users/clients/on-prem on
-  the left, entry points (Route 53, CloudFront, IGW, VGW) next, then load balancers,
+  the left (an on-premises group goes on the left; only when it cannot, at the bottom —
+  never on the right or on top, even when larger text forces a vertical layout),
+  entry points (Route 53, CloudFront, IGW, VGW) next, then load balancers,
   compute, and data stores on the right. Every main-path arrow points right; only
   return, outbound (e.g. to a NAT gateway) or control/management connectors may go
   another way, and those are dashed. To make that work in a VPC, put the **tiers in
@@ -513,6 +515,9 @@ a target group spanning the AZs with a zonal EC2 instance in each (it is
     (on top) on a white background rectangle that hides the borders beneath it. It must
     still never cover an icon, a connector, a step badge or a label. Use this to keep
     the table beside the TGW instead of stretching containers to make room for it.
+    Tie it to its TGW with a short purple dashed line (`#8C4FFF`, the TGW icon color,
+    1.5px, `stroke-dasharray="4 3"`, no arrowhead), straight or with one bend, crossing
+    nothing, so the reader sees at once which TGW the table belongs to.
   - **Show one representative flow** — the path that crosses the most attachment types
     (e.g. on-premises → a VPC in the remote Region) — as step badges on the attachment
     lines it uses, explained in the step legend with the route that sends it each way
