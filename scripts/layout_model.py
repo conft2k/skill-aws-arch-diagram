@@ -245,7 +245,8 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     other members keep ≥ 8 below the ASG top (ex gwlb +26 / +20).
  g. Default font-family is the examples' fixed string (layout_const.FONT_FAMILY_DEFAULT);
     W1 reorders only when Noto Sans CJK KR is not installed, so output stays stable.
- h. edge.label_at None = auto (above; below when the hop has a badge). Edge.step is the
+ h. edge.label_at None = auto (above a horizontal piece, right of a vertical one; a badge on
+    the same piece sits beside the label, both above). Edge.step is the
     badge on that instance after step / step_each / steps resolution.
  i. Track ids are unique across cols and rows; spec ids match [A-Za-z0-9_-]+ (section 5).
  j. Positions the examples computed from text widths (panel description column, slide

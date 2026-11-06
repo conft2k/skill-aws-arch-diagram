@@ -131,7 +131,8 @@ separate load balancers.
   inside that row, above its line — never on another hop's line; hops that share or run side by side through the AZ gap
   get one number between them, and on a slide the "keep it clear of the AZ boxes" rule
   wins over the middle-of-the-line rule); when the hop also has a protocol
-  label, put the label below the line. The legend in the note names exactly the hop
+  label, the number and the label sit side by side above the line (number left, label
+  6px right of it); only when the line is too short for both does the number go below. The legend in the note names exactly the hop
   each number sits on, and draws each number as the same badge (see **Step legend**),
   never as a circled-digit glyph (①). Don't move nodes to separate lanes to avoid the
   ambiguity; the numbers resolve it and the alignment stays consistent across the set.
@@ -698,8 +699,10 @@ draft path copies an example, or start from `docs/examples/specs/example.layout.
   node or header label 4px; label ↔ label side by side 4px. check_layout.py enforces
   all of them.
 - **Connector labels** (protocol, name) sit near the middle of the longest horizontal
-  part of their line between container borders, 4–8px above it (below it when a step
-  number takes the space above).
+  part of their line between container borders, 4–8px **above** it — also when a step
+  number is on that part (side by side). On a vertical part the label goes to the
+  **right** of the line (`text-anchor="start"`, x = line + 8–10). Below or left only when
+  the preferred side has no room, and then widen that side instead if you can.
 - **Fixed header geometry.** A container's header label sits at baseline container.y +
   18 (x + 32 with a badge, x + 12 without); any box nested inside starts at container.y
   + 30 or lower (VPC → AZ, AZ → subnet) — **+ 46 when the container shows its CIDR**

@@ -339,13 +339,20 @@ class Reproduce(unittest.TestCase):
     def test_tgw_badges(self):
         spec, geom, d, boxes, els, warns = routed("tgw")
         b = badges_of(els)
-        for n, x in ((2, 518), (3, 796), (4, 1015)):
+        for n, x in ((3, 796), (4, 1015)):
             self.near(b[n][0], x, f"tgw badge {n} x")
         self.near(b[4][1], 200, "tgw badge 4 cy")
         tops = sorted(points(lines_of(els, n)[0])[0][0] for n in (3, 4))
         self.assertEqual(tops, [606, 626])                       # ±10 on the TGW's top side
+        # badge 2 and its label side by side above the line (labels go above a horizontal line)
         label = next(e for e in els if e.owner == "edge:2" and e.kind == "text" and e.z == K.Z_EDGE_LABEL)
-        self.assertGreater(label.attrs["y"], 254)               # below the line: badge 2 above it
+        self.assertEqual(label.attrs["y"], 254 - 9)
+        self.assertEqual(b[2][1], 254 - K.BADGE_DY)
+        self.assertLessEqual(b[2][0] + K.BADGE_R + 4, label.attrs["x"] - M.text_width(label.text, 12) / 2)
+        # the 50px Internet → VPN piece has no room for both: the label stays above, badge 1 below
+        label = next(e for e in els if e.owner == "edge:1" and e.kind == "text" and e.z == K.Z_EDGE_LABEL)
+        self.assertEqual(label.attrs["y"], 254 - 9)
+        self.assertEqual(b[1][1], 254 + K.BADGE_DY)
 
     def test_nlb_mtls_trunk(self):
         spec, geom, d, boxes, els, warns = routed("nlb-mtls")
@@ -361,7 +368,7 @@ class Reproduce(unittest.TestCase):
             self.near(t.attrs["x"], 553, "outbound label x")
             self.near(t.attrs["y"], y, "outbound label y")
         t = next(e for e in els if e.owner == "edge:7" and e.kind == "text")
-        self.assertEqual((t.attrs["text-anchor"], t.attrs["x"]), ("end", 966))     # 10 left of the vertical
+        self.assertEqual((t.attrs.get("text-anchor", "start"), t.attrs["x"]), ("start", 986))  # 10 right of the vertical
         self.near(t.attrs["y"], 481, "replication label y")
         t = next(e for e in els if e.owner == "edge:0" and e.kind == "text")
         self.assertLess(t.attrs["x"] + M.text_width(t.text, 12) / 2, geom.groups["cloud"].rect.x0)  # outside the Cloud

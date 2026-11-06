@@ -35,7 +35,7 @@ edges:
   - {e: "asg -> rds.1", label: SQL}
   - {e: "users ..> r53", verb: DNS 조회}
   - {e: "asg ..> nat.*", verb: 아웃바운드}
-  - {e: "rds.1 ..> rds.2", verb: 동기식 복제, label_at: left}   # vertical line: the draft puts the label left of it (anchor end); DESIGN 4.6 names no default side
+  - {e: "rds.1 ..> rds.2", verb: 동기식 복제}   # vertical line: the label goes right of it (anchor start), the default
 
 note:
   summary: "Internet-facing ALB · 두 AZ에 걸친 단일 관리형 로드 밸런서 · AWS WAF 연결 · RDS Multi-AZ"
