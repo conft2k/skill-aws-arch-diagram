@@ -253,7 +253,10 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   `note:` place and size, `icons`, `alias` resolutions, `warning:` lines (read them —
   an LB inside a template, note text past the canvas, a phase-2 key drawn another way;
   `drew X instead of Y`: something blocks the planned shape — run `--explain` to see
-  which tracks coincide, then separate them with `min_gap_before`).
+  which tracks coincide, then separate them with `min_gap_before`; when Y was your own
+  `shape` / `from_side` / `to_side`, the line goes on with `refusing the requested …`, what
+  blocked it (`bend_y tgwa.y0-60 = 148: LINE OVER TEXT '10.1.0.0/16' of svcs`) and what to
+  try — a clean `bend_y: 181`, or widening the gap between the ends).
 - `check: …` lines: what the engine already widened or repaired on its own.
 - **Problems**: `check_layout.py`'s message, then up to three lines — `fix:` the draft
   coordinate correction (spec path: ignore it; it applies only once you edit the draft),

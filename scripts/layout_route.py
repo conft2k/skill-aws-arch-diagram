@@ -60,8 +60,9 @@ the next piece.
 from __future__ import annotations
 
 import math
+import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -781,6 +782,34 @@ def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool) -> List[str
     if hs and _len(*segs[0]) < K.MIN_ARROW:
         probs.append("SHORT ARROW (start)")
     return probs
+
+
+def _name_prob(ctx: _Ctx, p: str) -> str:
+    """A _line_problems entry with the node (or group) it hits named."""
+    m = re.match(r"(LINE OVER (?:TEXT|ICON)) \((-?[\d.]+),(-?[\d.]+)\)$", p)
+    if not m:
+        return p
+    x, y = float(m.group(2)), float(m.group(3))
+    for nid, n in ctx.geom.nodes.items():
+        if m.group(1).endswith("ICON") and abs(n.icon.x0 - x) < 1 and abs(n.icon.y0 - y) < 1:
+            return f"{m.group(1)} of {nid}"
+        for t in n.lines:
+            b = t.box(conservative=True)
+            if m.group(1).endswith("TEXT") and abs(b.x0 - x) < 1 and abs(b.y0 - y) < 1:
+                return f"{m.group(1)} {t.text!r} of {nid}"
+    for gid, g in ctx.geom.groups.items():
+        for t in (g.title, g.cidr):
+            if t and abs(t.box().x0 - x) < 1 and abs(t.box().y0 - y) < 1:
+                return f"{m.group(1)} {t.text!r} ({gid}'s header)"
+    return p
+
+
+def _expr_text(e: M.Expr) -> str:
+    base = {"num": "", "col": f"col.{e.ref}", "row": f"row.{e.ref}", "gap": f"gap({e.ref},{e.ref2})",
+            "label": f"{e.ref}.label.{e.attr}"}.get(e.kind, f"{e.ref}.{e.attr}")
+    if not base:
+        return M.fmt_num(e.offset)
+    return base + (f"{'+' if e.offset > 0 else '-'}{M.fmt_num(abs(e.offset))}" if e.offset else "")
 
 
 def _subtract(lo: float, hi: float, blocks) -> List[Tuple[float, float]]:
@@ -1721,13 +1750,44 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
             r = points_route(x) if x.t.shape == P else individual(x, skip.get(x.e.n, 0))
             routes[x.e.n] = r
             done_lines.extend(zip(r.pts, r.pts[1:]))
+    def refused(x: _Edge, r: _Route) -> str:
+        """Why the spec's own shape (`shape`, or the one from_side / to_side imply) was not
+        drawn, and the change that would let it."""
+        e, want = x.e, x.t.shape
+        asked = f"shape: {want}" if e.shape else f"from_side / to_side → {want}"
+        leg = "bend_x" if want in (HVH, H) else "bend_y" if want in (VHV, V) else None
+        hint = getattr(e, leg) if leg else None
+        hint = hint if isinstance(hint, M.Expr) else None
+        mine = [build(x, c) for c in _candidates(ctx, x, ports) if c[0] == want]
+        if not mine:
+            why = f"no {want} fits between the two ends (no free stretch for its bend)"
+        else:
+            probs = list(dict.fromkeys(mine[0].probs))[:3]
+            why = "; ".join(_name_prob(ctx, p) for p in probs) or "a cleaner candidate won"
+            if hint is not None:
+                why = f"{leg} {_expr_text(hint)} = {M.fmt_num(mine[0].bend)}: {why}"
+        if hint is not None:
+            x2 = _Edge(ctx, replace(e, **{leg: None}), x.t)
+            clean = [c for c in _candidates(ctx, x2, ports) if c[0] == want and c[3] is not None
+                     and not build(x2, c).probs]
+            fix = (f"{leg}: {M.fmt_num(clean[0][3])} (or drop {leg}: the router finds that bend)" if clean else
+                   f"no {leg} draws a clean {want} here: widen the gap between the ends (min_gap_before / pad), "
+                   f"or drop shape / {leg}")
+        else:
+            fix = (f"widen the gap between the ends (min_gap_before / pad) so a {want} has a clean bend, "
+                   f"or drop the hint and let the rule pick")
+        return f"{_where(e)}: drew {r.shape} instead of {want}, refusing the requested {asked} — {why}; try {fix}"
+
     # trunks whose followers could not share the first instance's bend: report
     for n, r in sorted(routes.items()):
         x = xs[n]
         if r.probs and x.t.shape != P:      # `points` is the spec's own route: check_layout judges it
             warns.append(f"{_where(x.e)}: {', '.join(sorted(set(r.probs)))} (best of the candidates)")
         if r.shape != x.t.shape and x.t.shape != P:
-            warns.append(f"{_where(x.e)}: drew {r.shape} instead of {x.t.shape} (re-solve may be needed)")
+            if x.t.note == "override":
+                warns.append(refused(x, r))
+            else:
+                warns.append(f"{_where(x.e)}: drew {r.shape} instead of {x.t.shape} (re-solve may be needed)")
     # elements: lines (Edge.n order), then labels, then badges
     els: List[Element] = []
     all_lines = [s for r in routes.values() for s in zip(r.pts, r.pts[1:])]

@@ -540,6 +540,30 @@ class Synthetic(unittest.TestCase):
         b = points(lines_of(R.draw(spec, geom, skip={0: 1})[0], 0)[0])
         self.assertNotEqual(a, b)
 
+    def test_refused_shape_says_why(self):
+        """A requested shape the router cannot draw clean is replaced, and the warning says
+        it was the spec's own request, what blocked it and the bend that would work."""
+        spec, geom = self.setup(blocker=False)
+        spec.nodes["y"].row = "s"
+        geom.nodes["y"] = M.NodeGeom("y", 500, 400, M.Box(476, 376, 524, 424),
+                                     [M.TextLine("Y", 500, 442, 14, K.INK, "", "middle")])
+        spec.nodes["z"] = M.Node("z", "service/Amazon-S3", "Z", xy=(300.0, 320.0))
+        geom.nodes["z"] = M.NodeGeom("z", 300, 320, M.Box(276, 296, 324, 344),
+                                     [M.TextLine("Z", 300, 362, 14, K.INK, "", "middle")])
+        spec.edges = [M.Edge(0, "x", "y", "--", src="edges[0]", shape="VHV", bend_y=M.Expr("num", offset=320))]
+        els, warns = R.draw(spec, geom)
+        w = [m for m in warns if "refusing the requested shape: VHV" in m]
+        self.assertEqual(len(w), 1, warns)
+        self.assertIn("bend_y 320 = 320: LINE OVER ICON of z", w[0])
+        self.assertRegex(w[0], r"try bend_y: \d+")
+        self.assertRegex(w[0], r"^edges\[0\][^:]*: drew \S+ instead of VHV")    # layout.py's feedback still reads it
+        # the bend it suggests draws the VHV clean
+        v = float(re.search(r"try bend_y: (\d+(?:\.\d+)?)", w[0]).group(1))
+        spec.edges[0].bend_y = M.Expr("num", offset=v)
+        els, warns = R.draw(spec, geom)
+        self.assertEqual(warns, [])
+        self.assertEqual(len(points(lines_of(els, 0)[0])), 4)
+
     def test_bend_avoids_label(self):
         """HVH: the vertical leg keeps out of a label standing in the gutter."""
         spec, geom = self.setup(blocker=False)
