@@ -65,32 +65,72 @@ service or resource. Ask a brief clarifying question only if the topology is gen
 ambiguous; otherwise proceed with a sensible default and note assumptions. For a deck,
 settle the slide titles (one line each, or none) and the list of slides.
 
-### 1b. Start from the closest reference example
-`docs/examples/` holds finished, checked reference layouts — NLB, ALB (3-tier with
-WAF and RDS Multi-AZ), GWLB (distributed inspection), Transit Gateway (hub and
-spoke in two Regions joined by TGW peering drawn as the peering connection icon between
-the Regions, VPCs as single icons, attachment types labeled, a route-table node per TGW and
-one flow numbered on the attachment lines) and AWS Network
-Firewall (centralized inspection VPC behind a Transit Gateway, with spoke and firewall
-route tables and NAT egress) and NLB mTLS (client-certificate verification with an ELB
-trust store fed from S3; the landscape layout with the step legend in a left pane and
-the NLB forking to one instance per AZ) and Bedrock over Direct Connect (Claude Code
-on-premises → private VIF → Direct Connect gateway → interface endpoints for
-bedrock-runtime, bedrock and sts with Route 53 Resolver inbound DNS, global
-cross-Region inference from Seoul and a second-Region endpoint) — as document-size drafts (`*.svg`) with their
-PNGs. `slides/` holds a slide-size version of the first five (`slides/*.svg`, ≤ 1108 × 544, text
-≥ 10pt on a titled slide except 9.9pt on the GWLB slide), the deck made from them (`reference-architectures.pptx`)
-and a render of each slide (`slides/*.png`). When the request resembles one of them,
-open its SVG — the `slides/` one for a deck — and reuse its layout and coordinates
-(canvas, AZ rows, tier columns, gap, IGW, regional services, note panel or pane) instead of
-laying out from scratch.
-`docs/example.svg` is the minimal skeleton.
+### 1b. Pick the closest reference example
+`docs/examples/` holds finished, checked document-size layouts (`*.svg`, each with its
+`*.png`). Pick the one whose topology is closest to the request:
 
-### 2. Read the guide
-Read `references/diagram_guide.md` in full. It defines the AWS visual grammar
-(Cloud > Region > VPC > subnet nesting), the exact group border colors, the VPC
-resource icon table, layout rules, the draft subset and the skeleton. The diagram will
-look wrong if you skip it.
+| Example (`docs/examples/`) | What it draws | Pick it for |
+|---|---|---|
+| `nlb-reference-architecture.svg` | Users → IGW → one internet-facing NLB (TLS) → ASG of EC2 across 2 AZs, NAT gateway per AZ, Route 53 in the global strip, ACM · CloudWatch · S3 row, one-line note panel | one internet-facing load balancer in one VPC; the plainest VPC layout |
+| `alb-reference-architecture.svg` | 3-tier: ALB → ASG of EC2 → RDS primary/standby (Multi-AZ), AWS WAF, ACM, CloudWatch, S3 logs row, Route 53 | web app with a DB tier, WAF, regional services |
+| `gwlb-reference-architecture.svg` | distributed inspection: Application VPC (GWLBe per AZ, app subnets) beside a Security VPC (one GWLB, appliance ASG), steps 1–4 in a bottom panel | GWLB or appliances, ingress routing, a path that detours off the main line |
+| `nfw-reference-architecture.svg` | centralized inspection: spoke VPCs A · B → TGW (Spoke RT, Firewall RT) → Inspection VPC (TGW ENI, firewall endpoint, NAT per AZ, IGW), routes as sub-captions, 5 steps | Network Firewall, centralized egress, any route-heavy TGW diagram |
+| `tgw-reference-architecture.svg` | on-premises CGW → Internet → Site-to-Site VPN → TGW A with four VPCs as single icons, TGW peering (the peering connection icon in the gap between the Regions) to TGW B, attachment types labeled once, a route-table node per TGW, one 4-step flow on the attachment lines | TGW hub and spoke, TGW peering, multi-Region, Site-to-Site VPN |
+| `nlb-mtls-reference-architecture.svg` | client → IGW → NLB forking to one EC2 per AZ, security groups, ELB trust store fed from S3, ACM, subnet CIDRs, steps in a left legend pane | mTLS or trust stores, security groups, landscape figure, fork instead of a target-group box |
+| `bedrock-dx-reference-architecture.svg` | on-premises Claude Code → Direct Connect (private VIF) → DX gateway → VGW → interface endpoints (bedrock-runtime, bedrock, sts) and Resolver inbound in a 2-AZ VPC, a second-Region VPC, Bedrock global cross-Region inference, 8 steps in a wide left pane | Direct Connect, hybrid DNS, interface endpoints / PrivateLink, private Bedrock access |
+| `../example.svg` | the minimal skeleton: one VPC, 2 AZs, ALB, ASG of two EC2, IGW (slide spacing) | a topology none of the above resembles |
+
+`slides/` holds slide-size versions of the NLB, ALB, GWLB, NFW and TGW examples
+(`slides/*.svg`, ≤ 1108 × 544, text ≥ 10pt on a titled slide except 9.9pt on the GWLB
+slide), the deck made from them (`reference-architectures.pptx`) and a render of each
+slide (`slides/*.png`). For a deck start from the `slides/` version.
+
+### 1c. Copy the example; draft fast and let the tools measure
+This is the default path: a rough draft on disk early, made exact by the tools. It
+replaces working out the whole layout in your head before writing.
+
+1. **Copy the example into the scratchpad now**, as `<name>.draft.svg`, with its
+   inlined icons turned back into `bundle:` refs. The examples are exported files: each
+   `<image>` carries a base64 icon of several KB before its `x`/`y`, which the Read tool
+   cuts off, so read only the copy (about 10 KB):
+
+   ```bash
+   python3 ${CLAUDE_SKILL_DIR}/scripts/embed.py --unembed \
+     ${CLAUDE_SKILL_DIR}/docs/examples/nfw-reference-architecture.svg /path/to/scratchpad/arch.draft.svg
+   ```
+
+   Never Read the exported example itself; read the copy.
+
+Then, in steps 4 and 5:
+
+2. **Change the copy with Edit**: rename labels, swap `bundle:` refs, delete what the
+   request doesn't have, duplicate a node or a container block for what it adds, move
+   columns and rows. The copy already satisfies the guide, so every line you leave alone
+   stays correct. Write a new file only for a topology none of the examples resembles,
+   and then copy the skeleton the same way.
+3. **Rough grid, then write.** Decide only the columns (x) and rows (y), reusing the
+   example's, and put the nodes on them. Each turn decides one batch of edits and a
+   handful of coordinates; clearances, label and mask positions, line endpoints and
+   container sizes come from `check_layout.py`'s `fix:` lines and the render. The first
+   edit batch follows within one or two turns of reading the copy, the quick reference
+   and the icon lookup.
+4. **Fix in batches.** Run `check_layout.py --fix`, apply every `fix:` line it prints in
+   one batch of Edit calls, and run it again, until "Layout OK"; then look at the PNG.
+
+### 2. Read the quick reference, then your topic in the guide
+Read `references/quick_reference.md` first: every number and rule needed to draw
+(group colors, dashes and badge refs, header offsets, spacing, IGW/VGW placement and
+masks, text sizes, connectors, step badges, where the note goes, canvas limits) on one
+page. Then read from `references/diagram_guide.md` only the sections your diagram
+touches, plus "Technical correctness" every time. List the sections with
+`grep -n '^#\|^- \*\*\|^\*\*' ${CLAUDE_SKILL_DIR}/references/diagram_guide.md`
+and read them by line range — e.g. "Fully managed multi-AZ services are one node" for
+load balancers, "Show what a hybrid connection runs over" for VPN or Direct Connect,
+"A reference topology shows its connections and one flow" for TGW and peering, "The
+note — one place per diagram" and "Step legend" for numbered steps, "Regional services
+row" and "Global services sit outside the Region" for services outside the VPC,
+"Bedrock and AgentCore", "Common diagram types". When no example is close to the
+request, read the whole guide.
 
 ### 3. Find the exact icons
 All icons live inside a single bundle, `assets/icons.json` (not a folder of files; built from
@@ -133,10 +173,11 @@ under another service still counts when it is the package's only icon for the th
 use the closest **category** icon or a plain labeled rounded rect, and say so to the
 user. Never hand-draw a fake product mark.
 
-### 4. Compose the draft
-Build one `.svg` draft per diagram (one per slide for a deck) in the scratchpad, named
-`<name>.draft.svg`, following the skeleton and layout rules in the guide. Reference
-each icon with the **`bundle:` scheme** in the `href` — this is how the export finds it:
+### 4. Edit the draft
+One `<name>.draft.svg` per diagram (one per slide for a deck) in the scratchpad, copied
+in 1c. The copied example already follows every rule below; keep them as you change
+it. Reference each icon with the **`bundle:` scheme** in the `href` — this is how the
+export finds it:
 
 ```xml
 <image href="bundle:service/AWS-Lambda"   x="200" y="200" width="48" height="48"/>
@@ -192,7 +233,7 @@ and no text halos — mask a label with a white rect instead.
   container labels, 12px for connector/secondary labels, never smaller — see the
   guide's "Compact, not empty" and "Text size".
 - **Size the canvas for the format.** A document SVG/PNG can be as large as its content
-  needs (the reference layouts are up to 1372 × 876). A slide is scaled to fit 16:9
+  needs (the reference layouts are up to 1514 × 1072). A slide is scaled to fit 16:9
   (below the title band if there is one), so the canvas decides the slide's text size:
   - **Slide text is 10pt or larger.** Every label on the slide — the 12px connector and
     secondary labels included — must land at **≥ 10pt**: with a title a canvas of at
@@ -215,12 +256,20 @@ and no text halos — mask a label with a white rect instead.
   Arial or isn't installed. The deck's fonts are set separately (`--font`/`--ea-font`).
 
 ### 5. Check, export and verify
-Run the layout check on each draft and fix everything it reports until it prints
-"Layout OK":
+Run the layout check on each draft with `--fix`:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/check_layout.py name.draft.svg
+python3 ${CLAUDE_SKILL_DIR}/scripts/check_layout.py --fix name.draft.svg
 ```
+
+`--fix` corrects the deterministic problems in the draft in place (font sizes, title and
+CIDR line positions, mask sizes and the like) and prints what is left. Under each
+remaining problem a `  fix: ...` line gives the computed correction — the coordinate to
+move to, the width to grow to. Apply it exactly as given: it is already measured
+against everything around it, so take the number rather than working it out again. A
+problem without a `fix:` line is a layout decision; make it on the rough grid. The last
+line is `N problems (M auto-fixable with --fix)` or "Layout OK". Apply all the fixes of
+one run as one batch of Edit calls, re-run, and repeat until "Layout OK".
 
 It flags a connector or container border crossing a label, icon or badge, labels
 overlapping each other or an icon, text under 12px, an arrowhead on a stub under
@@ -329,8 +378,8 @@ file.
 
 ## What NOT to do
 
-- Don't lay a diagram out from scratch when a reference example is close — start from
-  its coordinates; ad-hoc layouts are where empty columns and drifting labels come from.
+- Don't lay a diagram out from scratch when a reference example is close — copy it and
+  edit the copy (1c); ad-hoc layouts are where empty columns and drifting labels come from.
 - Don't fill an empty container with filler captions; narrow it. Keep the figure
   compact — no empty columns or rows — while the text stays at 14px/12px.
 - Don't hand-draw or approximate AWS icons — use the bundled ones, and don't swap in
@@ -369,11 +418,12 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
   downloads the AWS Architecture Icons package released 2026-07-31
   (`Icon-package_07312026`, pinned by URL and SHA-256) and builds it on first use.
   Sets: `service`, `resource`, `group`, `category`. SVGs stored as text.
-- `references/diagram_guide.md` — conventions, colors, VPC resources, the draft subset and skeleton (read this).
+- `references/quick_reference.md` — every number and rule for drawing on one page (read this first).
+- `references/diagram_guide.md` — conventions, colors, VPC resources, the draft subset and skeleton, with the reasoning and edge cases (read the sections your diagram touches).
 - `scripts/find_icon.py` — fuzzy lookup → `set/name` reference (with AWS abbreviation aliases).
-- `scripts/check_layout.py` — flag lines over labels/icons, overlapping or too-close labels, text under 12px, short arrowheads, trunks hugging a border, titles off their header row, CIDRs off their line, circled-digit legends, services written as connector labels.
+- `scripts/check_layout.py` — flag lines over labels/icons, overlapping or too-close labels, text under 12px, short arrowheads, trunks hugging a border, titles off their header row, CIDRs off their line, circled-digit legends, services written as connector labels. A problem with a computed correction carries a `fix:` line under it; `--fix` applies the deterministic ones to the draft in place; the last line is `N problems (M auto-fixable with --fix)` or "Layout OK".
 - `scripts/export.py` — check drafts and write any of SVG, PNG and PPTX in one step.
-- `scripts/embed.py` — inline `bundle:set/name` hrefs as base64 for a portable SVG.
+- `scripts/embed.py` — inline `bundle:set/name` hrefs as base64 for a portable SVG; `--unembed` turns an exported SVG (an example) back into a draft.
 - `scripts/svg2pptx.py` — convert drafts into a deck of native PowerPoint shapes.
 - `scripts/render_pptx.py` — render each slide of a deck to PNG for the visual check.
 - `scripts/fetch_icons.py` — download the pinned official package and build `icons.json`
@@ -383,8 +433,8 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
 - `scripts/macos_cairo.py` — imported before cairosvg so it finds Homebrew's cairo on
   Apple Silicon without shell setup.
 - `docs/examples/` — checked NLB, ALB, GWLB, TGW, Network Firewall, NLB mTLS and Bedrock-over-DX reference layouts
-  (drafts + PNG); `slides/` has their slide-size versions, the deck made from those and
-  a render of each slide.
+  (exported SVGs with inlined icons + PNG; copy them as drafts with 1c); `slides/` has
+  slide-size versions of five of them, the deck made from those and a render of each slide.
 
 ## Updating the icon set
 

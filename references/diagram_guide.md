@@ -1,10 +1,13 @@
 # AWS Architecture Diagram Guide
 
 How to compose a correct, professional AWS architecture diagram using the bundled
-official icons. Read this fully before drawing. You lay the diagram out as an SVG
-draft in a restricted subset (see "Composing the layout SVG"); `export.py` turns that
-one draft into a portable SVG, a PNG and/or a slide of native PowerPoint shapes, so every
-rule below — coordinates, colors, dash patterns, sizes — carries over to every format.
+official icons. The numbers for drawing are collected in `quick_reference.md` (read it
+first); this guide holds the full rules with their reasons and edge cases. Read the
+sections your diagram touches and "Technical correctness"; read all of it for a
+diagram kind none of the examples shows. You lay the diagram out as an SVG draft in a
+restricted subset (see "Composing the layout SVG"); `export.py` turns that one draft
+into a portable SVG, a PNG and/or a slide of native PowerPoint shapes, so every rule
+below — coordinates, colors, dash patterns, sizes — carries over to every format.
 
 ## The AWS visual grammar
 
@@ -359,7 +362,8 @@ Copy this as the starting point; it follows the nesting order, compact 16–24px
 container padding, 14px labels, one icon size, AZs as rows and tiers as columns, one
 ALB node in the gap between the AZ rows, the IGW-on-the-border rule, and one arrow to
 a target group spanning the AZs with a zonal EC2 instance in each (it is
-`docs/example.svg`). Grow containers only as far as their contents need.
+`docs/example.svg`, exported with inlined icons; copy it as a draft the way SKILL.md
+step 1c copies an example). Grow containers only as far as their contents need.
 
 ```svg
 <svg viewBox="0 0 670 594" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
