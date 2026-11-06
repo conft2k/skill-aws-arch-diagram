@@ -53,7 +53,9 @@ across cols and rows (a node may share its track's name, `igw` above).
 **Tracks.** A track is a grid line: a node's icon center sits on one column and one row,
 and the engine spaces the tracks by what lies between them. Name columns after tiers
 (`users, igw, pub, app, db`) and, for two AZs, use rows `[az1, main, az2]`: `main` is the
-gap row between the AZs where Users, the IGW and the load balancer sit. An item is a name
+gap row between the AZs where Users, the IGW and the load balancer sit. Stacked AZ boxes
+get the full AZ gap only when a node of their VPC (or one on its border) sits on a row
+between them; with nothing between, they are just siblings (16px apart). An item is a name
 or `{id, min_gap_before: px, min_w: px, flow: px}`. `min_gap_before` is the least distance
 from the previous track's center to this one's. Two columns whose nodes share no row may
 land on the same x (only their order is kept) — a column outside the AZ boxes next to

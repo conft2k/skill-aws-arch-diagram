@@ -151,7 +151,8 @@ class Mode:
     sibling_gap: float      # box ↔ box and box ↔ node side by side in one parent
     peer_gap: float         # side-by-side Region / VPC boxes
     node_pitch: float       # neighbour node centers in one container and row
-    az_gap: float           # bottom of the AZ (row) above ↔ top of the AZ below (holds LB, IGW, Users)
+    az_gap: float           # bottom of the AZ (row) above ↔ top of the AZ below, when a node of the VPC
+                            # (LB, IGW) sits on a row between them; otherwise sibling_gap
     mask_extra: float       # IGW/VGW mask height = S + mask_extra (+16 per extra label line)
     arrow_target: float     # preferred arrowhead segment length
     arrow_min: float        # hard minimum (= MIN_ARROW)

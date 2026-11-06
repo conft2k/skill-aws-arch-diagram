@@ -450,13 +450,15 @@ class _Model:
             self.flow_rows.append((key[0], ids))
 
     def _az_gaps(self):
-        """The row between two AZ boxes (6): ≥ az_gap, its tracks centered at least half."""
+        """The row between two AZ boxes (6): ≥ az_gap, its tracks centered at least half,
+        only when a node of the AZs' parent (or one on its border) sits on a row between
+        them; otherwise the boxes keep the sibling gap."""
         gap = self.mc.az_gap
         for parent, kids in self.child_groups.items():
             azs = [self.item_group(g) for g in kids if self.spec.groups[g].type == "az"]
             azs = sorted((a for a in azs if a.yr), key=lambda a: a.yr)
             for a, b in zip(azs, azs[1:]):
-                if not a.yr[1] < b.yr[0]:
+                if not a.yr[1] < b.yr[0] or not self._between_az(parent, a.yr[1], b.yr[0]):
                     continue
                 own = f"group:{b.gid}"
                 self.add("y", (f"group:{a.gid}.B", 0), (f"group:{b.gid}.T", 0), gap,
@@ -466,6 +468,18 @@ class _Model:
                              f"az gap half {fmt_num(gap / 2)} {a.gid} → row {t.id}", own)
                     self.add("y", (f"row:{t.id}", 0), (f"group:{b.gid}.T", 0), gap / 2,
                              f"az gap half {fmt_num(gap / 2)} row {t.id} → {b.gid}", own)
+
+    def _between_az(self, parent, lo, hi) -> bool:
+        """A node of parent's subtree outside its AZ boxes, or on the border of parent or a
+        group inside it, whose row lies strictly between track indexes lo and hi."""
+        for nid, n in self.spec.nodes.items():
+            r = self.node_rng(nid, "y")
+            if r is None or not (lo < r[0] and r[1] < hi):
+                continue
+            chain = self.spec.ancestors(n.on) if n.on else self.spec.node_chain(nid)
+            if parent is None or parent in chain:
+                return True
+        return False
 
     def _templates_equal(self, axis):
         """Instances of one template group with identical track ranges on this axis get

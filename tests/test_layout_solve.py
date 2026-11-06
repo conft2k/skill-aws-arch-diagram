@@ -526,6 +526,33 @@ class ConstraintTest(unittest.TestCase):
         self.assertGreaterEqual(g.nodes["fw.1"].icon.y0 - g.groups["asg"].rect.y0, 30)
         self.assertEqual(check(spec, g), [])
 
+    def test_az_gap_only_with_a_node_between(self):
+        """Stacked AZs keep the sibling gap when nothing of their VPC sits between them, and
+        get az_gap when a node of the VPC (here an NLB) does."""
+        def spec_with(between):
+            tg, tn = per(
+                [dict(id="az", type="az", label="Availability Zone {n}", parent="vpc"),
+                 dict(id="sn", type="private", label="Private subnet", parent="az")],
+                [dict(id="ec2", icon="service/Amazon-EC2", label="EC2", parent="sn", col="app")],
+                ["az1", "az2"], "az")
+            extra = ([dict(id="nlb", icon="resource/Elastic-Load-Balancing_Network-Load-Balancer",
+                           label="NLB", parent="vpc", col="app", row="main")] if between else [])
+            return build("stack", ["app"], ["az1", "main", "az2"] if between else ["az1", "az2"],
+                         [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region",
+                                                              parent="cloud"),
+                          dict(id="vpc", type="vpc", label="VPC", cidr="10.0.0.0/16", parent="region")] + tg,
+                         tn + extra)
+
+        for between, lo, hi in ((False, K.DOCUMENT.sibling_gap, K.DOCUMENT.az_gap - 1),
+                                (True, K.DOCUMENT.az_gap, None)):
+            spec = spec_with(between)
+            g = LS.solve(spec, [])
+            d = g.groups["az.2"].rect.y0 - g.groups["az.1"].rect.y1
+            self.assertGreaterEqual(d, lo, between)
+            if hi is not None:
+                self.assertLessEqual(d, hi, between)
+            self.assertEqual(check(spec, g), [], between)
+
     def test_requirements_and_colspan(self):
         spec = nfw_spec()
         reqs = [Requirement("x", "node:igw", "node:inet", 48 + 24 + 4 + 24 + 4, "arrow 48 into inet", "edge:6"),
