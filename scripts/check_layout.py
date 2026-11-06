@@ -13,7 +13,8 @@ Reports, and exits with status 1 on any of them:
   TEXT AT BORDER   a label is closer than 8px to a container border (a bold header
                    label: 4px)
   OFF CANVAS       a label runs past the edge of the viewBox
-  LINE NEAR TEXT   a connector skims a node or header label (< 4px) without crossing it
+  LINE NEAR TEXT   a connector skims a node or header label (< 4px) without crossing it, or
+                   the top or a side of a connector label (another connector's line)
   BADGE NEAR ICON  a group badge (e.g. an ASG's) is within 8px of a node icon
   TEXT NEAR ICON   a label is within 8px of a node icon it doesn't label (a header
                    label: 6px, so nodes start at subnet.y + 28 or lower)
@@ -294,6 +295,17 @@ def expand(b, d):
     return (b[0] - d, b[1] - d, b[2] + d, b[3] + d)
 
 
+def skims_top_or_side(box, s):
+    """Does segment s run over box's top edge or beside it (not under its bottom edge,
+    where a connector label's own line runs)?"""
+    (x1, y1), (x2, y2) = s["p"], s["q"]
+    if abs(y1 - y2) < 0.5:
+        return y1 <= box[1]
+    if abs(x1 - x2) < 0.5:
+        return x1 <= box[0] or x1 >= box[2]
+    return False
+
+
 def through(dot, s):
     """Does segment s pass through point dot (a junction dot sits on its line)?"""
     (x1, y1), (x2, y2) = s["p"], s["q"]
@@ -468,11 +480,14 @@ def run_checks(root):
     connectors = [s for s in segs if s["kind"] == "connector"]
     for t in texts:
         # Node and header labels aren't connector labels, so a line skimming them is a
-        # near miss, not a label sitting on its own line.
-        if not (t["header"] or is_node_label(t, icons)):
-            continue
+        # near miss, not a label sitting on its own line. A connector label sits above its
+        # line (as close as 3px in hand drafts) or 8px or more beside or below it, so only a
+        # line skimming its top or its sides is another connector's.
+        own = not (t["header"] or is_node_label(t, icons))
         b = expand(t["box"], LINE_CLEAR)
         for s in connectors:
+            if own and not skims_top_or_side(t["box"], s):
+                continue
             if seg_hits_box(s["p"], s["q"], b) and not seg_hits_box(s["p"], s["q"], shrink(t["box"])) \
                     and not masked(t["box"], s["o"], masks):
                 add("LINE NEAR TEXT", f"LINE NEAR TEXT  connector {fmt(s)} passes within {LINE_CLEAR}px of {t['s']!r}",
