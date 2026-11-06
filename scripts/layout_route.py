@@ -119,7 +119,10 @@ def _end(spec: Spec, eid: str, kind: str, ci, ri) -> _End:
         return _End(eid, kind, c, r)
     n = spec.nodes[eid]
     if n.xy is not None:
-        return _End(eid, kind, None, None)
+        # an xy tied to a track sits on it (`xy: [col.a2, row.bot+10]`); numbers: unknown
+        c, r = ((idx[x.ref], idx[x.ref]) if isinstance(x, M.Expr) and x.kind == k else None
+                for x, k, idx in ((n.xy[0], "col", ci), (n.xy[1], "row", ri)))
+        return _End(eid, kind, c, r)
     c = None
     if n.col is not None:
         c1 = ci[n.col]

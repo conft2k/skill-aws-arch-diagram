@@ -701,6 +701,36 @@ class ConstraintTest(unittest.TestCase):
         spec, g = solved("document")
         self.assertEqual(check(spec, g), [])
 
+    def test_xy_expressions_follow_the_solve(self):
+        """`xy: [col.a2, row.bot]` ties the node to the solved tracks (and an offset, a
+        node's icon edge, a group's edge), while it still pushes no row neighbour apart;
+        containment keeps holding around it."""
+        def spec_with(xy):
+            return build("xy", ["a1", "a2", "a3"], ["top", "bot"],
+                         [dict(id="cloud", type="cloud"), dict(id="ra", type="region", label="Region", parent="cloud")],
+                         [dict(id="svc", icon="service/Amazon-Virtual-Private-Cloud", label="Services VPC with a long name",
+                               parent="ra", col="a1", row="top"),
+                          dict(id="dev", icon="service/Amazon-Virtual-Private-Cloud", label="Dev VPC", parent="ra",
+                               col="a1", row="bot"),
+                          dict(id="test", icon="service/Amazon-Virtual-Private-Cloud", label="Test VPC", parent="ra",
+                               col="a3", row="bot"),
+                          dict(id="rt", icon="resource/Amazon-Route-53_Route-Table", label="RT", parent="ra", xy=xy)])
+        P = __import__("layout_spec").parse_expr
+        g = LS.solve(spec_with((P("col.a2"), P("row.bot"))), [])
+        self.assertEqual((g.nodes["rt"].cx, g.nodes["rt"].cy), (g.cols["a2"], g.rows["bot"]))
+        g = LS.solve(spec_with((P("col.a2+10"), P("dev.y0"))), [])
+        self.assertEqual((g.nodes["rt"].cx, g.nodes["rt"].cy), (g.cols["a2"] + 10, g.nodes["dev"].icon.y0))
+        # a node's icon edge, a group's edge; the region still contains the node
+        spec = spec_with((P("svc.x1"), M.Expr("group", "ra", "y1", offset=-80)))
+        g = LS.solve(spec, [])
+        self.assertEqual(g.nodes["rt"].cx, g.nodes["svc"].icon.x1)
+        self.assertEqual(g.nodes["rt"].cy, g.groups["ra"].rect.y1 - 80)
+        self.assertTrue(contains(g.groups["ra"].rect, g.nodes["rt"].footprint()))
+        self.assertTrue(any(r.startswith("x col") for r in g.explain))
+        # numbers keep working as before
+        g = LS.solve(spec_with((400.0, 300.0)), [])
+        self.assertEqual((g.nodes["rt"].cx, g.nodes["rt"].cy), (400, 300))
+
     def test_requirements_and_colspan(self):
         spec = nfw_spec()
         reqs = [Requirement("x", "node:igw", "node:inet", 48 + 24 + 4 + 24 + 4, "arrow 48 into inet", "edge:6"),

@@ -189,7 +189,7 @@ marker-start), the background <rect width=W height=H fill="#FFFFFF"/>. Output is
 function of the spec: same spec → byte-identical draft (sorted nothing by hash/set order).
 
 =========================================================================================
-6. Expressions (escape hatches: bend_x/bend_y, points, step_at/label_at [x, y], raw {…})
+6. Expressions (escape hatches: bend_x/bend_y, points, step_at/label_at [x, y], raw {…}, xy)
 =========================================================================================
   <number>                               Expr("num", offset=v)
   <id>.(x0|x1|cx|y0|y1|cy) [±n]          node id → its icon box; group id → its rect
@@ -201,7 +201,10 @@ Track ids are unique across cols and rows (W1 enforces), so gap() knows its axis
 raw: RawSpec.exprs maps a placeholder's inner text to its Expr ("{br.cx+4}" → key
 "br.cx+4"); W5 substitutes fmt_num(eval_expr(...)) and checks the result against the draft
 subset (svg2pptx.collect's tags; <g> with id / translate only; bundle: hrefs).
-eval_expr(expr, geom) below evaluates one (W3 for hints, W5 for raw).
+eval_expr(expr, geom) below evaluates one (W3 for hints, W5 for raw). A node's `xy` takes the
+subset a difference constraint can hold (W1 rejects the rest): col.<t> / row.<t>, <node>.attr
+of a node that is not a colspan (x0/x1, y0/y1 = icon edges), <group>.(x0|x1|y0|y1), ±n; W2
+pins "node:<nid>" to it with two Requirements, so the node follows the solved tracks.
 
 =========================================================================================
 7. Text width
@@ -425,7 +428,9 @@ class Node:
     side: Optional[str] = None      # `on` nodes: "left" | "right" border (W1 from track indices); phase 2 top|bottom
     dx: float = 0.0                 # px nudges from the grid position
     dy: float = 0.0
-    xy: Optional[Tuple[float, float]] = None   # absolute icon center (escape hatch); overrides col/row
+    xy: Optional[Tuple[Union[float, "Expr"], Union[float, "Expr"]]] = None   # icon center (escape hatch); overrides
+                                    # col/row: a number is absolute, an Expr (col/row, a node's icon attr, a group's
+                                    # edge, ±n) ties the center to the solve (W2 equalities)
     flow_index: Optional[int] = None   # flow-row / flow-column node: 0-based order among the track's nodes in the same parent
     icon_query: Optional[str] = None   # the spec's alias when the icon was given as one (for the summary)
     template: Optional[str] = None

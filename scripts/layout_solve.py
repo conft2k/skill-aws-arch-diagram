@@ -45,7 +45,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import layout_const as K  # noqa: E402
 from layout_model import (  # noqa: E402
-    Box, Element, Geometry, GroupGeom, NodeGeom, Requirement, SolveError, Spec, TextLine,
+    Box, Element, Expr, Geometry, GroupGeom, NodeGeom, Requirement, SolveError, Spec, TextLine,
     el_image, el_rect, el_text, fmt_num, layout_text_width, split_eid, union_all,
 )
 
@@ -290,8 +290,9 @@ class _Model:
             if n.xy is not None:
                 v = (f"node:{nid}", 0.0)
                 c = n.xy[0] if axis == "x" else n.xy[1]
-                self.add(axis, ("origin", 0), v, c, f"xy {fmt_num(c)}", f"node:{nid}")
-                self.add(axis, v, ("origin", 0), -c, f"xy {fmt_num(c)}", f"node:{nid}")
+                ref, txt = self.xy_ref(c, axis)
+                self.add(axis, ref, v, 0, f"xy {txt}", f"node:{nid}")
+                self.add(axis, v, ref, 0, f"xy {txt}", f"node:{nid}")
         if axis == "x":
             self._flows()
             if mc.badge_clear_x:
@@ -309,6 +310,27 @@ class _Model:
                                              if spec.groups[v].parent is None for b in bs]:
             self.add(axis, ("origin", 0), self.lo(self.item_node(nid), axis), m, f"canvas margin {fmt_num(m)}",
                      f"node:{nid}")
+
+    def xy_ref(self, c, axis) -> Tuple[Ref, str]:
+        """An `xy` component as a (variable, offset) the node's center equals: a number
+        from the origin; col / row → the track; <node>.attr → that node's center variable
+        ± S/2 for an icon edge; <group>.x0 / x1 / y0 / y1 → its edge (W1 rejects the rest)."""
+        if not isinstance(c, Expr):
+            return ("origin", float(c)), fmt_num(c)
+        txt = (f"{c.kind}." if c.kind in ("col", "row") else "") + c.ref + (f".{c.attr}" if c.attr else "") \
+            + (f"{'+' if c.offset > 0 else '-'}{fmt_num(abs(c.offset))}" if c.offset else "")
+        if c.kind == "num":
+            return ("origin", c.offset), txt
+        if c.kind in ("col", "row"):
+            return (f"{c.kind}:{c.ref}", c.offset), txt
+        if c.kind == "node":
+            v, o = self.nref(c.ref, axis, "lo")
+            edge = {"x0": -1, "y0": -1, "x1": 1, "y1": 1}.get(c.attr, 0) * self.S / 2
+            return (v, o + edge + c.offset), txt
+        if c.kind == "group":
+            e = {"x0": "L", "x1": "R", "y0": "T", "y1": "B"}[c.attr]
+            return (f"group:{c.ref}.{e}", c.offset), txt
+        raise SolveError([f"xy expression {txt!r} cannot be tied to the solve"])
 
     def _group(self, axis, g, L, R):
         """Containment of g's children, header width, min size, span (1, 4)."""
@@ -1046,7 +1068,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
 def _node_center(m: _Model, nid: str, axis: str, val) -> float:
     n = m.spec.nodes[nid]
     if n.xy is not None:
-        return float(n.xy[0] if axis == "x" else n.xy[1])
+        return val[f"node:{nid}"]
     if axis == "x":
         if nid in m.flow:
             return val[f"node:{nid}"]

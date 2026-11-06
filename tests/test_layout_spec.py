@@ -409,6 +409,20 @@ class ExampleSpecs(unittest.TestCase):
                                           "inet.y1 + 30": M.Expr("node", "inet", "y1", offset=30)})
 
 
+    def test_xy_expressions(self):
+        """xy takes numbers or expressions; numbers stay floats, expressions are resolved
+        (node / group) like any hint's."""
+        d = base()
+        d["nodes"][2].pop("at")
+        d["nodes"][2]["xy"] = ["col.c+10", "igw.cy"]
+        d["nodes"].append({"id": "fn", "icon": "service/AWS-Lambda", "label": "Fn", "in": "region",
+                           "xy": [300, "vpc.y1+40"]})
+        s = L.load(d)
+        self.assertEqual(s.nodes["inet"].xy, (M.Expr("col", "c", offset=10), M.Expr("node", "igw", "cy")))
+        self.assertEqual(s.nodes["fn"].xy, (300.0, M.Expr("group", "vpc", "y1", offset=40)))
+        self.assertIsNone(s.nodes["inet"].col)
+
+
 class ParseExpr(unittest.TestCase):
     def test_grammar(self):
         P = L.parse_expr
@@ -571,6 +585,15 @@ ERRORS = [
      ["nodes[1] igw: on: a border node needs a grid row; 'a' is a flow column (give `at: [col, row]`)"]),
     ("span without a row", lambda d: (flow_col(d), d["nodes"][2].pop("at"), d["nodes"][2].update(col="b..c")),
      ["nodes[2] inet: row: required (a span 'b..c' needs a row: `at: [b..c, <row>]`)"]),
+    ("xy expression on the other axis", lambda d: (d["nodes"][2].pop("at"), d["nodes"][2].update(xy=["row.main", "row.main"])),
+     ["nodes[2] inet: xy[0]: row.main is on the other axis; xy[0] takes a number, col.<track>, "
+      "<node>.(x0|cx|x1) or <group>.(x0|x1), each with an optional ±n"]),
+    ("xy expression on a group center", lambda d: (d["nodes"][2].pop("at"), d["nodes"][2].update(xy=["vpc.cx", "row.main"])),
+     ["nodes[2] inet: xy[0]: vpc.cx: a group's center is no single variable; xy[0] takes a number, "
+      "col.<track>, <node>.(x0|cx|x1) or <group>.(x0|x1), each with an optional ±n"]),
+    ("xy expression on a gap", lambda d: (d["nodes"][2].pop("at"), d["nodes"][2].update(xy=["col.c", "gap(az1, az2)"])),
+     ["nodes[2] inet: xy[1]: gap expressions depend on the drawn result; xy[1] takes a number, row.<track>, "
+      "<node>.(y0|cy|y1) or <group>.(y0|y1), each with an optional ±n"]),
     ("dash on a fixed-style group", lambda d: d["groups"][2].update(dash="6,4"),
      ["groups[2] vpc: dash: only generic (and cloudwan) groups take a dash; vpc is always solid"]),
     ("{n} outside a template", lambda d: d["nodes"][2].update(label="Internet {n}"),

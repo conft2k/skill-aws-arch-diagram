@@ -146,7 +146,12 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   between them (tgw `rta` beside `dev`). Don't push such a pair apart with `xy` or
   `min_gap_before`.
 - `dx` / `dy`: offset from the track position (the engine still keeps clearances
-  around it). `xy: [cx, cy]`: an absolute icon center — last resort.
+  around it). `xy: [cx, cy]`: the icon center — last resort. Each value is a number
+  (absolute px) or an expression the solve keeps: `xy: ["col.a2", "row.bot+10"]` follows the
+  tracks wherever they land; `<node>.(x0|cx|x1)` / `.(y0|cy|y1)` (icon edges / center) and
+  `<group>.(x0|x1)` / `.(y0|y1)` (box edges) work too, each `±n` — not a group's `cx`, a
+  `.label.` or `gap()`. An `xy` node stays inside its boxes but never pushes its row
+  neighbours apart (they don't see it).
 
 ## edges
 
@@ -218,7 +223,8 @@ note:
 ## Expressions and raw
 
 Hints that take a position (`bend_x`, `bend_y`, `points`, `step_at` / `label_at` `[x, y]`,
-`raw` placeholders) take a number or an expression, each with an optional `±n`:
+`raw` placeholders, and a node's `xy` within the subset above) take a number or an
+expression, each with an optional `±n`:
 `<id>.(x0|x1|cx|y0|y1|cy)` (a node's icon box, a group's rect), `<node>.label.(…)` (its
 label stack), `col.<track>` / `row.<track>` (a track center), `gap(<a>,<b>)` (the middle
 of the widest free corridor between two tracks of one axis). Examples: `"besg.1.x0-22"`,

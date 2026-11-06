@@ -792,10 +792,15 @@ class _Loader:
             r["xy"] = None
             if "xy" in d:
                 v = d["xy"]
-                if not (isinstance(v, list) and len(v) == 2 and all(_num(x) for x in v)):
-                    self.err(loc, f"xy: expected [cx, cy] numbers (absolute icon center), got {v!r}")
+                if not (isinstance(v, list) and len(v) == 2
+                        and all(_num(x) or (isinstance(x, str) and not isinstance(x, bool)) for x in v)):
+                    self.err(loc, f"xy: expected [cx, cy], each a number or an expression "
+                                  f"(col.<track>, row.<track>, <id>.<attr>, ±n), got {v!r}")
                 else:
-                    r["xy"] = (float(v[0]), float(v[1]))
+                    # numbers stay absolute; an expression is parsed now and tied to the
+                    # solve (layout_solve) once exprs() has checked its reference
+                    r["xy"] = tuple(float(x) if _num(x) else self.expr(loc, f"xy[{i}]", x)
+                                    for i, x in enumerate(v))
             self.position(r)
             if r["icon"] is not None:
                 r["icon_res"] = self.resolve_icon(r)
@@ -1464,6 +1469,45 @@ class _Loader:
                 edge.points = [(fx(x), fx(y)) for x, y in edge.points]
         for rs in sp.raw:
             rs.exprs = {k: fx(e) for k, e in rs.exprs.items()}
+        bad = set()
+        for node in sp.nodes.values():
+            if node.xy is None:
+                continue
+            xy = tuple(fx(c) for c in node.xy)
+            node.xy = tuple(c.offset if isinstance(c, Expr) and c.kind == "num" else c for c in xy)
+            for i, c in enumerate(node.xy):
+                why = self.xy_problem(node, i, c)
+                if why and (node.src, i) not in bad:      # one report per spec item (templates)
+                    bad.add((node.src, i))
+                    self.err(node.src, f"xy[{i}]: {why}")
+
+    def xy_problem(self, node: Node, i: int, e) -> Optional[str]:
+        """Why an `xy` expression cannot be tied to the solve, or None. A difference
+        constraint can hold a node to a track, another node's icon edge / center, or a
+        group's edge — not a group's center, a label stack or a gap() corridor."""
+        if not isinstance(e, Expr):
+            return None
+        sp = self.spec
+        axis, attrs = ("col", ("x0", "cx", "x1")) if i == 0 else ("row", ("y0", "cy", "y1"))
+        hint = (f"xy[{i}] takes a number, {axis}.<track>, <node>.({'|'.join(attrs)}) or "
+                f"<group>.({attrs[0]}|{attrs[2]}), each with an optional ±n")
+        if e.kind in ("col", "row"):
+            return None if e.kind == axis else f"{e.kind}.{e.ref} is on the other axis; {hint}"
+        if e.kind == "node":
+            t = sp.nodes.get(e.ref)
+            if e.attr not in attrs:
+                return f"{e.ref}.{e.attr} is on the other axis; {hint}"
+            if e.ref == node.id or (t is not None and t.xy is not None and any(
+                    isinstance(c, Expr) and c.kind == "node" and c.ref == node.id for c in t.xy)):
+                return f"{e.ref}.{e.attr} refers back to {node.id}; {hint}"
+            if t is not None and i == 0 and t.col2 is not None:
+                return f"{e.ref} spans two columns (its center is no single variable); use col.<track>; {hint}"
+            return None
+        if e.kind == "group":
+            if e.attr in ("cx", "cy"):
+                return f"{e.ref}.{e.attr}: a group's center is no single variable; {hint}"
+            return None if e.attr in attrs else f"{e.ref}.{e.attr} is on the other axis; {hint}"
+        return f"{e.kind} expressions depend on the drawn result; {hint}"
 
     # ---- lint (DESIGN 4.1)
     def lint(self) -> None:
