@@ -135,10 +135,27 @@ python3 ~/.claude/skills/skill-aws-arch-diagram/scripts/fetch_icons.py
 SKILL.md                     the skill: workflow, rules, what not to do
 references/diagram_guide.md  AWS visual grammar, group colors, VPC resource table,
                              draft subset and skeleton, layout, text-size and font rules
+references/layout_spec.md    the layout spec (`*.layout.yaml`) format
 assets/icons.json            857 icons in one JSON bundle (sets: service, resource,
                              group, category); built at install time (or on first
                              use), not committed
+docs/examples/specs/         one layout spec per reference example plus the skeleton
+                             `example.layout.yaml`; each regenerates its example's layout
 scripts/find_icon.py         fuzzy lookup: `find_icon.py alb igw "s3 gateway endpoint"`
+scripts/layout.py            the layout engine: spec -> draft SVG; computes every coordinate,
+                             runs check_layout with feedback rounds, and names the spec item
+                             and a spec change to try for each problem
+scripts/layout_spec.py       load and validate a spec: schema, defaults, `per` templates, edge
+                             strings, icon names
+scripts/layout_solve.py      constraint solver: track, group and node coordinates by longest
+                             path over difference constraints
+scripts/layout_route.py      edge router: shape choice, the space routes need, lines, labels,
+                             step badges
+scripts/layout_note.py       the note (step legend): panel / pane / lines placement, size,
+                             elements
+scripts/layout_model.py      the engine's data model and module contract
+scripts/layout_const.py      engine constants: mode tables, group styles, text, line and note
+                             numbers
 scripts/export.py            drafts -> any of SVG / PNG / PPTX (+ slide previews); checks
                              every draft first and writes nothing if one fails
 scripts/embed.py             inline bundle: refs as base64; fails on unknown/external refs
@@ -153,6 +170,37 @@ scripts/fetch_icons.py       download the pinned AWS icon package and build icon
 scripts/build_bundle.py      pack an extracted icon package into icons.json
 scripts/macos_cairo.py       let cairosvg find Homebrew's cairo on Apple Silicon
 ```
+
+### Drawing a new diagram with the layout engine
+
+A new diagram is drawn from a layout spec, with no coordinates. Copy the closest example's
+spec from [`docs/examples/specs/`](docs/examples/specs/) and edit its column and row
+tracks, containers, nodes, edges and note; the format is in
+[`references/layout_spec.md`](references/layout_spec.md).
+
+```bash
+cp docs/examples/specs/nlb-reference-architecture.layout.yaml arch.layout.yaml
+python3 scripts/layout.py arch.layout.yaml -o arch.draft.svg
+#   draft: arch.draft.svg
+#   canvas: 888 × 806 (document); on a 16:9 slide (titled) 12px text → 6.7pt
+#   note: panel, summary, 856 × 44 at (16,746)
+#   icons (13 nodes): resource/Users, service/Amazon-Route-53, ...
+#   Layout OK
+```
+
+The engine computes every coordinate, then runs `check_layout` in process and answers what
+it finds with feedback rounds (wider gaps, other routes) before writing the draft. After a
+summary it prints `Layout OK` (exit 0), or `N problems` (exit 1) with a `spec:` line naming
+the spec item behind each problem and a `try:` line with the spec change to try. Export the
+draft with `export.py` as below.
+
+- `.yaml` specs need PyYAML; without it run
+  `uv run --with pyyaml python scripts/layout.py ...`. A `.json` spec needs nothing extra.
+- The same spec always gives a byte-identical draft. Once you hand-edit a generated draft,
+  that draft is the source and is no longer regenerated.
+- To change or convert an existing diagram, or for a layout the engine cannot express,
+  write the SVG draft by hand as before — or turn an example back into a draft with
+  `embed.py --unembed` and edit it.
 
 ### Using the scripts directly
 

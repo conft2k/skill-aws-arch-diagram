@@ -129,10 +129,21 @@ python3 ~/.claude/skills/skill-aws-arch-diagram/scripts/fetch_icons.py
 SKILL.md                     skill 본문: 작업 순서, 규칙, 하지 말 것
 references/diagram_guide.md  AWS 시각 문법, 그룹 색, VPC 리소스 표, 초안 문법과 골격,
                              레이아웃·글자 크기·글꼴 규칙
+references/layout_spec.md    레이아웃 spec(`*.layout.yaml`) 형식
 assets/icons.json            아이콘 857개를 담은 JSON 번들 (세트: service, resource,
                              group, category); 설치할 때(건너뛰면 처음 쓸 때) 만들며
                              커밋하지 않음
+docs/examples/specs/         참조 예제마다 하나인 레이아웃 spec과 골격 `example.layout.yaml`;
+                             각 spec이 그 예제의 레이아웃을 다시 만듦
 scripts/find_icon.py         이름으로 아이콘 찾기: `find_icon.py alb igw "s3 gateway endpoint"`
+scripts/layout.py            레이아웃 엔진: spec -> 초안 SVG; 모든 좌표를 계산하고 check_layout을
+                             피드백 라운드와 함께 돌려 문제마다 spec 항목과 고칠 점을 출력
+scripts/layout_spec.py       spec 읽기·검증: 스키마, 기본값, `per` 템플릿, 연결선 문자열, 아이콘 이름
+scripts/layout_solve.py      제약 풀이: 차이 제약의 최장 경로로 트랙·그룹·노드 좌표 계산
+scripts/layout_route.py      연결선 라우팅: 모양 선택, 경로에 필요한 공간, 선·라벨·단계 번호
+scripts/layout_note.py       노트(단계 범례): panel / pane / lines 중 위치, 크기, 요소
+scripts/layout_model.py      엔진의 데이터 모델과 모듈 간 계약
+scripts/layout_const.py      엔진 상수: 모드 표, 그룹 스타일, 글자·선·노트 수치
 scripts/export.py            초안 -> SVG / PNG / PPTX 중 원하는 형식 (+ 슬라이드 미리보기);
                              모든 초안을 먼저 검사하고 하나라도 실패하면 아무것도 쓰지 않음
 scripts/embed.py             bundle: 참조를 base64로 넣음; 모르는 참조·외부 참조와
@@ -145,6 +156,34 @@ scripts/fetch_icons.py       고정한 AWS 아이콘 패키지를 받아 icons.j
 scripts/build_bundle.py      압축을 푼 아이콘 패키지를 icons.json으로 묶기
 scripts/macos_cairo.py       macOS(Apple Silicon)에서 Homebrew의 cairo를 찾게 함
 ```
+
+### 레이아웃 엔진으로 새 구성도 그리기
+
+새 구성도는 좌표를 쓰지 않고 레이아웃 spec으로 그립니다. [`docs/examples/specs/`](docs/examples/specs/)에서
+가장 가까운 예제의 spec을 복사하고 열·행 트랙, 컨테이너, 노드, 연결선, 노트를 고칩니다.
+spec 형식은 [`references/layout_spec.md`](references/layout_spec.md)에 있습니다.
+
+```bash
+cp docs/examples/specs/nlb-reference-architecture.layout.yaml arch.layout.yaml
+python3 scripts/layout.py arch.layout.yaml -o arch.draft.svg
+#   draft: arch.draft.svg
+#   canvas: 888 × 806 (document); on a 16:9 slide (titled) 12px text → 6.7pt
+#   note: panel, summary, 856 × 44 at (16,746)
+#   icons (13 nodes): resource/Users, service/Amazon-Route-53, ...
+#   Layout OK
+```
+
+엔진이 모든 좌표를 계산하고, 같은 프로세스에서 `check_layout`을 돌려 남은 문제에 맞춰 간격이나
+경로를 바꿔 다시 푸는 피드백 라운드를 거칩니다. 요약 뒤에 깨끗하면 `Layout OK`(exit 0)를, 아니면
+문제마다 원인이 된 spec 항목(`spec:`)과 시도할 spec 변경(`try:`)을 붙여 `N problems`(exit 1)를
+출력합니다. 그다음은 아래처럼 `export.py`로 내보냅니다.
+
+- `.yaml` spec에는 PyYAML이 필요합니다. 없으면 `uv run --with pyyaml python scripts/layout.py ...`로
+  실행합니다. `.json` spec은 따로 필요한 것이 없습니다.
+- 같은 spec은 언제나 바이트 단위로 같은 초안을 만듭니다. 만든 초안을 손으로 고치면 그때부터는 그
+  초안이 원본이며 다시 생성하지 않습니다.
+- 이미 있는 구성도를 고치거나 변환할 때, 엔진으로 표현할 수 없는 레이아웃은 지금처럼 SVG 초안을
+  직접 씁니다. 예제를 `embed.py --unembed`로 초안으로 되돌려 고쳐도 됩니다.
 
 ### 스크립트 직접 쓰기
 

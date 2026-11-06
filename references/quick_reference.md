@@ -1,5 +1,7 @@
 # Quick reference
 
+A new diagram is written as a layout spec ([`layout_spec.md`](layout_spec.md)); the engine applies the numbers below.
+
 Every number and rule needed to draw a diagram, in one place, at the default icon size
 S = 48. Each value comes from `diagram_guide.md` (the section is named after the
 value, in quotes) and was measured in `docs/examples/`; where the examples differ from the

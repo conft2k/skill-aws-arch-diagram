@@ -362,8 +362,8 @@ Copy this as the starting point; it follows the nesting order, compact 16–24px
 container padding, 14px labels, one icon size, AZs as rows and tiers as columns, one
 ALB node in the gap between the AZ rows, the IGW-on-the-border rule, and one arrow to
 a target group spanning the AZs with a zonal EC2 instance in each (it is
-`docs/example.svg`, exported with inlined icons; copy it as a draft the way SKILL.md
-step 1c copies an example). Grow containers only as far as their contents need.
+`docs/example.svg`, exported with inlined icons; copy it as a draft the way SKILL.md's
+draft path copies an example, or start from `docs/examples/specs/example.layout.yaml`). Grow containers only as far as their contents need.
 
 ```svg
 <svg viewBox="0 0 670 594" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
