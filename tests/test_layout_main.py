@@ -913,6 +913,55 @@ class OutAndBack(unittest.TestCase):
                              {"label": "sync", "shape": "HVH", "from_side": "right", "to_side": "right"}, boxed=False))
 
 
+class TrunkFollowsItsLead(unittest.TestCase):
+    """A merge trunk's follower stops at the junction on its lead. When the lead is drawn in
+    another shape than the follower stopped short for, the follower is drawn again onto the
+    lead's line (centralized-egress with the TGW labelled "TGW": the lead enib.1 → tgw drew
+    HV into the TGW's bottom and the AZ 2 stem was left hanging beside it, Layout OK)."""
+    SPEC = {
+        "name": "trunk-lead", "mode": "document",
+        "cols": ["ec2", "att", "sp", "rtsp", "tgw", "rtfw"], "rows": ["main", "b1", "b2"],
+        "groups": [
+            {"id": "cloud", "type": "cloud"},
+            {"id": "region", "type": "region", "label": "Region ap-northeast-2", "in": "cloud"},
+            {"id": "vpcb", "type": "vpc", "label": "App VPC B", "cidr": "10.2.0.0/16", "in": "region"},
+            {"id": "azb", "type": "az", "in": "vpcb", "per": ["b1", "b2"]},
+            {"id": "appb", "type": "private", "label": "App subnet", "in": "azb"},
+            {"id": "tsnb", "type": "private", "label": "TGW subnet", "in": "azb"}],
+        "nodes": [
+            {"id": "ec2b", "icon": "service/Amazon-EC2", "label": "EC2", "sub": "0.0.0.0/0 → TGW", "in": "appb",
+             "col": "ec2"},
+            {"id": "enib", "icon": "resource/AWS-Transit-Gateway_Attachment", "label": "TGW ENI", "in": "tsnb",
+             "col": "att"},
+            {"id": "rtsp", "icon": "resource/Amazon-Route-53_Route-Table", "label": "Spoke RT",
+             "sub": ["연결: App VPC A · B", "0.0.0.0/0 → Security VPC"], "in": "region", "at": ["rtsp", "main"]},
+            {"id": "tgw", "icon": "service/AWS-Transit-Gateway", "label": "TGW", "in": "region", "at": ["tgw", "main"]},
+            {"id": "rtfw", "icon": "resource/Amazon-Route-53_Route-Table", "label": "Firewall RT",
+             "sub": ["연결: Security VPC", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"], "in": "region",
+             "at": ["rtfw", "main"]}],
+        "edges": [{"e": "ec2b.* -> enib.*"}, {"e": "enib.* -> tgw", "trunk": True, "verb": "VPC attachment"}]}
+
+    def test_follower_joins_a_lead_drawn_in_another_shape(self):
+        spec, b = built(copy.deepcopy(self.SPEC))
+        lead = next(e for e in spec.edges if e.a == "enib.1")
+        foll = next(e for e in spec.edges if e.a == "enib.2")
+        self.assertTrue(any(w.startswith(f"{lead.src} enib.1 -> tgw: drew HV instead of HVH") for w in b.warnings),
+                        b.warnings)             # the case: the lead fell back to another shape
+        self.assertFalse([w for w in b.warnings if "enib.2" in w and "instead of" in w], b.warnings)
+        pts = {}
+        for g in ET.fromstring(b.svg).iter(NS + "g"):
+            if g.get("id") in (f"edge:{lead.n}", f"edge:{foll.n}"):
+                pl, = [c for c in g if c.tag == NS + "polyline"]
+                pts[g.get("id")] = [tuple(map(float, p.split(","))) for p in pl.get("points").split()]
+                if g.get("id") == f"edge:{foll.n}":
+                    self.assertIsNone(pl.get("marker-end"))     # it merges: the lead's arrowhead only
+        end, path = pts[f"edge:{foll.n}"][-1], pts[f"edge:{lead.n}"]
+        self.assertTrue(any(min(p[0], q[0]) - 0.5 <= end[0] <= max(p[0], q[0]) + 0.5
+                            and min(p[1], q[1]) - 0.5 <= end[1] <= max(p[1], q[1]) + 0.5
+                            for p, q in zip(path, path[1:])), (end, path))
+        self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg))], [])
+
+
 class TrunkFork(unittest.TestCase):
     def test_fork_shares_one_port_whatever_its_shape(self):
         """A `trunk: true` fork whose source's facing side is taken (rule 5: VH) leaves one

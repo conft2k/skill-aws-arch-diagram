@@ -34,7 +34,11 @@ leaves sideways 16 inside its subnets (layout_model decision n).
 Trunks: `trunk: true` instances of one spec line with one far end merge (first instance
 draws the whole path and the arrowhead, the others stop at the junction); with one near end
 they fork (a shared port, one arrowhead per branch). Labels and the badge of a trunk are
-drawn once, on its first instance. Other `*` instances are separate lines, each labelled.
+drawn once, on its first instance. A follower stopped short for a junction its lead does
+not draw (the lead took another shape or bend) is drawn again onto the lead's drawn line —
+the candidate that meets it and then runs along it, cut there — or, when none does, whole
+with its own arrowheads: a trunk never leaves a branch hanging.
+Other `*` instances are separate lines, each labelled.
 A `trunk` line whose instances are no HVH / VHV trunk (VH / HV by rule 5) still shares
 the port at its common end, so its branches leave as one stem.
 Same side: a HVH (VHV) with from_side = to_side on a left / right (top / bottom) side and
@@ -1145,6 +1149,7 @@ class _Route:
     stem: Tuple[int, int] = (0, 0)   # segment index range of the trunk's shared part (stem)
     bend: Optional[float] = None
     quality: int = 3                 # 0 clean + label/badge at their first spot, 1 clean + placed, 2 clean, 3 dirty
+    joined: bool = False             # a trunk follower re-drawn onto its lead's line (the lead reports the shape)
 
 
 class _Edge:
@@ -1466,6 +1471,63 @@ def _drawn(x: _Edge, shape: str, pa: Pt, pb: Pt, bend, lead: Optional[_Route]) -
     if t.first == x.e.n:
         return _simplify(full), (0, 1)
     return _simplify(full[1:]), (0, 0)
+
+
+def _ends_on(r: "_Route", lead: "_Route", merge: bool) -> bool:
+    """A trunk follower's drawn end (merge: its last point; fork: its first) lies on the
+    lead's drawn line."""
+    q = r.pts[-1] if merge else r.pts[0]
+    for a, b in zip(lead.pts, lead.pts[1:]):
+        if min(a[0], b[0]) - 0.5 <= q[0] <= max(a[0], b[0]) + 0.5 and \
+                min(a[1], b[1]) - 0.5 <= q[1] <= max(a[1], b[1]) + 0.5:
+            return True
+    return False
+
+
+def _run_apart(f: Sequence[Pt], g: Sequence[Pt]) -> Optional[Tuple[Pt, int]]:
+    """Two polylines from one point: walk along both while they run together; (the point
+    where they part, the index of f's segment it lies on). None when they part at once."""
+    if _len(f[0], g[0]) > 0.5:
+        return None
+    p, i, j = f[0], 0, 0
+
+    def way(q):
+        return (round(math.copysign(1, q[0] - p[0])) if abs(q[0] - p[0]) > 0.25 else 0,
+                round(math.copysign(1, q[1] - p[1])) if abs(q[1] - p[1]) > 0.25 else 0)
+
+    while i + 1 < len(f) and j + 1 < len(g):
+        if _len(p, f[i + 1]) <= 0.25:
+            i += 1
+            continue
+        if _len(p, g[j + 1]) <= 0.25:
+            j += 1
+            continue
+        if way(f[i + 1]) != way(g[j + 1]):
+            break
+        lf, lg = _len(p, f[i + 1]), _len(p, g[j + 1])
+        if lf <= lg + 0.25:
+            p, i = f[i + 1], i + 1
+            if abs(lf - lg) <= 0.25:
+                j += 1
+        else:
+            p, j = g[j + 1], j + 1
+    return None if _len(p, f[0]) <= 0.25 else (p, i)
+
+
+def _joined(full: Sequence[Pt], lead: Sequence[Pt], merge: bool) -> Optional[List[Pt]]:
+    """A trunk follower's full path cut where it joins the lead's drawn line for good: a
+    merge keeps its start up to the point from which the rest runs along the lead's end, a
+    fork the rest from where its start parts from the lead's. None when they share no run
+    (or the follower lies on the lead whole)."""
+    f, g = (list(full)[::-1], list(lead)[::-1]) if merge else (list(full), list(lead))
+    got = _run_apart(f, g)
+    if got is None:
+        return None
+    p, i = got
+    rest = _simplify([p] + f[i + 1:])
+    if len(rest) < 2:
+        return None
+    return rest[::-1] if merge else rest
 
 
 # =======================================================================================
@@ -2156,6 +2218,42 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         clean = [r for q, _, r in ranked if not q[0]]
         return clean[min(k, len(clean) - 1)] if clean else ranked[0][2]
 
+    def rejoin(x: _Edge, lead: _Route) -> _Route:
+        """x (a trunk follower) re-drawn against its lead's drawn line: the best candidate
+        that joins it, else the best whole line with x's own arrowheads."""
+        merge = x.t.trunk == "merge"
+        joins, whole = [], []
+        for k, (shape, pa, pb, bend) in enumerate(_candidates(ctx, x, ports)):
+            full = _simplify(_path(shape, pa, pb, bend))
+            pts = _joined(full, lead.pts, merge)
+            if pts is not None:
+                joins.append(rate(x, _Route(x.e.n, shape, pts, x.hs and len(pts) >= 2, x.he and len(pts) >= 2,
+                                            _line_problems(ctx, pts, x.hs, x.he), (0, 0), bend), k))
+            hs, he = x.e.head_start, x.e.head_end
+            whole.append(rate(x, _Route(x.e.n, shape, full, hs, he, _line_problems(ctx, full, hs, he), (0, 0), bend),
+                              k))
+        joins.sort(key=lambda it: it[:2])
+        whole.sort(key=lambda it: it[:2])
+        if joins and joins[0][0] < 3:
+            joins[0][2].joined = True
+            return joins[0][2]
+        if whole:
+            return whole[0][2]
+        pa, pb = x.ends(H, 0, 0)
+        return _Route(x.e.n, H, [pa, pb], x.e.head_start, x.e.head_end, ["no candidate"])
+
+    def rate(x: _Edge, r: _Route, k: int):
+        """(quality, candidate index, route) as build() rates a route."""
+        if r.probs:
+            r.quality = 3
+        elif x.e.step is None and not (x.e.label or x.e.verb):
+            r.quality = 0
+        else:
+            pl = _Placer(ctx, done_lines + list(zip(r.pts, r.pts[1:])))
+            _, w, perfect = _place(ctx, x, r, pl, False)
+            r.quality = 2 if w else 0 if perfect else 1
+        return (r.quality, k, r)
+
     def shared(todo: List[_Edge]) -> Optional[Dict[int, _Route]]:
         """One bend for every member: the best value by the worst member's quality. Members
         whose legs would run over each other there (_lanes) get a lane each, LANE_PITCH
@@ -2240,12 +2338,24 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
                    f"or drop the hint and let the rule pick")
         return f"{_where(e)}: drew {r.shape} instead of {want}, refusing the requested {asked} — {why}; try {fix}"
 
+    # a trunk follower drawn only up to its junction must end on the lead's drawn line: when
+    # the lead took another shape (or bend) than the one the follower stopped short for, the
+    # follower is drawn again to join the lead where their lines meet and then run together
+    # (an HV lead: up its vertical), or, when no candidate joins it, whole with its own
+    # arrowhead — never a stem left hanging beside the lead
+    for n in sorted(routes):
+        x, r = xs[n], routes[n]
+        t = x.t
+        lead = routes.get(t.first) if t.trunk and t.first != n else None
+        if lead is None or t.shape == P or _ends_on(r, lead, t.trunk == "merge"):
+            continue
+        routes[n] = rejoin(x, lead)
     # trunks whose followers could not share the first instance's bend: report
     for n, r in sorted(routes.items()):
         x = xs[n]
         if r.probs and x.t.shape != P:      # `points` is the spec's own route: check_layout judges it
             warns.append(f"{_where(x.e)}: {', '.join(sorted(set(r.probs)))} (best of the candidates)")
-        if r.shape != x.t.shape and x.t.shape != P:
+        if r.shape != x.t.shape and x.t.shape != P and not r.joined:
             if x.t.note == "override":
                 warns.append(refused(x, r))
             else:

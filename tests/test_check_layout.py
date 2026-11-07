@@ -483,5 +483,36 @@ class DetourHintsKeepTheRoute(unittest.TestCase):
         self.assertEqual(detours(root), [])
 
 
+class LooseEnd(unittest.TestCase):
+    """A line no other line touches with an end (no arrowhead there) on nothing: a trunk
+    branch cut off the line it was to merge into (centralized-egress, TGW labelled "TGW":
+    App VPC B's AZ 2 stem stopped beside the lead, which entered the TGW from below)."""
+    BARE = '<polyline points="{pts}" fill="none" stroke="#232F3E" stroke-width="1.5"/>'
+
+    def test_branch_short_of_its_trunk(self):
+        """lead a → T ends in T; the branch from b stops at (300,150), on no line: flagged."""
+        root = svg(ICON.format(x=80, y=40), ICON.format(x=80, y=180), ICON.format(x=480, y=80),
+                   POLY.format(pts="128,64 300,64 300,104 476,104"),
+                   self.BARE.format(pts="128,204 300,204 300,150"))
+        iss = kinds(root, "LOOSE END")
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+        self.assertIn("(300,150)", iss[0].msg)
+
+    def test_branch_on_its_trunk(self):
+        """The same branch drawn up to the lead's vertical: one net, nothing flagged."""
+        root = svg(ICON.format(x=80, y=40), ICON.format(x=80, y=180), ICON.format(x=480, y=80),
+                   POLY.format(pts="128,64 300,64 300,104 476,104"),
+                   self.BARE.format(pts="128,204 300,204 300,104"))
+        self.assertEqual(kinds(root, "LOOSE END"), [])
+
+    def test_arrowhead_and_bus_ends_are_not_loose(self):
+        """An arrowhead end points at what it means; a bus line's open end has its drops."""
+        root = svg(ICON.format(x=80, y=40), ICON.format(x=380, y=180), ICON.format(x=480, y=180),
+                   POLY.format(pts="128,64 250,64"),                       # an arrow into empty space
+                   self.BARE.format(pts="350,150 520,150"),                # a bus, both ends open
+                   POLY.format(pts="404,150 404,176"), POLY.format(pts="504,150 504,176"))
+        self.assertEqual(kinds(root, "LOOSE END"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

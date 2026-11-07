@@ -40,6 +40,12 @@ Reports, and exits with status 1 on any of them:
                    are not reported; an arrowhead into the point another line leaves from
                    (Y → T, then T → X out of T's same port) is two flows and is
                    reported
+  LOOSE END        a connector that no other line touches has an end without an arrowhead
+                   on nothing — no node (icon or the labels under it), no line, no
+                   container border within 6px: a branch cut off the trunk it
+                   was to merge into (or a stem off its fork) reads as a flow that stops
+                   short. A bus line's open end is part of a net (its drops sit on it) and
+                   is not reported
   LINE OFF CANVAS  a connector runs past (or on) the edge of the viewBox (when that piece
                    also leaves the box its ends are in, on the same side, the line says so
                    and it is not reported again as LINE LEAVES BOX)
@@ -772,6 +778,22 @@ def run_checks(root):
             f"two flows read as one line; give each its own lane ({HUG_CLEAR}px apart) or draw them as one trunk",
             [s, o], s=s, o=o, d=d)
     feet = footprints(icons, texts)
+    # A line alone in its net (no other line's end on it, its ends on no other line) with an
+    # end on nothing leads nowhere: a merge branch left short of its trunk, a fork stem off
+    # its branches. A net of several lines (a bus and its drops) may keep an open end.
+    for eid, run in paths.items():
+        others = [o for k, o in paths.items() if k != eid]
+        if any(on_seg(pt, seg) for o in others for pt in (o[0]["p"], o[-1]["q"]) for seg in run):
+            continue
+        for k, pt in ((0, run[0]["p"]), (1, run[-1]["q"])):
+            seg = run[0] if k == 0 else run[-1]
+            if seg["el"].get("marker-start" if k == 0 else "marker-end"):
+                continue                # an arrowhead points at what it means (END_REACH may miss a label)
+            if anchored(pt, feet, rects, texts, run, k) or any(on_seg(pt, o_s) for o in others for o_s in o):
+                continue
+            add("LOOSE END", f"LOOSE END       connector {fmt(seg)} ends at ({fnum(pt[0])},{fnum(pt[1])}) on nothing — "
+                "no node, line or border: a branch cut off the line it merges into reads as a flow that stops "
+                "short; draw it on to that line or its node", [seg], s=seg, pt=pt)
     leaves, boxed = [], {}
     for runs, ends in nets(paths, feet, rects, texts):
         r = shared_box(ends, rects, feet) if ends else None
@@ -1642,6 +1664,11 @@ class Advisor:
                 cands.append((abs(delta), edits, f"{text} ({where}, {HUG_CLEAR + extra}px from the border of "
                                                  f"{self.rdesc(b['el'])})"))
         return self.pick(iss.key, cands)
+
+    def h_loose_end(self, iss, s, pt):
+        return ("draw the line on until it reaches the node it goes to or the line it merges into (in a layout "
+                "spec: the edge's shape / from_side / to_side, or drop `trunk: true` so each instance has its own "
+                "arrow)")
 
     def h_line_on_line(self, iss, s, o, d):
         """Give one of the two runs its own lane: shift it sideways off the other."""

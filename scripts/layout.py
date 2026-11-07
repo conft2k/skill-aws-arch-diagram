@@ -413,7 +413,7 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
                 skip[n] = skip.get(n, 0) + 1
                 changed = True
             continue
-        if k in ("LINE OVER TEXT", "LINE OVER ICON", "LINE NEAR TEXT") and line_edges \
+        if k in ("LINE OVER TEXT", "LINE OVER ICON", "LINE NEAR TEXT", "LOOSE END") and line_edges \
                 and p.iss.ctx["s"].get("kind") == "connector":
             n = line_edges[0]
             if skip.get(n, 0) < MAX_SKIP:

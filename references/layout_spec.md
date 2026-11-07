@@ -214,7 +214,10 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   stem (gwlb `igw -> gwlbe.*`; into group boxes, nlb-mtls `nlb -> besg.*`), label and
   badge drawn once. Whatever shape its lines take, a trunk's shared end leaves (enters)
   one port: two VH from a source whose facing side is taken run down one stem
-  (serverless `sfn -> reserve.*`), with no `from_offset: 0`. Lines that are not a trunk
+  (serverless `sfn -> reserve.*`), with no `from_offset: 0`. A branch always reaches the
+  stem: when the first instance has to take another shape (an HV into the TGW's bottom),
+  the others are drawn onto its line where they meet it (or, failing that, whole with
+  their own arrowheads); check_layout flags a line end left on nothing (LOOSE END). Lines that are not a trunk
   never share a run: when the instances' bends would put their legs on top of each other
   (the target past every source on one side — `ec2.* ..> cw` with CloudWatch in a
   bottom-aligned flow column — or one source to targets all on one side), each instance
