@@ -963,6 +963,10 @@ class FlowColumns(unittest.TestCase):
     def test_col_only_nodes_stack_in_spec_order(self):
         def f(d):
             flow_col(d, align="bottom")
+            # Column c now belongs to regional services; keep the external Internet
+            # on its own track so it cannot be swallowed by the Cloud's rectangle.
+            d["cols"].append("external")
+            next(n for n in d["nodes"] if n["id"] == "inet")["at"][0] = "external"
             d["nodes"] += [{"id": "s3", "icon": "service/Amazon-Simple-Storage-Service", "label": "S3",
                             "in": "region", "col": "c"},
                            {"id": "cw", "icon": "service/Amazon-CloudWatch", "label": "CloudWatch",

@@ -368,6 +368,37 @@ def bands(*parts):
 class BorderRules(unittest.TestCase):
     """R-border (user decision 2026-11-07, rules-design §6, hug.png)."""
 
+    def test_b3_declared_parent_reads_draft_not_geometry(self):
+        sp = spec(nodes=["n"], groups=[("cloud", "cloud"), ("region", "region")])
+        sp.groups["region"].parent = "cloud"
+        sp.nodes["n"].parent = "region"
+        for parts, owner in (
+            ([group("cloud", 0, 0, 600, 500), group("region", 30, 50, 250, 300),
+              node("n", 400, 100)], "node:n"),
+            ([group("cloud", 0, 0, 200, 200), group("region", 30, 50, 250, 300),
+              node("n", 100, 100)], "group:region"),
+        ):
+            bad = rules.containment_rules(sp, rules.Drawn.parse(svg(*parts)))
+            self.assertTrue(any(v.owners[0] == owner for v in codes(bad, "B3")))
+        good = rules.containment_rules(sp, rules.Drawn.parse(svg(
+            group("cloud", 0, 0, 600, 500), group("region", 30, 50, 250, 300), node("n", 100, 100))))
+        self.assertEqual(good, [])
+
+    def test_b4_wrong_sibling_containment_and_partial_intersection(self):
+        sp = spec(nodes=["n"], groups=[("cloud", "cloud"), ("a", "account"), ("b", "account")])
+        sp.groups["a"].parent = sp.groups["b"].parent = "cloud"
+        sp.nodes["n"].parent = "cloud"
+        for x in (100, 270):
+            d = rules.Drawn.parse(svg(group("cloud", 0, 0, 700, 500),
+                                     group("a", 30, 50, 300, 350), group("b", x, 80, 200, 200),
+                                     node("n", 150, 120)))
+            bad = codes(rules.containment_rules(sp, d), "B4")
+            self.assertTrue(any(v.owners == ("group:a", "group:b") for v in bad))
+            self.assertTrue(any("node:n" in v.owners for v in bad))
+        sp.nodes["n"].on = "a"
+        sp.groups["b"].over = ["n"]
+        self.assertEqual(rules.containment_rules(sp, d), [])
+
     def run_border(self, *parts):
         return rules.border_rules(rules.Drawn.parse(svg(*parts)))
 

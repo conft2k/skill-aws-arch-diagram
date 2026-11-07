@@ -1875,7 +1875,88 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
     geom.warnings += [_avoid_warning(spec, a) for a in avoid]
     geom.warnings += [f"{_loc(spec, c[0])}: its moved xy lands on {split_eid(c[1])[1]}, {why}; "
                       f"give it an xy clear of {split_eid(c[1])[1]}" for c in stuck]
+    # Track ranges are only a hint for choosing a separating axis. Overlapping ranges
+    # do not make siblings nested: their declared parents still have to be respected.
+    res = _separate_containers(spec, reqs, note_block, diag_x, avoid, res)
+    geom = res[1]
     return geom
+
+
+def _container_clashes(m: _Model, geom: Geometry):
+    """Intersecting sibling boxes / node footprints, excluding overlays and on: masks."""
+    for parent in [None] + [g.id for g in m.tree]:
+        items = [m.item_group(g) for g in m.child_groups[parent]]
+        items += [m.item_node(n) for n in m.child_nodes[parent]]
+        for i, a in enumerate(items):
+            ab = geom.groups[a.gid].rect if a.gid else geom.nodes[a.nid].footprint()
+            for b in items[i + 1:]:
+                if not (a.gid or b.gid):
+                    continue
+                bb = geom.groups[b.gid].rect if b.gid else geom.nodes[b.nid].footprint()
+                if (min(ab.x1, bb.x1) - max(ab.x0, bb.x0) > 0.5
+                        and min(ab.y1, bb.y1) - max(ab.y0, bb.y0) > 0.5):
+                    yield parent, a, b, ab, bb
+
+
+def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
+    """Add the missing disjunction only for actual intersections, preserving clean drafts.
+
+    Try each axis and order using the same hard containment constraints as the ordinary
+    solve. Shared tracks can make all four impossible; refuse with the input owners and
+    ranges instead of emitting a diagram that claims a different container hierarchy.
+    """
+    if next(_container_clashes(res[0], res[1]), None) is None:
+        return res
+    m = res[0]
+    # Each retained hard separation removes one pair permanently. Bound by the
+    # number of eligible sibling pairs, rather than the xy repair's six rounds.
+    limit = sum(len(gs) * (len(gs) - 1) // 2 + len(gs) * len(m.child_nodes[parent])
+                for parent, gs in m.child_groups.items())
+    warnings = list(res[1].warnings)
+    for _ in range(limit):
+        clash = next(_container_clashes(res[0], res[1]), None)
+        if clash is None:
+            res[1].warnings = list(dict.fromkeys(warnings + res[1].warnings))
+            return res
+        parent, a, b, ab, bb = clash
+        owner = f"group:{parent}" if parent else "canvas"
+        candidates = []
+        failures = []
+        for axis in ("x", "y"):
+            ac = (ab.x0 + ab.x1) if axis == "x" else (ab.y0 + ab.y1)
+            bc = (bb.x0 + bb.x1) if axis == "x" else (bb.y0 + bb.y1)
+            first, second = (a, b) if ac <= bc else (b, a)
+            for lo, hi in ((first, second), (second, first)):
+                pair = (axis, lo.key, hi.key, owner)
+                try:
+                    trial = _solve_once(spec, reqs, note_block, diag_x, avoid + [pair])
+                except SolveError as e:
+                    failures.extend(e.problems[:2])
+                    continue
+                # Account siblings read side by side whenever x is feasible.
+                vertical = int(axis == "y" and a.gtype == b.gtype == "account")
+                candidates.append((vertical, trial[1].canvas_w * trial[1].canvas_h, pair, trial))
+        if not candidates:
+            def tracks(it):
+                obj = spec.groups[it.gid] if it.gid else spec.nodes[it.nid]
+                cols = obj.cols if it.gid else (obj.col, obj.col2 or obj.col)
+                rows = obj.rows if it.gid else (obj.row, obj.row)
+                return f"{_loc(spec, it.key)} (cols={cols}, rows={rows})"
+            raise SolveError([
+                f"{tracks(a)} intersects sibling {tracks(b)} in {parent or 'canvas'}: "
+                "declared containment cannot be drawn on these tracks; separation in either "
+                "axis/order contradicts containment or placement constraints. Use separate "
+                "columns/rows (or adjust xy/dx/dy/span) for the sibling containers",
+                *list(dict.fromkeys(failures))[:4],
+            ])
+        _, _, pair, res = min(candidates, key=lambda c: (c[0], c[1], c[2]))
+        avoid = avoid + [pair]
+        warnings += res[1].warnings
+    if next(_container_clashes(res[0], res[1]), None) is not None:
+        raise SolveError([f"declared containment still has intersecting siblings after {limit} "
+                          "separation rounds; use separate columns/rows for the sibling containers"])
+    res[1].warnings = list(dict.fromkeys(warnings + res[1].warnings))
+    return res
 
 
 def _avoid_variants(clashes) -> List[List[Tuple[str, str, str, str]]]:

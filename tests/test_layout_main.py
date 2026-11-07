@@ -1133,17 +1133,16 @@ class XyMoved(unittest.TestCase):
     past the canvas margin) is moved to the nearest center that meets it, with a warning
     saying from where to where and why; a sibling it then lands on is kept apart from it;
     a column only an xy names gets a node's room. The three corpus specs the solve used to
-    refuse as contradictory draw in every mode. r3-xy-30's slide keeps its reported
-    header crossing when opening room would collide with the pinned KMS."""
+    refuse as contradictory draw in every mode. r3-xy-30's slide opens header room
+    while keeping the external KMS outside the Cloud, moving its xy with a warning."""
 
     def test_corpus_cases_draw_clean(self):
         for case in ("xy/t-grp", "xy/xy-grp", "flowcol/r3-xy-30"):
             for mode, more in XY_MODES:
                 with self.subTest(case=case, mode=mode, more=more):
                     rc, text, kinds = main_file(CORPUS / f"{case}.layout.yaml", mode, *more)
-                    expected = ["LINE IN HEADER"] if case == "flowcol/r3-xy-30" and mode == "slide" else []
-                    self.assertEqual(rc, bool(expected), text)
-                    self.assertEqual(kinds, expected, text)
+                    self.assertEqual(rc, 0, text)
+                    self.assertEqual(kinds, [], text)
                     self.assertNotIn("contradictory", text)
 
     def test_label_room_moves_it_up_and_its_column_gets_room(self):

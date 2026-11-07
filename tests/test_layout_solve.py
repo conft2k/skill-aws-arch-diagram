@@ -590,6 +590,101 @@ class ExampleTest(unittest.TestCase):
         self.report("alb", rows)
 
 
+class ContainerSeparationTest(unittest.TestCase):
+    def fixture(self, accounts=False, mode="document"):
+        if accounts:
+            groups = [
+                {"id": "cloud", "type": "cloud"},
+                {"id": "netacct", "type": "account", "in": "cloud"},
+                {"id": "netreg", "type": "region", "in": "netacct"},
+                {"id": "logacct", "type": "account", "in": "cloud"},
+                {"id": "logreg", "type": "region", "in": "logacct"},
+            ]
+            nodes = [
+                {"id": "ec2", "in": "netreg", "at": ["app", "top"]},
+                {"id": "nat", "in": "netreg", "at": ["logs", "bottom"]},
+                {"id": "s3", "in": "logreg", "at": ["logs", "top"]},
+            ]
+        else:
+            groups = [{"id": "cloud", "type": "cloud"},
+                      {"id": "region", "type": "region", "in": "cloud"}]
+            nodes = [
+                {"id": "ec2", "in": "region", "at": ["app", "top"]},
+                {"id": "rule", "in": "region", "at": ["logs", "bottom"]},
+                {"id": "phz", "in": "cloud", "at": ["logs", "top"]},
+            ]
+        for n in nodes:
+            n.update(icon="service/Amazon-EC2", label=n["id"])
+        return LP.load(dict(name="containment", cols=["app", "logs"], rows=["top", "bottom"],
+                            groups=groups, nodes=nodes), mode=mode)
+
+    def test_shared_tracks_refuse_false_containment_in_both_modes(self):
+        for accounts in (False, True):
+            for mode in ("document", "slide"):
+                with self.subTest(accounts=accounts, mode=mode):
+                    with self.assertRaises(SolveError) as ctx:
+                        LS.solve(self.fixture(accounts, mode), [])
+                    message = str(ctx.exception)
+                    self.assertIn("declared containment cannot be drawn", message)
+                    self.assertIn("cols=", message)
+                    self.assertIn("rows=", message)
+                    for owner in (("netacct", "logacct") if accounts else ("region", "phz")):
+                        self.assertIn(owner, message)
+
+    def test_flexible_sibling_is_separated_without_changing_parent(self):
+        sp = self.fixture()
+        # A flow-row node has no hard column, so the missing separation is solvable.
+        sp.nodes["phz"].col = None
+        sp.nodes["phz"].flow_index = 0
+        g = LS.solve(sp, [])
+        self.assertFalse(g.groups["region"].rect.overlaps(g.nodes["phz"].footprint()))
+        self.assertTrue(contains(g.groups["cloud"].rect, g.nodes["phz"].footprint()))
+        self.assertEqual(LS.solve(sp, []).nodes["phz"], g.nodes["phz"])
+
+    def test_distinct_columns_preserve_declared_hierarchy(self):
+        for accounts in (False, True):
+            for mode in ("document", "slide"):
+                sp = self.fixture(accounts, mode)
+                sp.cols.append(Track("separate", "col", 2))
+                nid = "s3" if accounts else "phz"
+                sp.nodes[nid].col = "separate"
+                if accounts:
+                    for gid in ("logacct", "logreg"):
+                        sp.groups[gid].cols = ("separate", "separate")
+                g = LS.solve(sp, [])
+                pairs = [("netacct", "logacct")] if accounts else []
+                for a, b in pairs:
+                    self.assertFalse(g.groups[a].rect.overlaps(g.groups[b].rect))
+                if not accounts:
+                    self.assertFalse(g.groups["region"].rect.overlaps(g.nodes[nid].footprint()))
+                for node in sp.nodes.values():
+                    self.assertTrue(contains(g.groups[node.parent].rect, g.nodes[node.id].footprint()))
+
+    def test_overlapping_ranges_with_clear_offsets_keep_the_draft(self):
+        sp = self.fixture()
+        sp.nodes["phz"].dx = 300
+        before = LS._solve_once(sp, [], None, False, [])[1]
+        after = LS.solve(sp, [])
+        self.assertEqual(after, before)
+
+    def test_many_flexible_siblings_all_stay_outside_the_region(self):
+        rows = ["top"] + [{"id": f"r{i}", "flow": 100} for i in range(8)] + ["bottom"]
+        sp = LP.load(dict(
+            name="many-siblings", cols=["app", "logs"], rows=rows,
+            groups=[{"id": "cloud", "type": "cloud"},
+                    {"id": "region", "type": "region", "in": "cloud", "min_w": 3000}],
+            nodes=[{"id": "first", "icon": "service/Amazon-EC2", "label": "EC2", "in": "region", "at": ["app", "top"]},
+                   {"id": "last", "icon": "service/Amazon-EC2", "label": "EC2", "in": "region", "at": ["logs", "bottom"]}]
+                  + [{"id": f"global{i}", "icon": "service/Amazon-Route-53", "label": "Route 53",
+                      "in": "cloud", "row": f"r{i}"}
+                     for i in range(8)]))
+        g = LS.solve(sp, [])
+        for i in range(8):
+            foot = g.nodes[f"global{i}"].footprint()
+            self.assertFalse(g.groups["region"].rect.overlaps(foot))
+            self.assertTrue(contains(g.groups["cloud"].rect, foot))
+
+
 class ConstraintTest(unittest.TestCase):
     """Every generated constraint holds; structure invariants."""
 

@@ -50,6 +50,8 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            LINE OVER TEXT and LINE NEAR TEXT do not reach (flowcol/t7-xyref slide: ALB →
            AZ2 EC2 at x=308 between the App subnet's badge and its title). Both predicates
            come from check_layout, which reports B2 as LINE IN HEADER for engine feedback.
+           B3 a node/group lies outside its declared parent; B4 a node/group intersects
+           a sibling container. Overlays and nodes deliberately on: a border are exempt.
   R-fit    the smallest drawn text meets its medium's target (slide pt / document px;
            effective_text, tier 2; cost: the size short).
 
@@ -797,6 +799,37 @@ def border_rules(d: Drawn) -> List[Violation]:
     return out
 
 
+def containment_rules(spec, d: Drawn) -> List[Violation]:
+    """Check the rendered rectangles against in:, independently of solve constraints."""
+    out = []
+    children = {}
+    for gid, g in spec.groups.items():
+        if not g.overlay and gid in d.group_rect:
+            children.setdefault(g.parent, []).append((f"group:{gid}", d.group_rect[gid], True))
+    for nid, n in spec.nodes.items():
+        if not n.on and nid in d.foot:
+            children.setdefault(n.parent, []).append((f"node:{nid}", d.foot[nid], False))
+    for parent, items in children.items():
+        if parent in d.group_rect:
+            outer = d.group_rect[parent]
+            for eid, box, _ in items:
+                if not CL.contains(outer, box, 1):
+                    out.append(Violation("R-border", (eid, f"group:{parent}"),
+                                         f"B3 {eid} lies outside its declared container {parent}",
+                                         code="B3"))
+        for i, (ae, ab, ag) in enumerate(items):
+            for be, bb, bg in items[i + 1:]:
+                if not (ag or bg):
+                    continue
+                if (min(ab[2], bb[2]) - max(ab[0], bb[0]) > 0.5
+                        and min(ab[3], bb[3]) - max(ab[1], bb[1]) > 0.5):
+                    out.append(Violation("R-border", (ae, be),
+                                         f"B4 {ae} intersects sibling {be} in {parent or 'canvas'}; "
+                                         "their declared containers must remain separate",
+                                         code="B4"))
+    return out
+
+
 # =======================================================================================
 # R-fit
 
@@ -832,7 +865,7 @@ def check(spec, geom, draft: bytes, drawn: Optional[Drawn] = None) -> List[Viola
         return list(_last[3])
     d = drawn if drawn is not None else Drawn.parse(draft)
     out = (flow_rules(spec, d) + rt_rules(spec, d) + twin_rules(spec, geom) + label_rules(spec, d)
-           + border_rules(d) + fit_rules(spec, d))
+           + border_rules(d) + containment_rules(spec, d) + fit_rules(spec, d))
     out.sort(key=lambda v: (v.tier, v.rule, v.code, v.owners, v.message))
     _last[:] = [spec, geom, draft, out]
     return list(out)
