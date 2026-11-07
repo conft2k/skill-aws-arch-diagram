@@ -12,7 +12,8 @@ Reports, and exits with status 1 on any of them:
                    sub-caption stack 16px apart and are not checked)
   TEXT AT BORDER   a label is closer than 8px to a container border (a bold header
                    label: 4px)
-  OFF CANVAS       a label runs past the edge of the viewBox
+  OFF CANVAS       a label runs past the edge of the viewBox (min-x min-y width height,
+                   separated by spaces and/or commas: the canvas starts at its min-x, min-y)
   LINE NEAR TEXT   a connector skims a node or header label (< 4px) without crossing it, or
                    the top or a side of a connector label (another connector's line)
   BADGE NEAR ICON  a group badge (e.g. an ASG's) is within 8px of a node icon
@@ -77,6 +78,9 @@ Reports, and exits with status 1 on any of them:
   CIDR COLOR       a CIDR line under a title that isn't squid ink #232F3E
   GLYPH STEP       a label numbers steps with circled digits (①) — draw the legend's
                    numbers as the diagram's step badges instead
+  BAD VIEWBOX      the root viewBox is not 4 finite numbers with a positive width and
+                   height (the canvas checks are skipped; no viewBox at all skips them
+                   without a problem)
 
 Fix hints. Under every problem a `  fix: ...` line gives the change to make, with the
 values already computed: which element (its text, id, bundle ref or coordinates as
@@ -204,15 +208,55 @@ def seg_hits_box(p, q, b):
     return True
 
 
+VIEWBOX_SEP = re.compile(r"\s*,\s*|\s+")
+
+
+def viewbox(svg_root):
+    """The root's viewBox as ((min-x, min-y, width, height), None) — four numbers separated by
+    whitespace and/or one comma, as SVG writes it — or (None, problem) when it is not four
+    finite numbers with a positive width and height; (None, None) without a viewBox."""
+    raw = svg_root.get("viewBox")
+    if raw is None:
+        return None, None
+    s = raw.strip()
+    vals = []
+    for p in VIEWBOX_SEP.split(s) if s else []:
+        try:
+            vals.append(float(p))
+        except ValueError:
+            return None, f"viewBox={raw!r}: {p!r} is not a number"
+    if len(vals) != 4:
+        return None, f"viewBox={raw!r} has {len(vals)} value{'s' if len(vals) != 1 else ''}, not 4 numbers"
+    if not all(math.isfinite(v) for v in vals):
+        return None, f"viewBox={raw!r}: every value must be finite"
+    if vals[2] <= 0 or vals[3] <= 0:
+        return None, f"viewBox={raw!r}: its width and height must be positive"
+    return tuple(vals), None
+
+
+def canvas_desc(canvas):
+    """'the W × H canvas', with its origin when that isn't (0,0)."""
+    vx, vy, cw, ch = canvas
+    at = f" at ({fnum(vx)},{fnum(vy)})" if vx or vy else ""
+    return f"the {cw:g} × {ch:g} canvas{at}"
+
+
+def canvas_box(canvas):
+    """The canvas (min-x, min-y, width, height) as a box (x0, y0, x1, y1)."""
+    vx, vy, cw, ch = canvas
+    return (vx, vy, vx + cw, vy + ch)
+
+
 def collect(svg_root):
     """The drawing's texts, segments (connectors and container borders), masks and icons
     (images, circles), each a dict with its element ("el"), document order ("o") and the
     id of its nearest enclosing <g id> ("own", None outside any: a layout.py draft wraps
     each owner's elements in one, "node:<nid>", "edge:<n>", "edge:<n>:label", ...), and
-    the canvas (w, h)."""
+    the canvas (min-x, min-y, w, h) in the drawing's own coordinates — (0, 0, 0, 0) without
+    a usable viewBox (see viewbox), when nothing is checked against the canvas."""
     texts, segs, masks, icons = [], [], [], []
-    canvas = svg_root.get("viewBox", "0 0 0 0").split()
-    cw, ch = num(canvas[2]), num(canvas[3])
+    canvas = viewbox(svg_root)[0] or (0.0, 0.0, 0.0, 0.0)
+    cw, ch = canvas[2], canvas[3]
     order = 0
 
     def walk(el, ox, oy, own):
@@ -286,7 +330,7 @@ def collect(svg_root):
             walk(child, ox, oy, own)
 
     walk(svg_root, 0.0, 0.0, None)
-    return texts, segs, masks, icons, (cw, ch)
+    return texts, segs, masks, icons, canvas
 
 
 # The thresholds (imported above from layout_const, which says what each one is):
@@ -890,7 +934,8 @@ def ref_id(r):
 
 
 def run_checks(root):
-    texts, segs, masks, icons, (cw, ch) = collect(root)
+    texts, segs, masks, icons, canvas = collect(root)
+    cw, ch = canvas[2], canvas[3]
     issues = []
     # A node's label and its sub lines (node_stacks) name that node: they aren't connector
     # labels, and they may sit close to their own icon. A connector end attaches to a node's
@@ -903,6 +948,10 @@ def run_checks(root):
     def add(kind, msg, refs, **ctx):
         issues.append(Issue(kind, msg, refs, ctx))
 
+    # A viewBox that doesn't parse leaves no canvas to check against (collect: 0 × 0).
+    bad_view = viewbox(root)[1]
+    if bad_view:
+        add("BAD VIEWBOX", f"BAD VIEWBOX     {bad_view} — the canvas checks are skipped", [])
     # A container title sits in its box's header row: x = box.x + 32 (with a badge) or
     # + 12 (label only), baseline box.y + 18. A title that drifted when content was moved
     # reads as belonging to nothing.
@@ -972,7 +1021,7 @@ def run_checks(root):
     off = {}                            # id(element) -> (segment, side, px) past the canvas edge
     for k, run in paths.items():
         if cw and ch:
-            past = beyond(run, (0.0, 0.0, cw, ch), strict=False)
+            past = beyond(run, canvas_box(canvas), strict=False)
             if past:
                 off[k] = past
     # Two flows on one run read as one line (out-of-phase dashes look solid) that then
@@ -1033,8 +1082,8 @@ def run_checks(root):
         if r is not None:
             whose = "both of its ends are" if n == 1 else f"every end of the {n} lines it joins is"
             also = f", {bd:g}px out past the {side} border of {box_name(r, texts)} where {whose}"
-        add("LINE OFF CANVAS", f"LINE OFF CANVAS connector {fmt(s)} runs {where} the {side} edge of the "
-            f"{cw:g} × {ch:g} canvas{also} — route it inside", [{"el": s["el"]}], s=s, run=paths[k], side=side, d=d,
+        add("LINE OFF CANVAS", f"LINE OFF CANVAS connector {fmt(s)} runs {where} the {side} edge of "
+            f"{canvas_desc(canvas)}{also} — route it inside", [{"el": s["el"]}], s=s, run=paths[k], side=side, d=d,
             r=r, box_d=bd)
     for run, (s, side, d), r, n in leaves:
         whose = "both of its ends are" if n == 1 else f"every end of the {n} lines it joins is"
@@ -1067,8 +1116,8 @@ def run_checks(root):
         if CIRCLED.search(t["s"]):
             add("GLYPH STEP", f"GLYPH STEP      {t['s']!r} uses circled digits; draw step badges instead", [t], t=t)
         x0, y0, x1, y1 = t["box"]
-        if cw and ch and (x0 < 0 or y0 < 0 or x1 > cw or y1 > ch):
-            add("OFF CANVAS", f"OFF CANVAS      {t['s']!r} runs past the {cw:g} × {ch:g} canvas", [t], t=t)
+        if cw and ch and not contains(canvas_box(canvas), t["box"], 0):
+            add("OFF CANVAS", f"OFF CANVAS      {t['s']!r} runs past {canvas_desc(canvas)}", [t], t=t)
         if t["fs"] < MIN_FONT:
             add("SMALL TEXT", f"SMALL TEXT      {t['fs']:g}px  {t['s']!r}", [t], t=t)
         b = shrink(t["box"])
@@ -1917,14 +1966,13 @@ class Advisor:
         of box r back inside it, together (one edit per line), with the ends of the other
         lines that sit on them (a branch off a trunk, a bracket's stem, the next <line> of a
         route drawn in pieces). Returns (candidates, what, why none)."""
-        cw, ch = self.canvas
-        box = (0.0, 0.0, cw, ch) if r is None else (r[0], r[1], r[0] + r[2], r[1] + r[3])
+        box = canvas_box(self.canvas) if r is None else (r[0], r[1], r[0] + r[2], r[1] + r[3])
         k = SIDES.index(side)
         edge, inward, axis = box[k], (1 if k < 2 else -1), k % 2      # axis 0: x, 1: y
         past = (lambda v: (edge - v) * inward >= 0) if r is None else (lambda v: (edge - v) * inward > 0.5)
         out = [s for s in run if all(past(pt[axis]) for pt in (s["p"], s["q"]))
                and abs(s["p"][axis] - s["q"][axis]) < 0.5]
-        what = (f"the {cw:g} × {ch:g} canvas" if r is None else self.rdesc(r[4]))
+        what = (canvas_desc(self.canvas) if r is None else self.rdesc(r[4]))
         el = out[0]["el"] if out else None
         if not out or el.tag.replace(NS, "") not in ("line", "polyline"):
             return None, what, ""
@@ -2051,7 +2099,7 @@ class Advisor:
             return ""
         if self.engine:
             return " — or, from the layout spec, let layout.py grow the room on that side (its try: line)"
-        cw, ch = self.canvas
+        cw, ch = self.canvas[2:]                  # d is past the edge: the origin doesn't count
         w, h = (math.ceil(cw + d + 16), ch) if side == "right" else (cw, math.ceil(ch + d + 16))
         text = (f" — or grow the viewBox {'width' if side == 'right' else 'height'} to "
                 f"{fnum(w if side == 'right' else h)} (and the white background rect)")
@@ -2166,18 +2214,23 @@ class Advisor:
                 '<circle r="10"> in the step color + a white bold 12px digit (baseline cy + 4)')
 
     def h_off_canvas(self, iss, t):
-        cw, ch = self.canvas
+        vx, vy, cw, ch = self.canvas
+        ex, ey = vx + cw, vy + ch                   # the right and bottom edges
         x0, y0, x1, y1 = t["box"]
-        dx = math.ceil(4 - x0) if x0 < 0 else math.floor(cw - 4 - x1) if x1 > cw else 0
-        dy = math.ceil(4 - y0) if y0 < 0 else math.floor(ch - 4 - y1) if y1 > ch else 0
+        dx = math.ceil(vx + 4 - x0) if x0 < vx else math.floor(ex - 4 - x1) if x1 > ex else 0
+        dy = math.ceil(vy + 4 - y0) if y0 < vy else math.floor(ey - 4 - y1) if y1 > ey else 0
         grow = []
-        if x1 > cw:
-            grow.append(f"width {fnum(cw)}→{math.ceil(x1 + 4)}")
-        if y1 > ch:
-            grow.append(f"height {fnum(ch)}→{math.ceil(y1 + 4)}")
+        if x1 > ex:
+            grow.append(f"width {fnum(cw)}→{math.ceil(x1 + 4 - vx)}")
+        if y1 > ey:
+            grow.append(f"height {fnum(ch)}→{math.ceil(y1 + 4 - vy)}")
         alt = f" — or grow the viewBox {' and '.join(grow)} (and the white background rect)" if grow else ""
         edits, text = self.move_text(t, dx, dy)
         return self.pick(iss.key, [(abs(dx) + abs(dy), edits, text + alt)])
+
+    def h_bad_viewbox(self, iss):
+        return ('write the root <svg> viewBox as 4 numbers "min-x min-y width height" (spaces and/or '
+                'commas between them), width and height above 0 — the white background rect\'s box')
 
     def h_small_text(self, iss, t):
         return Hint(f'set font-size="{MIN_FONT}" on {self.tdesc(t)} (was {t["el"].get("font-size") or "unset"})',
