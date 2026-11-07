@@ -384,7 +384,7 @@ cases:
     from: "r4-port/rf/t6b_overlay.layout.json"
   - path: flowcol/t7-xyref.layout.yaml
     rules: [R-flow, R-border]
-    bad: {R-border: {slide: edge:3, slide-no-title: edge:3}}   # slides: ALB → AZ2 EC2 down x = 308 through the App subnet's header band, between its badge (282–306) and title (from 314) — check_layout misses it (user decision 2026-11-07, hug.png); the document runs it at x = 344, left of the subnet
+    good: [R-border]   # the slides used to run ALB → AZ2 EC2 down x = 308 through the App subnet's header band; check_layout LINE IN HEADER now has the engine route it clear (b2-check)
     what: "xy node using refs to a stack node: KMS at [col.users, cw.cy]"
     from: "r4-port/rf/t7_xyref.layout.json"
   - path: flowcol/t8-two-cols.layout.yaml
