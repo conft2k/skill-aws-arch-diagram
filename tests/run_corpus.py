@@ -283,9 +283,9 @@ def _run_one(entry: Dict[str, Any], mode: str, out_dir: str, rec: Dict[str, Any]
     cap: Dict[str, Any] = {}
     real_summary, real_problems = layout.summary, layout.problems_of
 
-    def summary(spec, b, out_path):
+    def summary(spec, b, out_path, *more):
         cap["spec"], cap["b"] = spec, b
-        lines = real_summary(spec, b, out_path)
+        lines = real_summary(spec, b, out_path, *more)
         cap["summary"] = lines
         return lines
 
@@ -315,7 +315,8 @@ def _run_one(entry: Dict[str, Any], mode: str, out_dir: str, rec: Dict[str, Any]
     g = b.geom
     rec["result"] = "drawn"
     rec["canvas"] = [round(g.canvas_w, 1), round(g.canvas_h, 1)]
-    pt = layout.slide_text_pt(spec, b)[0]
+    final = draft.read_bytes()          # the draft as written (after fix_pass)
+    pt = layout.slide_text_pt(spec, final)[0]
     rec["pt"] = round(pt, 2) if pt != float("inf") else None
     rec["slide_small"] = rec["mode"] != "document" and pt < K.SLIDE_MIN_PT
     rec["title"] = bool(spec.title)
@@ -323,7 +324,7 @@ def _run_one(entry: Dict[str, Any], mode: str, out_dir: str, rec: Dict[str, Any]
     probs = cap.get("final", [])
     rec["codes"] = [p.iss.kind for p in probs]
     rec["problems"] = [p.iss.msg for p in probs]
-    sp = layout.slide_problem(spec, b)
+    sp = layout.slide_problem(spec, final)
     if sp:
         rec["codes"].append("SLIDE TOO SMALL")
         rec["problems"].append(sp)

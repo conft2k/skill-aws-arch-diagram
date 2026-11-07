@@ -22,6 +22,7 @@ MISSING = [m for m in ("pptx", "cairosvg") if importlib.util.find_spec(m) is Non
 if MISSING:  # svg2pptx.py imports them: skip, like test_examples' export column
     raise unittest.SkipTest(f"needs python-pptx and cairosvg (missing: {', '.join(MISSING)})")
 
+import check_layout as CL  # noqa: E402
 import render_pptx  # noqa: E402
 import svg2pptx  # noqa: E402
 from pptx import Presentation  # noqa: E402
@@ -340,6 +341,42 @@ class TextRun(unittest.TestCase):
     def test_title_inside_text_not_drawn(self):
         text, = collect('<text x="20" y="50" font-size="14">Hi<title>tooltip</title></text>')
         self.assertEqual(text["s"], "Hi")
+
+
+class SlideTexts(unittest.TestCase):
+    """check_layout.slide_texts (what SLIDE TOO SMALL and R-fit weigh) is the set of texts
+    collect() puts on the slide: no <title> / <desc> characters, nothing in defs / marker /
+    title / desc or an element it does not convert, <tspan> parts joined, a missing or
+    unit-carrying font-size 16, blank text and font-size 0 left out."""
+
+    @staticmethod
+    def collected(root):
+        return sorted((it["fs"], it["s"]) for it in svg2pptx.collect(root)[1] if it["k"] == "text")
+
+    def test_same_texts_as_collect(self):
+        body = ('<text x="10" y="20" font-size="1"><title>tooltip</title></text>'
+                '<text x="10" y="30" font-size="2"><desc>about</desc></text>'
+                '<text x="10" y="40" font-size="3">a<title>t</title>b</text>'
+                '<text x="40" y="60" font-size="14">Visible</text>'
+                '<text x="40" y="70" font-size="12">one <tspan>run</tspan> joined</text>'
+                '<text x="40" y="80">no size</text>'
+                '<text x="40" y="90" font-size="0">zero</text>'
+                '<text x="40" y="95" font-size="9">  </text>'
+                '<defs><text x="0" y="0" font-size="4">in defs</text></defs>'
+                '<marker id="m"><text font-size="5">in marker</text></marker>'
+                '<g id="x"><text x="5" y="5" font-size="13">in a g</text></g>'
+                '<foreignObject><text font-size="6">not converted</text></foreignObject>')
+        root = ET.fromstring(svg(body, "0 0 300 300"))
+        got = sorted(CL.slide_texts(root))
+        self.assertEqual(got, self.collected(root))
+        self.assertEqual(got, [(3.0, "ab"), (12.0, "one run joined"), (13.0, "in a g"),
+                               (14.0, "Visible"), (16.0, "no size")])
+
+    def test_same_texts_on_the_examples(self):
+        for path in sorted((ROOT / "docs" / "examples").glob("**/*.svg")):
+            with self.subTest(path.name):
+                root = ET.parse(path).getroot()
+                self.assertEqual(sorted(CL.slide_texts(root)), self.collected(root))
 
 
 class Hidden(unittest.TestCase):

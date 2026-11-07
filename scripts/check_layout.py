@@ -234,6 +234,46 @@ def viewbox(svg_root):
     return tuple(vals), None
 
 
+# svg2pptx DRAWN / SKIPPED: the tags it converts, and those it leaves out with what they hold.
+SLIDE_DRAWN = {"svg", "g", "rect", "image", "text", "line", "polyline", "circle"}
+
+
+def slide_texts(svg_root):
+    """(font-size, characters) of each <text> svg2pptx puts on the slide, by its collect():
+    never one inside defs / marker / title / desc or another element it does not convert, or
+    under display="none" / visibility="hidden" | "collapse" (refused, never drawn); the
+    characters are the text's own and its <tspan>s' without <title> / <desc> (text_run),
+    stripped; a font-size missing or not a bare number is 16; a blank text or font-size 0
+    draws nothing."""
+    out = []
+
+    def run(el):
+        parts = [el.text or ""]
+        for ch in el:
+            if isinstance(ch.tag, str) and ch.tag.replace(NS, "") == "tspan":
+                parts.append(run(ch))
+            parts.append(ch.tail or "")
+        return "".join(parts)
+
+    def walk(el):
+        tag = el.tag.replace(NS, "") if isinstance(el.tag, str) else None
+        if tag not in SLIDE_DRAWN or (el.get("display") or "").strip().lower() == "none" \
+                or (el.get("visibility") or "").strip().lower() in ("hidden", "collapse"):
+            return
+        if tag == "text":
+            fsz = (el.get("font-size") or "").strip()
+            fs = num(fsz, 16.0) if fsz and re.fullmatch(r"[0-9.]+", fsz) else 16.0
+            s = run(el).strip()
+            if s and fs > 0:
+                out.append((fs, s))
+            return
+        for ch in el:
+            walk(ch)
+
+    walk(svg_root)
+    return out
+
+
 def canvas_desc(canvas):
     """'the W × H canvas', with its origin when that isn't (0,0)."""
     vx, vy, cw, ch = canvas
@@ -2126,7 +2166,7 @@ class Advisor:
         w, h = (math.ceil(cw + d + 16), ch) if side == "right" else (cw, math.ceil(ch + d + 16))
         text = (f" — or grow the viewBox {'width' if side == 'right' else 'height'} to "
                 f"{fnum(w if side == 'right' else h)} (and the white background rect)")
-        small = K.smallest_text((t["fs"], t["s"]) for t in self.texts)
+        small = K.smallest_text(slide_texts(self.root))
         if small and any(slide_fits(cw, ch, t, small[0]) and not slide_fits(w, h, t, small[0]) for t in (True, False)):
             text += (f"; on a 16:9 slide that takes the smallest text ({fnum(small[0])}px) under 10pt "
                      f"({slide_fit(small[0])}), so move the run instead")

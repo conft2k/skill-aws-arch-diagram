@@ -93,7 +93,7 @@ class SlideDiagonals(unittest.TestCase):
     (1102 × 538, 10pt)."""
 
     def pt(self, spec, b):
-        return layout.slide_text_pt(spec, b)[0]
+        return layout.slide_text_pt(spec, b.svg)[0]
 
     def test_slide_too_small_on_y_goes_on_x(self):
         with mock.patch.object(layout_solve, "_stacked_between", return_value=[]):
@@ -101,9 +101,9 @@ class SlideDiagonals(unittest.TestCase):
             weighed = layout._build(spec, [], {}, None, "x.layout.yaml")
         self.assertNotIn("att", [t.id for t in spec.cols])
         self.assertGreater(weighed.geom.diag_y, 0)                 # the weighing put pairs on y
-        self.assertIsNotNone(layout.slide_problem(spec, weighed))
+        self.assertIsNotNone(layout.slide_problem(spec, weighed.svg))
         self.assertEqual(b.geom.diag_y, 0)                          # build kept the all-x pass
-        self.assertIsNone(layout.slide_problem(spec, b))
+        self.assertIsNone(layout.slide_problem(spec, b.svg))
         self.assertGreater(self.pt(spec, b), self.pt(spec, weighed))
         g, gap = b.geom, spec.const.sibling_gap
         rt = g.nodes["rtsp"].footprint()
@@ -117,7 +117,7 @@ class SlideDiagonals(unittest.TestCase):
         """A slide that fits (≥ 10pt) keeps what the weighing chose: no second pass."""
         with mock.patch.object(layout, "_build", wraps=layout._build) as w:
             spec, b = built("slides/nlb-reference-architecture")
-        self.assertIsNone(layout.slide_problem(spec, b))
+        self.assertIsNone(layout.slide_problem(spec, b.svg))
         self.assertEqual(w.call_count, 1)
 
 
@@ -951,6 +951,45 @@ class SlideTextSize(unittest.TestCase):
                       "(OK ≥ 10)", text)
         self.assertNotIn("SLIDE TOO SMALL", text)
         self.assertAlmostEqual(deck_pt, 14 * 450 / 550, delta=0.01)       # 11.45pt in the deck
+
+    RAW = '<text x="30" y="200" {attrs} fill="#232F3E">{s}</text>'
+
+    def raw_spec(self, gap, attrs, s):
+        """Review repro: three Lambdas on a slide, rows `gap` apart, one raw text."""
+        return {"name": "t", "mode": "slide", "cols": ["a", {"id": "b", "min_gap_before": 300}],
+                "rows": ["top", {"id": "bottom", "min_gap_before": gap}],
+                "nodes": [svc("a", "service/AWS-Lambda", "Alpha", at=["a", "top"]),
+                          svc("b", "service/AWS-Lambda", "Beta", at=["a", "bottom"]),
+                          svc("c", "service/AWS-Lambda", "Gamma", at=["b", "top"])],
+                "raw": [{"layer": "above", "svg": self.RAW.format(attrs=attrs, s=s)}]}
+
+    def run_raw(self, d):
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "t.layout.json", Path(tmp) / "t.draft.svg"
+            src.write_text(json.dumps(d), encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = layout.main([str(src), "-o", str(out)])
+            return rc, buf.getvalue(), self.deck_min_pt(out)
+
+    def test_judged_on_the_draft_after_its_fixes(self):
+        """The summary, SLIDE TOO SMALL and R-fit weigh the draft as written, after fix_pass:
+        a 20px bold 'VPC 10.0.0.0/16' has its CIDR moved onto a 12px line (CIDR IN TITLE), so
+        356 × 578 takes it to 9.3pt (14px before the fix would be 10.9pt) — warned, exit 1;
+        a 6px text raised to 12px (SMALL TEXT) on 356 × 378 comes out at 14.3pt (6px before
+        the fix would be 7.1pt) — no warning, exit 0. The deck agrees both times."""
+        rc, text, deck_pt = self.run_raw(self.raw_spec(500, 'font-size="20" font-weight="bold"', "VPC 10.0.0.0/16"))
+        self.assertEqual(rc, 1, text)
+        self.assertIn("the smallest text (12px) → 9.3pt (< 10pt)", text)
+        self.assertIn("SLIDE TOO SMALL smallest text (12px, '10.0.0.0/16') comes out at 9.3pt", text)
+        self.assertIn("rule: R-fit FIT smallest text (12px, '10.0.0.0/16') comes out at 9.34pt", text)
+        self.assertAlmostEqual(deck_pt, 12 * 450 / 578, delta=0.01)
+        rc, text, deck_pt = self.run_raw(self.raw_spec(300, 'font-size="6"', "tiny note"))
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        self.assertIn("the smallest text (12px) → 14.3pt (OK ≥ 10)", text)
+        self.assertNotIn("SLIDE TOO SMALL", text)
+        self.assertNotIn("R-fit", text)
+        self.assertAlmostEqual(deck_pt, 12 * 450 / 378, delta=0.01)
 
     def test_text_under_10pt_still_warns(self):
         text, deck_pt = self.drawn("twin/tw-long")

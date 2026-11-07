@@ -250,6 +250,19 @@ class FitRules(unittest.TestCase):
         self.assertAlmostEqual(short[0].cost, K.SLIDE_MIN_PT - 12 * 450 / 550, places=6)
         self.assertEqual(rules.fit_rules(sp, rules.Drawn.parse(svg(w=2000, h=1000))), [])   # no text at all
 
+    def test_undrawn_text_is_not_weighed(self):
+        """A <title> / <desc> (svg2pptx leaves them out) or a text in <defs> is not the slide's
+        smallest text: only 'Visible' (14px on 300 × 300, 21pt) counts, no R-fit."""
+        sp = spec(mode="slide")
+        visible = '<text x="40" y="60" font-size="14">Visible</text>'
+        for hidden in ('<text x="10" y="20" font-size="1"><title>tooltip</title></text>',
+                       '<text x="10" y="20" font-size="1"><desc>about</desc></text>',
+                       '<defs><text x="10" y="20" font-size="1">defs</text></defs>'):
+            with self.subTest(hidden=hidden):
+                self.assertEqual(rules.fit_rules(sp, rules.Drawn.parse(svg(hidden, visible, w=300, h=300))), [])
+        self.assertEqual(len(rules.fit_rules(sp, rules.Drawn.parse(
+            svg('<text x="10" y="20" font-size="1">drawn</text>', visible, w=300, h=300)))), 1)
+
 
 class RouteTableRules(unittest.TestCase):
     def rt_spec(self, ends, edges, extra_nodes=(), hub="tgw", groups=()):

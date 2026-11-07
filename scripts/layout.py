@@ -42,6 +42,7 @@ import argparse
 import math
 import re
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
@@ -86,27 +87,22 @@ class Build:
         self.warnings, self.svg = warnings, svg
 
 
-def drawn_texts(elements: Sequence[Element]) -> List[Tuple[float, str]]:
-    """(font-size, text) of each <text> the elements draw, a raw fragment's included (a
-    missing or unreadable font-size is svg2pptx's 16)."""
-    out: List[Tuple[float, str]] = []
-    for e in elements:
-        if e.kind == "text":
-            out.append((float(e.attrs.get("font-size", 16)), e.text or ""))
-        elif e.kind == "raw":
-            for t in ET.fromstring(f'<svg xmlns="{SVG_NS}">{e.text}</svg>').iter(f"{{{SVG_NS}}}text"):
-                try:
-                    fs = float(t.get("font-size") or 16)
-                except ValueError:
-                    fs = 16.0
-                out.append((fs, "".join(t.itertext())))
-    return out
+def slide_text_pt(spec: Spec, svg: bytes) -> Tuple[float, Optional[Tuple[float, str]], Tuple[float, float]]:
+    """(pt, (font-size, text), (w, h)) of the smallest text the draft `svg` puts on a 16:9
+    slide (check_layout.slide_texts), at the size svg2pptx gives it on its viewBox
+    (layout_const.smallest_pt; inf without text or a usable viewBox)."""
+    root = ET.fromstring(svg)
+    vb = CL.viewbox(root)[0]
+    if vb is None:
+        return math.inf, None, (0.0, 0.0)
+    pt, t = K.smallest_pt(vb[2], vb[3], spec.title, CL.slide_texts(root))
+    return pt, t, (vb[2], vb[3])
 
 
-def slide_text_pt(spec: Spec, b: Build) -> Tuple[float, Optional[Tuple[float, str]]]:
-    """(pt, (font-size, text)) of the smallest text b draws, at the size svg2pptx gives it on a
-    16:9 slide (layout_const.smallest_pt; inf when b draws no text)."""
-    return K.smallest_pt(b.geom.canvas_w, b.geom.canvas_h, spec.title, drawn_texts(b.elements))
+# check_layout's fixed answers that change a text's size (to 12px: SMALL TEXT raises it, CIDR
+# IN TITLE moves the CIDR onto a 12px line of its own): a round showing one is judged on its
+# draft after fix_pass, as the written draft will be.
+TEXT_SIZE_FIXES = {"SMALL TEXT", "CIDR IN TITLE"}
 
 
 def value(var: str, geom: Geometry, axis: str) -> float:
@@ -128,7 +124,7 @@ def value(var: str, geom: Geometry, axis: str) -> float:
 def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
           source: str) -> Build:
     b = _build(spec, extra, skip, place, source)
-    if b.geom.diag_y and slide_problem(spec, b):
+    if b.geom.diag_y and slide_problem(spec, b.svg):
         # the solve weighs a diagonal pair's x and y growth px for px, but a 1108 × 540
         # slide has half the room down: with the pairs put on y leaving the text under
         # 10pt, build again with every pair on x and keep the larger text (both passes
@@ -137,7 +133,7 @@ def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place:
             alt = _build(spec, extra, skip, place, source, diag_x=True)
         except M.LayoutError:
             return b
-        if slide_text_pt(spec, alt)[0] > slide_text_pt(spec, b)[0]:
+        if slide_text_pt(spec, alt.svg)[0] > slide_text_pt(spec, b.svg)[0]:
             return alt
     return b
 
@@ -715,11 +711,12 @@ def detour_tip(spec: Spec, geom: Geometry, p: Problem) -> str:
             f"(room {side} of what it holds for the line, {M.fmt_num(have)} now)")
 
 
-def summary(spec: Spec, b: Build, out_path: Path) -> List[str]:
+def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None) -> List[str]:
+    """The summary lines; the slide text size from `svg`, the draft as written (b.svg if None)."""
     g, nb = b.geom, b.nb
     W, H = g.canvas_w, g.canvas_h
     lines = [f"draft: {out_path}"]
-    pt, t = slide_text_pt(spec, b)
+    pt, t, _ = slide_text_pt(spec, b.svg if svg is None else svg)
     lines.append(f"canvas: {M.fmt_num(W)} × {M.fmt_num(H)} ({spec.mode}); on a 16:9 slide "
                  f"({'titled' if spec.title else 'untitled'}) "
                  + ("no text" if t is None else f"the smallest text ({M.fmt_num(t[0])}px) → {pt:.1f}pt"
@@ -746,20 +743,20 @@ def summary(spec: Spec, b: Build, out_path: Path) -> List[str]:
     return lines
 
 
-def slide_problem(spec: Spec, b: Build) -> Optional[str]:
-    """SLIDE TOO SMALL when the smallest text b draws comes out under 10pt on the slide."""
+def slide_problem(spec: Spec, svg: bytes) -> Optional[str]:
+    """SLIDE TOO SMALL when the smallest text the draft `svg` draws comes out under 10pt."""
     if spec.mode != "slide":
         return None
-    pt, t = slide_text_pt(spec, b)
+    pt, t, (W, H) = slide_text_pt(spec, svg)
     if t is None or pt >= K.SLIDE_MIN_PT:
         return None
-    geom, px = b.geom, t[0]
+    px = t[0]
     lim_w, lim_h = K.slide_max(spec.title, px)
-    over_w, over_h = geom.canvas_w - lim_w, geom.canvas_h - lim_h
+    over_w, over_h = W - lim_w, H - lim_h
     which = (f"{M.fmt_num(over_w)}px too wide" if over_w >= over_h * lim_w / lim_h
              else f"{M.fmt_num(over_h)}px too tall")
     return (f"SLIDE TOO SMALL smallest text ({M.fmt_num(px)}px, {t[1]!r}) comes out at {pt:.1f}pt "
-            f"(< {K.SLIDE_MIN_PT}) at {M.fmt_num(geom.canvas_w)} × {M.fmt_num(geom.canvas_h)}: {which} for "
+            f"(< {K.SLIDE_MIN_PT}) at {M.fmt_num(W)} × {M.fmt_num(H)}: {which} for "
             f"{lim_w} × {lim_h} — shorten the widest column's labels (see --explain), "
             "move the regional services row into a column, or split the slide")
 
@@ -826,7 +823,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # (the miss feedback widens every gap between an edge's ends): too wide is compared
             # after the problems and before the misses.
             wide = int(spec.mode == "document" and b.geom.canvas_w > K.DOC_WIDE)
-            score = (problem_count(probs) + (1 if slide_problem(spec, b) else 0), wide, shape_misses(b))
+            judged = b.svg
+            if spec.mode == "slide" and any(p.iss.kind in TEXT_SIZE_FIXES for p in probs):
+                with tempfile.TemporaryDirectory() as tmp:
+                    judged = fix_pass(b.svg, Path(tmp) / "round.svg")[0]
+            score = (problem_count(probs) + (1 if slide_problem(spec, judged) else 0), wide, shape_misses(b))
             if best is None or score < best[0]:
                 best = (score, rnd, b, list(extra.values()), dict(skip))
             if score == (0, 0, 0) or rnd == MAX_ROUNDS:
@@ -842,9 +843,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     data, fixed = (b.svg, 0) if a.no_check else fix_pass(b.svg, out)
     out.write_bytes(data)
     probs, hints = ([], []) if a.no_check else problems_of(data, hints=True)[0::2]
-    sp = slide_problem(spec, b)
+    sp = slide_problem(spec, data)
     n = len(probs) + (1 if sp else 0)
-    for line in summary(spec, b, out):
+    for line in summary(spec, b, out, data):
         print(line)
     if rnd:
         print(f"check: {rnd} feedback round{'s' if rnd != 1 else ''} ("

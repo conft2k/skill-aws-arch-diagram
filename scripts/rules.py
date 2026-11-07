@@ -853,7 +853,9 @@ def fit_rules(spec, d: Drawn) -> List[Violation]:
     if spec.mode != "slide":
         return []
     w, h = d.canvas[2], d.canvas[3]      # collect: (min-x, min-y, w, h)
-    pt, t = K.smallest_pt(w, h, spec.title, ((x["fs"], x["s"]) for x in d.texts))
+    if w <= 0 or h <= 0:                 # no usable viewBox: nothing to fit
+        return []
+    pt, t = K.smallest_pt(w, h, spec.title, CL.slide_texts(d.root))
     if t is None or pt >= K.SLIDE_MIN_PT:
         return []
     return [Violation("R-fit", ("canvas",), f"FIT smallest text ({_f(t[0])}px, {t[1]!r}) comes out at {pt:.2f}pt on a "

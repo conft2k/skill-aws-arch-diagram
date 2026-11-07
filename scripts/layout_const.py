@@ -456,10 +456,9 @@ def slide_max(title: bool = True, px: float = MIN_FONT) -> Tuple[int, int]:
 
 
 def smallest_text(texts: Iterable[Tuple[float, str]]) -> Optional[Tuple[float, str]]:
-    """(font-size, text) of the smallest text drawn among (font-size, text) pairs, or None:
-    what svg2pptx puts on the slide, a non-blank <text> of font-size > 0 (its collect())."""
-    return min(((fs, s.strip()) for fs, s in texts if fs > 0 and s and s.strip()),
-               key=lambda t: t[0], default=None)
+    """The (font-size, text) of the smallest among the texts a slide draws (the pairs
+    check_layout.slide_texts gives, what svg2pptx puts on the slide), or None without any."""
+    return min(texts, key=lambda t: t[0], default=None)
 
 
 def smallest_pt(w: float, h: float, title: bool, texts: Iterable[Tuple[float, str]]
