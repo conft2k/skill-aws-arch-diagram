@@ -1052,7 +1052,7 @@ cases:
   # QA backlog repros (2026-11-07): preserve the submitted specs; originals when reduction loses the defect.
   # 규칙 위반이 있어도 `Layout OK`: F3/F5가 나와도 exit 0이라 사용자는 끝났다고 믿습니다.
   # rules.py 미검출: success-summary semantics; false-junction below has F5 and Layout OK / exit 0.
-  # slide size failures in the docs/examples are already listed by reference below; do not duplicate their specs.
+  # Slide size failures in the docs/examples are guarded by R-fit tags on their references below; do not duplicate their specs.
   # 작성 안내 부족(처음 사용자): multi-account 작성 패턴, CloudFront VPC origin → internal ALB 예제,
   # DX+VPN+TGW 2개 RT 패턴, Route 53 Resolver inbound/outbound 아이콘 검색 결과 없음, F3/F5에 `fix:` 안내 없음,
   # `rule:`의 펼친 edge 번호와 YAML `edges[n]` 번호가 다름, 범례 hop이 표시 이름 대신 node ID.
@@ -1142,16 +1142,23 @@ cases:
     what: "6-node ALB trunk crosses the next AZ subnet header; LINE IN HEADER / R-border B2"
     bad: {R-border: {slide: edge:3, slide-no-title: edge:3}}
 examples:
+  # alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
   - path: ../../docs/examples/specs/alb-reference-architecture.layout.yaml
-    rules: [R-flow, R-label, R-twin]
+    rules: [R-flow, R-label, R-twin, R-fit]
+    bad: {R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}}   # document 9.19px < 11px; slides 8.36 / 9.81pt < 10pt
     what: "ALB 3-tier: Users → IGW → internet-facing ALB → one ASG / target group over two AZs → RDS Multi-AZ, with Route 53 and the regional services row (ACM, WAF, CloudWatch, S3)"
+  # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
   - path: ../../docs/examples/specs/bedrock-dx-reference-architecture.layout.yaml
-    rules: [R-flow, R-label]
+    rules: [R-flow, R-label, R-fit]
     what: "Claude Code on Amazon Bedrock over Direct Connect: on-premises PC → DX → VGW → VPC endpoints in Seoul (+ us-west-2 option B), with a step legend pane"
     good: [R-flow]
-    bad: {R-label: {slide: edge:2, slide-no-title: edge:2}}   # bus drop badges 4-6 sit by their drops (one net with the bus); on a slide 'DNS :53' goes left of its vertical line (the engine warns: no room right of it)
+    bad:
+      R-label: {slide: edge:2, slide-no-title: edge:2}   # bus drop badges 4-6 sit by their drops (one net with the bus); on a slide 'DNS :53' goes left of its vertical line (the engine warns: no room right of it)
+      R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}   # document 5.60px < 11px; slides 4.35 / 4.88pt < 8pt
+  # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
   - path: ../../docs/examples/specs/centralized-egress.layout.yaml
-    rules: [R-flow, R-label, R-rt]
+    rules: [R-flow, R-label, R-rt, R-fit]
+    bad: {R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}}   # document 5.12px < 11px; slides 6.65 / 7.16pt < 8pt
     what: "Centralized egress through a Security VPC: App VPC A and App VPC B (EC2 → TGW ENI per AZ) → TGW (Spoke RT on the spoke side, Firewall RT on the Security VPC side) → Security VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet"
     good: [R-flow, R-rt, R-label]   # golden: Spoke RT between the spoke attachments, Firewall RT between the Security VPC ones
   - path: ../../docs/examples/specs/example.layout.yaml
@@ -1160,19 +1167,27 @@ examples:
   - path: ../../docs/examples/specs/gwlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin]
     what: "GWLB inspection: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs"
+  # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
   - path: ../../docs/examples/specs/nfw-reference-architecture.layout.yaml
-    rules: [R-flow, R-label, R-rt, R-border]
+    rules: [R-flow, R-label, R-rt, R-border, R-fit]
+    bad: {R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}}   # document 5.81px < 11px; titled 7.56pt < 8pt, untitled 8.18pt < 10pt
     what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
     good: [R-flow, R-rt, R-label, R-border]   # golden (rules-design R-rt: Spoke RT and Firewall RT inside their brackets); Layout OK; R-border: lines into nested subnets with badges and titles, none along a border or through a header band
+  # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
   - path: ../../docs/examples/specs/nlb-mtls-reference-architecture.layout.yaml
-    rules: [R-flow, R-label, R-twin]
+    rules: [R-flow, R-label, R-twin, R-fit]
+    bad: {R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}}   # document 10.43px < 11px; titled 7.86pt < 8pt, untitled 8.39pt < 10pt
     what: "NLB mutual TLS: client → IGW → NLB (nlb-sg, trust store from S3) → same-AZ EC2 in backend-sg, with a left legend pane"
     good: [R-flow]   # badge 3 and 'TCP :80' are placed by the spec (step_at / label_at, 19.9 / 47.9px from their line): exempt from F5 by the user decision of 2026-11-07; arrows into the SGs end 4px inside the subnet borders
+  # alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
   - path: ../../docs/examples/specs/nlb-reference-architecture.layout.yaml
-    rules: [R-flow, R-label, R-twin]
+    rules: [R-flow, R-label, R-twin, R-fit]
+    bad: {R-fit: {document: canvas, slide: canvas}}   # document 10.69px < 11px; titled 8.91pt < 10pt; untitled 10.02pt passes
     what: "Internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and regional ACM / CloudWatch / S3"
+  # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
   - path: ../../docs/examples/specs/serverless-order-pipeline.layout.yaml
-    rules: [R-flow, R-label]
+    rules: [R-flow, R-label, R-fit]
+    bad: {R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}}   # document 6.87px < 11px; slides 4.085 / 4.575pt < 8pt
     what: "Serverless order pipeline folded into lanes, top to bottom: request lane (CloudFront → API Gateway → Lambda → DynamoDB → Streams → Pipes → event bus), analytics lane (EventBridge rule → SQS → Ingest Lambda → Firehose → S3) and fulfillment lane (Step Functions → payment · VPC stock reservation on Aurora · SNS → SES); the rule at the head of the analytics lane also starts the fulfillment workflow"
   - path: ../../docs/examples/specs/tgw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt]
