@@ -9,7 +9,9 @@ computes every coordinate. Without -o the draft goes next to the spec as <name>.
 
 Pipeline (the contract is layout_model.py's docstring, section 1):
   load → route.plan → solve (no note) → note.block → solve (with the note) → note.block
-  (place and width fixed) → route.draw → emit → check_layout in process.
+  (place and width fixed) → route.draw → emit → check_layout in process. A slide that
+  comes out under 10pt with diagonal pairs kept apart on y is built once more with every
+  such pair on x (solve(diag_x=True)), and the pass with the larger text is kept.
 The check applies check_layout --fix's fixed-answer repairs, then answers what is left by
 kind and solves again (at most 5 rounds): SHORT ARROW, LINE HUGS BORDER and a label or
 badge crowded by a border, icon or another label widen the column / row gap it sits in

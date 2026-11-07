@@ -23,6 +23,7 @@ import check_layout as CL  # noqa: E402
 import layout  # noqa: E402
 import layout_const as K  # noqa: E402
 import layout_model as M  # noqa: E402
+import layout_solve  # noqa: E402
 import layout_spec  # noqa: E402
 
 SPECS = ROOT / "docs" / "examples" / "specs"
@@ -83,17 +84,20 @@ class Emit(unittest.TestCase):
 
 class SlideDiagonals(unittest.TestCase):
     """The solve weighs a diagonal pair's x and y growth px for px; a 1108 × 540 slide has
-    half the room down. slides/nfw without an empty column between the spokes and the
-    Spoke RT: the weighing keeps VPC B below the table (1036 × 578, 9.3pt), so build lays
-    it out again with every open pair on x (1102 × 538, 10pt) and keeps that."""
+    half the room down, so when the weighing leaves a slide under 10pt with pairs on y,
+    build lays it out again with every open pair on x and keeps the larger text. slides/nfw
+    without the stacked-between rule (the Spoke RT would sit between VPC A and VPC B): the
+    weighing keeps VPC B below the table (1036 × 578, 9.3pt), the retry puts it beside
+    (1102 × 538, 10pt)."""
 
     def pt(self, spec, g):
         return K.slide_pt(g.canvas_w, g.canvas_h, spec.title)
 
     def test_slide_too_small_on_y_goes_on_x(self):
-        spec, b = built("slides/nfw-reference-architecture")
+        with mock.patch.object(layout_solve._Model, "over_columns", return_value=False):
+            spec, b = built("slides/nfw-reference-architecture")
+            weighed = layout._build(spec, [], {}, None, "x.layout.yaml")
         self.assertNotIn("att", [t.id for t in spec.cols])
-        weighed = layout._build(spec, [], {}, None, "x.layout.yaml")
         self.assertGreater(weighed.geom.diag_y, 0)                 # the weighing put pairs on y
         self.assertIsNotNone(layout.slide_problem(spec, weighed.geom))
         self.assertEqual(b.geom.diag_y, 0)                          # build kept the all-x pass
@@ -113,6 +117,52 @@ class SlideDiagonals(unittest.TestCase):
             spec, b = built("slides/nlb-reference-architecture")
         self.assertIsNone(layout.slide_problem(spec, b.geom))
         self.assertEqual(w.call_count, 1)
+
+
+class RouteTableBeside(unittest.TestCase):
+    """A node the solved x centers over the columns of a box above it and one below it goes
+    beside them, unweighed: the Spoke RT (at [rtsp, main]) stays strictly between the spoke VPCs' right
+    edge and the TGW's left edge, never in the spoke column between VPC A and VPC B, on
+    the slide titled, untitled and as a document, and in the document examples in both
+    modes; a node on its own VPC's AZ gap row off the AZs' columns (the GWLB) stays
+    between them."""
+
+    def load(self, name, **kw):
+        return layout_spec.load(copy.deepcopy(spec_dict(name)), **kw)
+
+    def assert_beside(self, name, **kw):
+        spec = self.load(name, **kw)
+        with mock.patch.object(layout, "_build", wraps=layout._build) as w:
+            g = layout.build(spec, [], {}, None, "x.layout.yaml").geom
+        self.assertEqual(w.call_count, 1)                           # no slide retry needed
+        self.assertEqual(g.diag_y, 0)
+        rt, gap = g.nodes["rtsp"].footprint(), spec.const.sibling_gap
+        for v in ("vpca", "vpcb"):
+            self.assertGreaterEqual(rt.x0 - g.groups[v].rect.x1, gap - 0.01, v)
+        self.assertLess(rt.x1, g.nodes["tgw"].footprint().x0)
+        a, c = g.groups["vpca"].rect, g.groups["vpcb"].rect
+        self.assertEqual((a.x0, a.w, a.h), (c.x0, c.w, c.h))        # the spokes drawn alike
+
+    def test_nfw_slide(self):
+        for kw in ({}, {"title": False}, {"mode": "document"}):
+            with self.subTest(**kw):
+                self.assert_beside("slides/nfw-reference-architecture", **kw)
+
+    def test_document_examples(self):
+        for name in ("nfw-reference-architecture", "centralized-egress"):
+            for mode in ("document", "slide"):
+                with self.subTest(name=name, mode=mode):
+                    self.assert_beside(name, mode=mode)
+
+    def test_gwlb_stays_on_the_az_gap_row(self):
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode):
+                spec = self.load("gwlb-reference-architecture", mode=mode)
+                g = layout.build(spec, [], {}, None, "x.layout.yaml").geom
+                n, a1, a2 = g.nodes["gwlb"], g.groups["secaz.1"].rect, g.groups["secaz.2"].rect
+                self.assertGreater(n.icon.y0, a1.y1)
+                self.assertLess(n.stack().y1, a2.y0)
+                self.assertGreater(n.cx, a1.x0)                     # under AZ 1's label, not beside it
 
 
 class Raw(unittest.TestCase):

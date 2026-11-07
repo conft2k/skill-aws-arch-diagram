@@ -12,7 +12,8 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
   constraints  `b − a ≥ d` per axis, each a layout_model.Requirement with why/owner:
                1 containment (pad, top insets, label_bottom), 2 siblings in one parent
                (separated on the axis their track ranges are disjoint on; a diagonal pair on
-               the wider track gap, ties → rows, unless the solved x keeps it apart), 3 neighbour pitch, 4 header and CIDR widths, 5 IGW/VGW pinned
+               the wider track gap, ties → rows, unless the solved x keeps it apart or
+               would stack its node between two boxes of one column), 3 neighbour pitch, 4 header and CIDR widths, 5 IGW/VGW pinned
                on the VPC border (mask kept MASK_CLEAR from borders), 6 the AZ gap row,
                7 colspan (reserved from its center for the span a first solve found), 8 flow rows
                (own x variables, pitch, centered in the parent afterwards) and flow columns
@@ -186,6 +187,7 @@ class _Model:
         # the pairs (frozenset of item keys) solve() chose to keep apart on x instead
         self.diag_open: Optional[List[Tuple[_Item, _Item, str]]] = None
         self.diag_x: set = set()
+        self.diag_y: set = set()                 # the box pairs build("y") separated on y (keys)
         self._twins: Optional[List[list]] = None   # twin_sets() cache
 
     # ---- helpers --------------------------------------------------------------------
@@ -517,8 +519,9 @@ class _Model:
                 if _disjoint(oa, ob):
                     # diagonal: separate on the axis with the wider track gap (ties → rows).
                     # A pair with a box in it that this sends to y goes on x instead when the
-                    # solved x already keeps it apart, or when solve() finds x takes no more
-                    # room (diag_x) — its columns order it, so a node beside a box needs no
+                    # solved x already keeps it apart, or when solve() puts it there (diag_x:
+                    # its node stacked between two boxes of one column, or x takes no more
+                    # room) — its columns order it, so a node beside a box needs no
                     # rows between them and never pushes the box's rows (and every box on
                     # them) down; it then only keeps its row order (_diag_order)
                     here, there = _span_gap(ra, rb), _span_gap(oa, ob)
@@ -537,6 +540,8 @@ class _Model:
                     if box and self.diag_open is not None:
                         self.diag_open.append((first, second, owner))
                         continue
+                    if box and axis == "y":
+                        self.diag_y.add(frozenset((a.key, b.key)))
                 self._sep(axis, first, second, owner)
 
     def _diag_order(self, first: _Item, second: _Item, owner):
@@ -560,6 +565,28 @@ class _Model:
         (_, a1), (b0, _) = self._x_extent(a), self._x_extent(b)
         g, _ = self._gap("x", a, b)
         return g - (b0 - a1)
+
+    def _content_x(self, gid) -> Optional[Tuple[float, float]]:
+        """The x range a box's own nodes (all its descendants' footprints, border nodes
+        aside) take on the solved x: its columns as drawn; None when it holds none."""
+        lo, hi, todo = math.inf, -math.inf, [gid]
+        while todo:
+            g = todo.pop()
+            todo += self.child_groups[g]
+            for nid in self.child_nodes[g]:
+                c, h = self.nodes_x[nid], self.foot[nid].h
+                lo, hi = min(lo, c - h), max(hi, c + h)
+        return (lo, hi) if lo <= hi else None
+
+    def over_columns(self, a: _Item, b: _Item) -> bool:
+        """A diagonal node-box pair whose node the solved x centers over the box's own
+        columns (inside the x range its nodes take): apart on y the node would sit in that
+        column, above or below the box's nodes (y only, after x)."""
+        node, box = (a, b) if a.nid else (b, a)
+        if not (node.nid and box.gid) or not self.nodes_x:
+            return False
+        span, c = self._content_x(box.gid), self.nodes_x[node.nid]
+        return span is not None and span[0] + _EPS < c < span[1] - _EPS
 
     def _x_apart(self, a: _Item, b: _Item) -> bool:
         """The solved x keeps a and b at least their x gap apart (y only, after x)."""
@@ -1587,8 +1614,8 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
     pick = open_keys if diag_x else _diagonals(m, m.cons["y"] + mapped["y"], extra)
     if pick:
         # a pair x keeps apart for less than y would: solve again with it on x (the rows
-        # it no longer pushes stay where the rest puts them)
-        on_y = open_keys - pick
+        # it no longer pushes stay where the rest puts them); m2's build("y") puts every
+        # other pair its x does not keep apart on y (m2.diag_y), the new ones included
         m2 = _Model(spec)
         m2.diag_x = pick
         m = m2
@@ -1597,9 +1624,9 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
         m.build("y")
         m.y_after_x(xv, nodes_x)
     else:
-        on_y = open_keys
         for first, second, owner in m.diag_open:
             m._sep("y", first, second, owner)
+        m.diag_y |= open_keys
         m.diag_open = None
 
     # ---- y ---------------------------------------------------------------------------
@@ -1630,7 +1657,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
     geom = _geometry(m, xv, yv, note_block)
     geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)
     geom.warnings = list(m.warnings)
-    geom.diag_y = len(on_y)
+    geom.diag_y = len(m.diag_y)
     return geom
 
 
@@ -1680,6 +1707,21 @@ def _extent(val: Dict[str, float]) -> float:
     return max(val.values(), default=0.0)
 
 
+def _stacked_between(m: _Model) -> List[Tuple[_Item, _Item, str]]:
+    """The open pairs of a node the solved x centers over the columns of a sibling box above
+    it and of one below it (_Model.over_columns): apart on y it would sit stacked in that
+    column, in the gap between the two boxes (a route table between two spoke VPCs, left
+    of their lines to the TGW, instead of beside them), and a reader could no longer tell
+    which box it stands beside. They go on x unweighed. A node over the columns of a box on
+    one side only (a route table above a lone VPC) is weighed like any pair."""
+    over = [p for p in m.diag_open if m.over_columns(p[0], p[1])]
+    sides: Dict[str, set] = defaultdict(set)
+    for first, second, _ in over:
+        node = first if first.nid else second
+        sides[node.key].add("box below" if first is node else "box above")
+    return [p for p in over if len(sides[(p[0] if p[0].nid else p[1]).key]) == 2]
+
+
 def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]) -> set:
     """The diagonal sibling pairs build("y") left open (m.diag_open: the track gaps say y,
     the solved x does not keep them apart): a pair goes on x when y would push the drawing
@@ -1691,13 +1733,16 @@ def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]
     solve reaches with it kept apart on y, with the pairs already put on y held: put every
     pair that stays on y there, weigh again until none moves; the rest go on x (two nodes
     pushing one box both move; one that x cannot move keeps the other on y, where it then
-    costs nothing). Returns the x pairs' keys."""
+    costs nothing). The pairs of a node stacked between two boxes of one column
+    (_stacked_between) go on x without weighing. Returns the x pairs' keys."""
     if not m.diag_open:
         return set()
+    stacked = _stacked_between(m)
+    open_ = [p for p in m.diag_open if p not in stacked]
     w0 = len(m.warnings)
     x0 = _extent(_solve_axis(m, "x", m.cons["x"] + [_map_req(m, r) for r in extra if r.axis == "x"])[0])
     xcost = {}
-    for first, second, _ in m.diag_open:
+    for first, second, _ in open_:
         mp = _Model(m.spec)
         mp.diag_x = {frozenset((first.key, second.key))}
         try:
@@ -1713,7 +1758,6 @@ def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]
         del m.cons["y"][n0:]
         return _extent(_solve_axis(m, "y", list(ycons) + held)[0])
 
-    open_ = list(m.diag_open)
     on_y: List[Tuple[_Item, _Item, str]] = []
     g = m.mc.sibling_gap
     while open_:
@@ -1728,7 +1772,7 @@ def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]
         on_y += moved
         open_ = [p for p in open_ if p not in moved]
     del m.warnings[w0:]              # the solves proper report their own
-    return {frozenset((first.key, second.key)) for first, second, _ in open_}
+    return {frozenset((first.key, second.key)) for first, second, _ in open_ + stacked}
 
 
 def _node_center(m: _Model, nid: str, axis: str, val) -> float:

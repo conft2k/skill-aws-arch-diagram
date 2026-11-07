@@ -1216,6 +1216,32 @@ class DiagonalTest(unittest.TestCase):
         a1, a2 = g.groups[f"az{v}.1"].rect, g.groups[f"az{v}.2"].rect
         return a2.y0 - a1.y1, a1.h, a2.h
 
+    def test_node_over_the_box_columns_goes_beside(self):
+        """A node on a row between two stacked boxes whose column the solved x centers it
+        over (the Spoke RT at [rt, main] between VPC A on r1 and VPC B on r2, the rt column
+        holding nothing else) goes beside both boxes on x, unweighed, not into the gap
+        between them; diag_y counts no pair on y."""
+        groups = [dict(id="vpca", type="vpc", label="VPC A"), dict(id="vpcb", type="vpc", label="VPC B")]
+        nodes = [dict(id="ea", icon="service/Amazon-EC2", label="EC2", parent="vpca", col="c", row="r1"),
+                 dict(id="eb", icon="service/Amazon-EC2", label="EC2", parent="vpcb", col="c", row="r2"),
+                 dict(id="rt", icon="resource/Amazon-Route-53_Route-Table", label="Spoke RT", col="rt",
+                      row="main")]
+        spec = build("stack", ["c", "rt"], ["r1", "main", "r2"], groups, nodes)
+        g = LS.solve(spec, [])
+        rt = g.nodes["rt"].footprint()
+        for v in ("vpca", "vpcb"):
+            self.assertGreaterEqual(rt.x0 - g.groups[v].rect.x1, spec.const.sibling_gap - 0.01, v)
+        self.assertEqual(g.diag_y, 0)
+
+    def test_igw_on_the_gap_row_stays_between_the_azs(self):
+        """The IGW on the VPC border, off the AZs' columns: on y between them, counted."""
+        g = LS.solve(mini_spec(), [])
+        igw, a1, a2 = g.nodes["igw"], g.groups["az.1"].rect, g.groups["az.2"].rect
+        self.assertLess(igw.icon.x0, a1.x0)
+        self.assertGreater(igw.cy, a1.y1)
+        self.assertLess(igw.cy, a2.y0)
+        self.assertEqual(g.diag_y, 2)
+
     def test_spoke_rt_beside_the_security_vpc(self):
         """bench v2-2: the Spoke RT at [tgw, a1] made the Security VPC (from a2) start below
         its label, pushing row a2 and VPC A's AZ 2 29 px down (VPC A gap 45, VPC B 16).

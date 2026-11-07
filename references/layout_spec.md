@@ -58,17 +58,22 @@ get the full AZ gap only when a node of their VPC (or one on its border) sits on
 between them; with nothing between, they are just siblings (16px apart). A box and a node
 (or two boxes) of one parent on different columns *and* different rows — diagonal, like a
 route table at `[tgw, a1]` above-left of a VPC that starts on `a2` — sit beside each other
-when the solved columns already keep them apart, or when keeping them apart below each
-other would push the drawing down a sibling gap or more and beside each other widens it no
-more than that + a sibling gap: their columns already order them, so the node never pushes
-the box's rows (and every other box on those rows) down, and the box only stays no higher
-than the node. A pair below each other for less (an IGW on the AZ gap row beside the AZ
-boxes), and two diagonal nodes, separate on the axis whose tracks are farther apart (equal:
-on y). The weighing counts a px of width and a px of height alike; when that leaves a
+when the solved columns already keep them apart, when below each other the node would
+be stacked between two boxes of one column (its center inside the x range the nodes of
+a box above it and of one below it take: a Spoke RT in the spoke column between VPC A
+and VPC B instead of beside them — always beside, not weighed; over one box's columns
+only, like a route table above a lone VPC, the pair is weighed), or when keeping them
+apart below each other would push the drawing down a sibling gap or more and beside each
+other widens it no more than that + a sibling gap: their columns already order them, so
+the node never pushes the box's rows (and every other box on those rows) down, and the
+box only stays no higher than the node. A pair below each other for less (an IGW on the
+AZ gap row beside the AZ boxes, a GWLB on its VPC's AZ gap row off the AZs' nodes), and
+two diagonal nodes, separate on the axis whose tracks are farther apart (equal: on y). The weighing counts a px of width and a px of height alike; when that leaves a
 slide under 10pt with a pair below each other, the engine lays it out again with every
 such pair beside each other and keeps whichever gives the larger text (a 1108 × 540 slide
-has half as much room down as across). No empty column is needed to keep a VPC beside the
-TGW or a route table, on a document or a slide (slides/nfw). An item is a name
+has half as much room down as across). No empty column is needed to keep a route table
+beside the spoke VPCs or a VPC beside the TGW, on a document or a slide, titled or not
+(slides/nfw, centralized-egress). An item is a name
 or `{id, min_gap_before: px, min_w: px, flow: px, align: top|center|bottom}`.
 `min_gap_before` is the least distance from the previous track's center to this one's. Two columns whose nodes share no row may
 land on the same x (only their order is kept) — a column outside the AZ boxes next to
@@ -415,8 +420,9 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   TGW's row — `rtsp` between the spoke VPCs and the TGW, `rtfw` between the TGW and the
   inspection VPC — `shape: VH` on `tgw <-> eni.*` so the inspection lines leave the TGW's
   top and bottom around `rtfw`. Neither the document nor the slide needs an empty column:
-  the engine keeps the table and VPC B, diagonal neighbours, apart on x (on the 1108 × 540
-  slide because apart on y VPC B would move down past the slide's height).
+  the engine keeps the Spoke RT beside VPC A and VPC B (diagonal neighbours) on x, since
+  apart on y the table would sit in the spoke column between the two VPCs, left of the
+  lines to the TGW, in every mode and with or without a slide title.
 - **Two VPCs** (gwlb): two `vpc` groups in one Region, each with its own `az` template.
 
 ```yaml

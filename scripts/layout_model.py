@@ -49,8 +49,9 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
         solve per axis, hug, border nodes, flow rows / columns, overlays, colspan, canvas. With
         note_block it also applies note_block.requirements (W5 passes them inside reqs as
         well; duplicates are harmless) and sizes the canvas for the note (section 4).
-        Diagonal sibling pairs the solved x does not keep apart go on x or y by weighing
-        the growth of each axis in px; Geometry.diag_y counts those it kept apart on y.
+        Diagonal sibling pairs the solved x does not keep apart go on x when y would stack
+        the node between two boxes of one column, else on x or y by weighing the growth of
+        each axis in px; Geometry.diag_y counts the box pairs the final solve kept apart on y.
         diag_x=True puts every such pair on x without weighing (W5's slide retry).
         Raises SolveError(problems) on a positive cycle, naming the Requirement.why/owner
         and spec ids of the constraints in it (after dropping soft requirements first).
@@ -382,18 +383,25 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
  r. Diagonal siblings (W2; disjoint on both axes, decision DESIGN 4.3 #2 said "rows first"):
     the axis with the wider track gap, ties → y, for two nodes. A pair with a box in it that
     this sends to y goes on x instead when the solved x already keeps it its x gap apart,
-    or when y would push the drawing's extent ≥ sibling_gap and x grows it ≤ that +
-    sibling_gap (solve(): x cost per pair from an x solve with it; y cost from y solves
-    without the open pairs and with each, the pairs put on y held, again until none
+    when the solved x centers its node over the columns of a sibling box above it and of
+    one below it (inside the x range each box's nodes take, _stacked_between: on y the node
+    would be stacked in that column between the two boxes — the Spoke RT between VPC A
+    and VPC B — instead of beside them; not weighed), or when y would push the drawing's
+    extent ≥ sibling_gap and x grows it ≤ that + sibling_gap (solve(): x cost per pair
+    from an x solve with it; y cost from y solves without the open pairs and with each, the pairs put on y held, again until none
     moves; the rest re-solve x with their x separation). On x such a pair only keeps its
     row order on y: the later rows' top ≥ the earlier one's (nfw: VPC B beside the TGW,
     the slide spec's empty `att` column no longer needed; a Spoke RT above-left of a
     Security VPC no longer pushes its rows, and the spoke VPC AZ sharing them, down; the
     centralized-egress spec's empty `sp` column no longer needed). The weighing counts x
     and y px alike; a slide frame (1108 × 540) does not: when the final geometry of a slide
-    is under 10pt with pairs on y (Geometry.diag_y), W5 builds again with solve(diag_x=True)
-    — every open pair on x — and keeps the larger text (slides/nfw without `att`: y 1036 ×
-    578 at 9.3pt, x 1102 × 538 at 10.0pt).
+    is under 10pt with pairs on y (Geometry.diag_y: every box pair the final solve kept
+    apart on y), W5 builds again with solve(diag_x=True) — every open pair on x — and keeps
+    the larger text (slides/nfw without `att` and without the stacked-between rule: y 1036 ×
+    578 at 9.3pt, x 1102 × 538 at 10.0pt; with the rule the weighing itself puts the
+    Spoke RT beside the spokes and no retry runs). An IGW on its VPC border or a GWLB on
+    its VPC's AZ gap row (off the AZs' nodes) stays on y between the AZ boxes; a node over
+    a lone box's columns (a route table above one VPC) is weighed.
  s. Twins (W2, layout_solve twin_sets): tree groups anywhere whose subtree has one
     signature — group types, titles (a vpc / account / region / onprem / cloud root's own
     excluded), CIDR or not, per box its nodes' icons, caption line counts (1 + sub) and
@@ -867,7 +875,7 @@ class Geometry:
     drawing: Box = field(default_factory=lambda: Box(0, 0, 0, 0))   # union of group rects and node footprints
     explain: List[str] = field(default_factory=list)   # --explain lines: which constraint set each gap
     warnings: List[str] = field(default_factory=list)
-    diag_y: int = 0                  # diagonal sibling pairs solve kept apart on y (W5's slide retry)
+    diag_y: int = 0                  # diagonal box pairs the final solve kept apart on y (W5's slide retry)
 
     def track(self, tid: str) -> float:
         return self.cols[tid] if tid in self.cols else self.rows[tid]
