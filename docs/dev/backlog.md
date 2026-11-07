@@ -22,7 +22,8 @@
   - 목표보다 작으면 모든 글자를 같은 배율로 키워 최대 2회 다시 배치합니다(`text_scale: auto|off|<배율>`).
   - 그림이 나빠지거나 라벨·배지가 다른 선에 붙으면 원래 그림을 유지합니다.
   - 효과(corpus): slide 하한 미만 117→103, document 하한 미만 107→96.
-    centralized-egress, tgw, bedrock-dx 같은 큰 그림은 원래 크기 그대로입니다.
+    document 모드의 큰 그림(centralized-egress, tgw, bedrock-dx)은 원래 크기 그대로입니다.
+    centralized-egress slide는 키워졌지만(5.14→6.65pt) 아직 하한 아래입니다.
 - **리뷰:** 코드 리뷰는 Codex CLI(`codex exec`)가 맡고, 코드는 Claude Code가 씁니다.
 
 ## 남은 일 (순서대로)
@@ -62,15 +63,22 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
 재현 spec과 PNG는 개발 머신의 `~/.cache/skill-design/qa/T*/`(minimal/, repro-*.layout.yaml)에 있습니다.
 corpus에 옮겨 2단계(규칙 판정으로 배치 고르기)의 시험 사례로 쓰는 것이 다음 일입니다.
 
-- **선이 다른 노드의 아이콘·이름을 관통 (R-flow F1, LINE OVER ICON/TEXT):** 3 AZ 큰 그림에서 AZ 3 → DB 선이
-  AZ 2 서버를 지나감(T4 three_az_writer_9nodes), NAT trunk가 Route-Table 아이콘 관통(T3 nat-route-table),
-  DNS outbound가 inbound 아이콘 관통(T3 dns-trunk), SSM trunk가 서비스 라벨 관통(T3 ssm-trunk),
-  PrivateLink S3 경로가 다른 endpoint 관통(T1).
-- **라벨·배지가 다른 선에 붙음 (R-flow F5):** 복제 라벨이 SQL/요청 선에 더 가까움(T2 repro-badge-replication,
-  T3 cache-label, T4 shared_lane_5nodes), DR 복제 배지가 NLB 선에 0px(T1).
-- **접속점처럼 보이는 교차·겹침 (R-flow F2/F3, LINE ON LINE):** bend 옆 8–12px 교차(T3 ssm-trunk, dns-trunk),
-  같은 꺾임점 공유(T2 repro-false-junction), 241px 구간 공유(T4 order_14steps slide), DNS 제어선과 앱 선이
-  한 선처럼 이어짐(T1 DR slide).
+- **선이 다른 노드의 아이콘·이름을 관통 (LINE OVER ICON/TEXT):**
+  - 3 AZ 큰 그림에서 AZ 3 → DB 선이 AZ 2 서버를 지나갑니다(T4 large_3az). 축소본 three_az_writer_9nodes에서는
+    Endpoint/Aurora reader를 관통합니다.
+  - NAT trunk가 Route-Table 아이콘을 관통합니다(T3 nat-route-table).
+  - DNS outbound가 inbound 아이콘을 관통합니다(T3 dns-trunk).
+  - SSM trunk가 서비스 라벨을 관통합니다(T3 ssm-trunk).
+  - PrivateLink S3 경로가 다른 endpoint를 관통합니다(T1 privatelink slide).
+- **라벨·배지가 다른 선에 붙음 (R-flow F5):**
+  - 복제 라벨이 SQL/요청 선에 더 가깝습니다(T2 repro-badge-replication, T3 cache-label).
+  - DR 복제 배지가 NLB 선에 0px로 붙습니다(T1 multiregion-dr).
+  - DLQ의 "5회 실패 후 이동" 라벨이 자기 선보다 다른 선에 더 가깝습니다(T4 shared_lane_5nodes).
+- **접속점처럼 보이는 교차·겹침 (R-flow F1/F2/F3, LINE ON LINE):**
+  - bend 옆 8–12px 교차가 있습니다(T3 원본 remote-access, hybrid-dns. 축소본에는 F3가 남지 않습니다).
+  - 두 선이 같은 꺾임점을 씁니다(T2 attempts/data-lake.slide.v2. 축소본 repro-false-junction은 수직 구간 6px 겹침).
+  - 241px 구간을 함께 씁니다(T4 order_14steps slide, F1).
+  - DNS 제어선과 앱 선이 한 선처럼 이어집니다(T1 multiregion-dr slide).
 - **규칙 위반이 있어도 `Layout OK`:** F3/F5가 나와도 exit 0이라 사용자는 끝났다고 믿습니다. 2단계에서 규칙
   판정이 엔진 선택에 들어가면 함께 정합니다(최소한 summary에 "rule violations remain"을 표시).
 - **컨테이너 포함 오류:** `in: cloud`인 private hosted zone이 Region 안에 그려짐(T3 sibling-containment,
