@@ -148,11 +148,14 @@ class OutputClash(unittest.TestCase):
         self.assertEqual(self.written(), [])
 
     def test_same_file_under_nfc_and_nfd_names(self):
-        # one file under both spellings, as on macOS (a hard link stands in for it here)
+        # one file under both spellings: on macOS APFS the NFD name already is that file;
+        # elsewhere a hard link stands in for it
         nfc, nfd = (unicodedata.normalize(f, "아키텍처") for f in ("NFC", "NFD"))
         a = draft(self.work / f"{nfc}.draft.svg", "#FF0000")
         b = self.work / f"{nfd}.draft.svg"
-        os.link(a, b)
+        if not b.exists():
+            os.link(a, b)
+        self.assertTrue(os.path.samefile(a, b))
         r = export(a, b, "--svg", "--out-dir", self.out)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
