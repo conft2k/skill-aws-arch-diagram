@@ -12,9 +12,13 @@
   --preview      with --pptx: render each slide back to <deck>-1.png, <deck>-2.png, ...
 
 <name> is the draft's file name without ".draft" and ".svg" (architecture.draft.svg ->
-architecture). Every draft is checked first — icon refs (embed.py) and the shared draft
-subset (svg2pptx.py) — whatever formats are asked for, so one draft always works for all
-of them. If any draft fails, nothing is written and the script exits with status 1.
+architecture). Every output path is worked out first: if two different drafts would write
+the same file (docs/arch.draft.svg and slides/arch.draft.svg, or arch.draft.svg and
+arch.svg, all -> <out-dir>/arch.svg), a slide preview would land on a draft's PNG, or an
+output would overwrite one of the drafts, the script names the clash, writes nothing and
+exits with status 1. Every draft is checked next — icon refs (embed.py) and the shared
+draft subset (svg2pptx.py) — whatever formats are asked for, so one draft always works for
+all of them. If any draft fails, nothing is written and the script exits with status 1.
 """
 import argparse
 import sys
@@ -37,6 +41,40 @@ def stem(path: Path) -> str:
     return name
 
 
+def planned_outputs(drafts, svg, png, out_dir, pptx, preview):
+    """[(output path, source, label)] for every file the export would write. `source` says
+    which input the bytes come from (a draft's resolved path, or the deck), `label` names it."""
+    plan = []
+    for d in drafts:
+        for on, ext in ((svg, "svg"), (png, "png")):
+            if on:
+                plan.append((out_dir / f"{stem(d)}.{ext}", d.resolve(), str(d)))
+    if pptx:
+        plan.append((pptx, "deck", "--pptx"))
+        if preview:
+            base = pptx.with_suffix("")
+            plan += [(base.with_name(f"{base.name}-{i}.png"), f"slide {i}", f"--preview slide {i}")
+                     for i in range(1, len(drafts) + 1)]
+    return plan
+
+
+def clashes(drafts, plan):
+    """Error lines for every output written from two different sources or landing on a draft.
+    The same draft given twice writes identical bytes, so that alone is not a clash."""
+    by_path = {}
+    for out, source, label in plan:
+        by_path.setdefault(out.resolve(), (out, {}))[1].setdefault(source, label)
+    inputs = {d.resolve(): d for d in drafts}
+    lines = []
+    for key, (out, sources) in by_path.items():
+        if len(sources) > 1:
+            lines.append(f"{out} would be written from each of:")
+            lines += [f"  {label}" for label in sources.values()]
+        if key in inputs:
+            lines.append(f"{out} would overwrite the draft {inputs[key]}")
+    return lines
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("drafts", nargs="+", type=Path, help="layout SVG drafts with bundle: icon refs")
@@ -55,7 +93,14 @@ def main():
     if len(a.title) > len(a.drafts):
         ap.error("more --title values than drafts")
 
-    # check everything before writing anything
+    # check everything before writing anything: output paths first, then the drafts
+    problems = clashes(a.drafts, planned_outputs(a.drafts, a.svg, a.png, a.out_dir, a.pptx, a.preview))
+    if problems:
+        print("Output name clash:")
+        print("\n".join(f"  {p}" for p in problems))
+        sys.exit("Nothing written; give the drafts distinct file names or export them "
+                 "with separate --out-dir runs.")
+
     embedded, failed = {}, False
     for d in a.drafts:
         out, _, report = embed.embed(d.read_text(encoding="utf-8"))
