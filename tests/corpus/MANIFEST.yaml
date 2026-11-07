@@ -1087,7 +1087,7 @@ cases:
   - path: qa/t3-cache-label.layout.yaml
     rules: [R-flow]
     what: "6-node reduction: DB/cache replication labels attach to request traffic"
-    bad: {R-flow: {slide: edge:3, slide-no-title: edge:3}}
+    bad: {R-flow: {slide: edge:3, slide-no-title: edge:3}}   # F5: Async replication still touches the SQL flow; no budgeted candidate clears it; try edge:3 label_at or routing hints
   # DR 복제 배지가 NLB 선에 0px로 붙습니다(T1 multiregion-dr).
   # DNS 제어선과 앱 선이 한 선처럼 이어집니다(T1 multiregion-dr slide).
   # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
@@ -1107,7 +1107,7 @@ cases:
   - path: qa/t3-hybrid-dns.layout.yaml
     rules: [R-flow, R-fit]
     what: "Original hybrid DNS: inbound/outbound paths cross beside VGW bends; page/slide text is below target; reduced DNS spec loses F3"
-    bad: {R-flow: edge:4, R-fit: canvas}
+    bad: {R-flow: edge:4, R-fit: canvas}   # F3: edge:4 still crosses another flow beside a bend after selection; try shape / bend_x / bend_y; effective text remains below target
   # 두 선이 같은 꺾임점을 씁니다(T2 attempts/data-lake.slide.v2. 축소본 repro-false-junction은 수직 구간 6px 겹침).
   # rules.py 미검출: 6px overlap is below F1's overlap threshold; the F5 label diagnostic is separate.
   # rules.py 미검출: Layout OK / exit 0 remains despite the slide's F5 violation (smallest submitted success-summary repro).
@@ -1119,7 +1119,7 @@ cases:
   - path: qa/t4-order-14steps.layout.yaml
     rules: [R-flow, R-fit]
     what: "Original 14-step order pipeline: PDF read and metrics paths share a slide segment; page/slide text is below target; shared-lane reduction preserves only F5"
-    bad: {R-flow: {slide: edge:14, slide-no-title: edge:14}, R-fit: canvas}
+    bad: {R-flow: {slide: edge:14, slide-no-title: edge:14}, R-fit: canvas}   # F1/F5: pinned PDF/metrics routes share 229px and their labels read as the other flow; change bend_y / offsets / label_at; text remains below target
   # `in: cloud`인 private hosted zone이 Region 안에 그려짐(T3 sibling-containment, 경고 없음), 형제 account가 다른 account 안에 그려짐(T3 account-containment).
   # rules.py 미검출: declared container membership is not checked.
   - path: qa/t3-sibling-containment.layout.yaml
@@ -1140,7 +1140,7 @@ cases:
   - path: qa/t2-alb-trunk-header.layout.yaml
     rules: [R-border]
     what: "6-node ALB trunk crosses the next AZ subnet header; LINE IN HEADER / R-border B2"
-    bad: {R-border: {slide: edge:3, slide-no-title: edge:3}}
+    bad: {R-border: {slide: edge:3, slide-no-title: edge:3}}   # B2: the remaining ALB trunk leg passes through AZ2's subnet title; budgeted candidates cannot clear it; try routing hints or subnet pad / min_w / min_h
 examples:
   # alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
   - path: ../../docs/examples/specs/alb-reference-architecture.layout.yaml

@@ -1044,7 +1044,7 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
             # offset is shared by all the instances of a `.*` line, which merge with
             # trunk: true or take one spec line each with its own offset
             offs = ""
-            if p.iss.kind == "LINE ON LINE":
+            if p.iss.kind in ("LINE ON LINE", "F1", "F2"):
                 offs = " / from_offset / to_offset" + (
                     " (instances of one line: trunk: true when they merge, else one spec line each with its"
                     " own offset)" if one_line else "")
@@ -1060,7 +1060,8 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
         elif kind == "node" and ref in spec.nodes:
             tips.append(f"{spec.nodes[ref].src} {ref}: dx / dy")
         elif kind == "group" and ref in spec.groups and p.iss.kind in ("TEXT AT BORDER", "HEADER CLEARANCE",
-                                                                       "LINE HUGS BORDER", "LINE IN HEADER"):
+                                                                       "LINE HUGS BORDER", "LINE IN HEADER",
+                                                                       "B1", "B2"):
             tips.append(f"{spec.groups[ref].src} {ref}: pad / min_w / min_h")
     w = where_to_widen(p, spec, geom)
     st = stack_bracket(spec, geom, p.owners, w[1]) if w and w[0] == "y" else None
@@ -1080,6 +1081,42 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
             seen.add(t)
             out.append(t)
     return "; ".join(out)
+
+
+def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequence[Problem]) -> List[str]:
+    """Reuse spec-fix guidance for each enabled violation in the written draft.
+
+    A rule can remain without a matching check problem (false junctions and label
+    attribution, for example). In that case only its owners' existing hints apply;
+    do not invent geometry or claim a suggested placement was verified.
+    """
+    check_kind = {"F1": "LINE ON LINE", "F2": "LINE ON LINE", "F4": "LOOSE END",
+                  "B1": "LINE HUGS BORDER", "B2": "LINE IN HEADER"}
+    lines = []
+    for v in violations:
+        if v.rule not in SELECTION_RULES and v.rule != "R-fit":
+            continue
+        owners = list(v.owners)
+        if v.rule == "R-fit":
+            tip = "text_scale / shorten labels / rearrange tracks / split the diagram"
+        else:
+            problem = next((p for p in problems if p.iss.kind == check_kind.get(v.code)
+                            and set(owners) <= set(p.owners)), None)
+            if problem is None:
+                # F5 names the edge, but spec_fix needs its label/badge owner.
+                if v.rule == "R-flow" and v.code == "F5" and owners:
+                    part = "badge" if "'s badge " in v.message else "label"
+                    if edge_of(owners[0]):
+                        owners[0] = f"edge:{edge_of(owners[0])[0]}:{part}"
+                elif v.rule == "R-label" and v.code == "L1" and owners:
+                    if edge_of(owners[0]):
+                        owners[0] = f"edge:{edge_of(owners[0])[0]}:label"
+                problem = Problem(CL.Issue(v.code, v.message, [], {}), owners, [])
+            tip = spec_fix(spec, geom, problem)
+        lead = f"warning: unresolved {v.rule} {v.code} ({', '.join(v.owners)})"
+        lines.append(lead + (f"; spec hint (not a guarantee): {tip}" if tip else
+                             "; no spec hint: the existing spec-fix hints do not apply to these owners"))
+    return lines
 
 
 def detour_tip(spec: Spec, geom: Geometry, p: Problem) -> str:
@@ -1103,7 +1140,8 @@ def detour_tip(spec: Spec, geom: Geometry, p: Problem) -> str:
             f"(room {side} of what it holds for the line, {M.fmt_num(have)} now)")
 
 
-def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None) -> List[str]:
+def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None,
+            rule_guard: Optional[RuleGuard] = None) -> List[str]:
     """The summary lines; the slide text size from `svg`, the draft as written (b.svg if None)."""
     g, nb = b.geom, b.nb
     W, H = g.canvas_w, g.canvas_h
@@ -1141,6 +1179,10 @@ def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None) -
             lines.append(f"  alias {n.icon_query!r} → {n.icon} ({n.src})")
     for w in spec.warnings + g.warnings + b.warnings:
         lines.append(f"warning: {w}")
+    if rule_guard is not None:
+        violations = rule_guard.check(spec, g, data)
+        if violations is not None:
+            lines.extend(unfixable_warnings(spec, g, violations, rule_guard.problems(data)))
     return lines
 
 
@@ -1697,7 +1739,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     probs, hints = ([], []) if a.no_check else problems_of(data, hints=True)[0::2]
     sp = slide_problem(spec, data)
     n = len(probs) + (1 if sp else 0)
-    for line in summary(spec, b, out, data):
+    for line in summary(spec, b, out, data, None if a.no_check else rule_guard):
         print(line)
     for line in selection:
         print(line)

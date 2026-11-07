@@ -479,6 +479,10 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   room that side of the box needs, `groups[0] cloud: pad_bottom: 41`). `SLIDE TOO SMALL` lists the constraint chain of
   the overflowing axis.
 - **Rules**: `rule: R-flow F3 …` and the other `rule:` lines judge the written draft.
+  Each remaining enabled-rule violation also has a `warning: unresolved R-flow F3
+  (edge:3, edge:5); spec hint (not a guarantee): …` in the summary. It names the owners
+  and reuses their existing spec-fix hints; if none applies, the warning says why.
+  Try the suggested spec change and draw again to check it.
   They are report-only: they change neither the draft nor the exit status. The last line
   starts with `Layout OK` (exit 0) or `N problems` (exit 1), followed, when needed, by
   `— 3 rule violations remain (R-flow F3 ×2, R-flow F5 ×1): fix them with the spec hints before delivering`.
