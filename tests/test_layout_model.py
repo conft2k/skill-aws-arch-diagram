@@ -236,6 +236,10 @@ class NodeTest(unittest.TestCase):
 TIGHTER = {("bedrock-dx-reference-architecture", "region", "cloud"),
            ("example", "service/Amazon-EC2", "private")}
 
+# This draft needs a 20px minimum RDS Proxy → SM endpoint arrow plus proxy label
+# clearance, making the gap 90px even before header feedback. Other slides stay exact.
+SLIDE_AZ_GAPS = {"slides/serverless-order-pipeline-2": 90}
+
 
 class InsetTest(unittest.TestCase):
     """The style table's top insets are minimums every example keeps (but TIGHTER)."""
@@ -312,9 +316,7 @@ class InsetTest(unittest.TestCase):
                     if not between:
                         self.assertGreaterEqual(b["y"] - a["y1"], 8)
                     elif d.mode == "slide":
-                        # az_gap is a minimum; route/label constraints and feedback
-                        # may require more room even on a slide.
-                        self.assertGreaterEqual(b["y"] - a["y1"], K.SLIDE.az_gap)
+                        self.assertEqual(b["y"] - a["y1"], SLIDE_AZ_GAPS.get(d.name, K.SLIDE.az_gap))
                     elif "example" not in d.name and "bedrock" not in d.name:
                         self.assertGreaterEqual(b["y"] - a["y1"], K.DOCUMENT.az_gap)
 
