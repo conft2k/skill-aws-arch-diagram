@@ -236,7 +236,9 @@ class FitRules(unittest.TestCase):
         big = rules.fit_rules(spec(mode="slide"), rules.Drawn.parse(svg(self.CIDR, w=2000, h=1000)))
         self.assertEqual([(v.rule, v.tier) for v in big], [("R-fit", rules.TIER_FIT)])
         self.assertGreater(big[0].cost, 0)
-        self.assertEqual(rules.fit_rules(spec(), rules.Drawn.parse(svg(self.CIDR, w=2000, h=1000))), [])
+        document = rules.fit_rules(spec(), rules.Drawn.parse(svg(self.CIDR, w=2000, h=1000)))
+        self.assertEqual([(v.rule, v.tier) for v in document], [("R-fit", rules.TIER_FIT)])
+        self.assertAlmostEqual(document[0].cost, 11 - 12 * 760 / 2000)
 
     def test_the_smallest_text_drawn_sets_the_points(self):
         """R-fit weighs the smallest text the draft draws, at the size svg2pptx gives it: a

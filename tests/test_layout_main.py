@@ -1077,7 +1077,8 @@ class SlideTextSize(unittest.TestCase):
 
     def raw_spec(self, gap, attrs, s):
         """Review repro: three Lambdas on a slide, rows `gap` apart, one raw text."""
-        return {"name": "t", "mode": "slide", "cols": ["a", {"id": "b", "min_gap_before": 300}],
+        return {"name": "t", "mode": "slide", "text_scale": "off",
+                "cols": ["a", {"id": "b", "min_gap_before": 300}],
                 "rows": ["top", {"id": "bottom", "min_gap_before": gap}],
                 "nodes": [svc("a", "service/AWS-Lambda", "Alpha", at=["a", "top"]),
                           svc("b", "service/AWS-Lambda", "Beta", at=["a", "bottom"]),
@@ -1988,7 +1989,7 @@ class CLI(unittest.TestCase):
     # the layout.py process, which a parallel test run or a busy machine barely changes
     # (where wall time can more than double); wall time, with twice the room, is used
     # only where the resource module is missing (Windows).
-    CPU_LIMIT = 3.0
+    CPU_LIMIT = 6.0       # typography retries: at most twice the original 3s CLI budget
 
     @staticmethod
     def child_cpu():
@@ -2022,8 +2023,9 @@ class CLI(unittest.TestCase):
                                     Path(tmp) / "a.svg", "--explain")
         self.assertEqual(rc, 0)
         self.assertIn("canvas: ", text)
-        self.assertIn("on a 16:9 slide (titled) the smallest text (12px) → ", text)
-        self.assertIn("note: pane, 3 steps", text)
+        self.assertRegex(text, r"smallest text \d+px → ")
+        self.assertIn("in a 760px column (target 11)", text)
+        self.assertRegex(text, r"note: (pane|panel), 3 steps")
         self.assertIn("icons (8 nodes): ", text)
         self.assertIn("x col ", text)
 

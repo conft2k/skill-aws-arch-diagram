@@ -50,7 +50,8 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            LINE OVER TEXT and LINE NEAR TEXT do not reach (flowcol/t7-xyref slide: ALB →
            AZ2 EC2 at x=308 between the App subnet's badge and its title). Both predicates
            come from check_layout, which reports B2 as LINE IN HEADER for engine feedback.
-  R-fit    a slide's smallest drawn text comes out at ≥ K.SLIDE_MIN_PT (cost: the points short).
+  R-fit    the smallest drawn text meets its medium's target (slide pt / document px;
+           effective_text, tier 2; cost: the size short).
 
 User decisions (2026-11-07, rules-design §6, after the tgw / nlb-mtls / latest2 cases): the
 RT1 only-table pass, the F5 exemption for spec-placed labels and badges and L1's any-nearby-
@@ -74,6 +75,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_layout as CL  # noqa: E402
 import layout_const as K  # noqa: E402
+from layout_text import scaled_spec  # noqa: E402
 import layout_model as M  # noqa: E402
 import layout_solve  # noqa: E402
 from layout_spec import SUBNET_TYPES  # noqa: E402
@@ -799,17 +801,20 @@ def border_rules(d: Drawn) -> List[Violation]:
 # R-fit
 
 def fit_rules(spec, d: Drawn) -> List[Violation]:
-    if spec.mode != "slide":
-        return []
     w, h = d.canvas[2], d.canvas[3]      # collect: (min-x, min-y, w, h)
     if w <= 0 or h <= 0:                 # no usable viewBox: nothing to fit
         return []
-    pt, t = K.smallest_pt(w, h, spec.title, CL.slide_texts(d.root))
-    if t is None or pt >= K.SLIDE_MIN_PT:
+    t = K.smallest_text(CL.slide_texts(d.root))
+    if t is None:
         return []
-    return [Violation("R-fit", ("canvas",), f"FIT smallest text ({_f(t[0])}px, {t[1]!r}) comes out at {pt:.2f}pt on a "
-                      f"{'titled' if spec.title else 'untitled'} slide (< {K.SLIDE_MIN_PT}) at {_f(w)} × {_f(h)}",
-                      K.SLIDE_MIN_PT - pt, TIER_FIT, code="FIT")]
+    actual, unit, target, _ = K.effective_text(spec.mode, w, h, t[0], spec.title)
+    if actual >= target:
+        return []
+    medium = (f"{'titled' if spec.title else 'untitled'} slide" if spec.mode == "slide"
+              else f"{K.DOCUMENT_COLUMN_PX}px column")
+    return [Violation("R-fit", ("canvas",), f"FIT smallest text ({_f(t[0])}px, {t[1]!r}) comes out at "
+                      f"{actual:.2f}{unit} on a {medium} (< {target}) at {_f(w)} × {_f(h)}",
+                      target - actual, TIER_FIT, code="FIT")]
 
 
 # =======================================================================================
@@ -818,6 +823,7 @@ def fit_rules(spec, d: Drawn) -> List[Violation]:
 _last: list = []                        # (spec, geom, draft, verdict) of the last check()
 
 
+@scaled_spec
 def check(spec, geom, draft: bytes, drawn: Optional[Drawn] = None) -> List[Violation]:
     """Every rule violation of one draft (spec and geom: what it was drawn from). The last
     verdict is kept, so the corpus hook asking again about the draft layout.py just judged

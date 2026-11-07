@@ -686,6 +686,9 @@ class Spec:
     raw: List[RawSpec] = field(default_factory=list)
     source: str = ""                # path, or "<dict>"
     warnings: List[str] = field(default_factory=list)
+    text_scale: Union[str, float] = "auto"   # auto | off | fixed font multiplier
+    font_factor: float = 1.0                # active multiplier for this render (not YAML state)
+    font_steps: Tuple[float, ...] = ()      # automatic passes round each preceding font size
 
     @property
     def const(self) -> K.Mode:

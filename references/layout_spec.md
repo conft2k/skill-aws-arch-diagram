@@ -44,6 +44,7 @@ edges:
 | `title` | slide only: `true` (default) = a title band, canvas limit 1108 × 540; `false` = 1108 × 600 |
 | `S` | node icon size, default 48 — leave it |
 | `font` | root font-family; leave it out (the default puts an installed Korean font first) |
+| `text_scale` | `auto` (default), `off`, or a positive numeric font multiplier (e.g. `1.4`); see below |
 | `cols` / `rows` | the tracks, left → right / top → bottom |
 | `groups`, `nodes`, `edges`, `note`, `raw` | below |
 
@@ -438,10 +439,18 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/layout.py arch.layout.yaml -o arch.draft.svg
 draft is still written).
 PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 
+- Text is measured at the reader's size: the smallest drawn font on a fitted 16:9 slide
+  (target 10pt, floor 8pt), or in a 760px document/web column without enlargement
+  (target 11px, floor 9px). `text_scale: auto` enlarges all fonts together and lays out
+  again, at most twice, by `min(1.8, target / actual)` each time, rounded to integer px.
+  It keeps the previous result if text becomes smaller or check/other rule counts increase.
+  `text_scale: off` preserves the original layout; a number fixes the multiplier and
+  disables retries. Text still below the floor needs a split diagram or a `mode: slide` spec.
 - **Spec errors** (exit 1, nothing written): one line each, located — `nodes[1] alb: icon:
   alias 'alb' has no match scoring ≥ 95; write the full ref — candidates: …`, then `N
   problems in the spec`. Fix them all, re-run.
-- **Summary**: `draft:` path, `canvas: W × H (mode); on a 16:9 slide the smallest text (Fpx) → N pt` (the smallest
+- **Summary**: `draft:` path, `canvas: W × H (mode); smallest text Fpx → Npx in a 760px column (target 11)`
+  for documents, or `on a 16:9 slide the smallest text (Fpx) → N pt` (the smallest
   font-size the draft draws, at the size svg2pptx gives it; `SLIDE TOO SMALL` under 10pt),
   `note:` place and size, `icons`, `alias` resolutions, `warning:` lines (read them —
   an LB inside a template, note text past the canvas, a phase-2 key drawn another way;

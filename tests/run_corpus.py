@@ -320,6 +320,12 @@ def _run_one(entry: Dict[str, Any], mode: str, out_dir: str, rec: Dict[str, Any]
     rec["pt"] = round(pt, 2) if pt != float("inf") else None
     rec["slide_small"] = rec["mode"] != "document" and pt < K.SLIDE_MIN_PT
     rec["title"] = bool(spec.title)
+    (actual, unit, target, floor), smallest, _ = layout.drawn_text(spec, final)
+    rec["text"] = {"min_px": smallest[0] if smallest else None, "actual": round(actual, 3) if smallest else None,
+                   "scale": spec.font_factor,
+                   "unit": unit, "target": target, "floor": floor,
+                   "below_target": bool(smallest and actual < target),
+                   "below_floor": bool(smallest and actual < floor)}
     rec["warnings"] = [l[len("warning: "):] for l in cap["summary"] if l.startswith("warning: ")]
     probs = cap.get("final", [])
     rec["codes"] = [p.iss.kind for p in probs]

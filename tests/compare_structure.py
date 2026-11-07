@@ -30,6 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import layout_const as K  # noqa: E402  (import-free; group_type_of)
+import layout_text  # noqa: E402
 
 NS = "{http://www.w3.org/2000/svg}"
 XLINK = "{http://www.w3.org/1999/xlink}href"
@@ -96,6 +97,8 @@ class Draft:
     def __init__(self, path):
         self.path = str(path)
         root = ET.parse(path).getroot()
+        self.text_scale = float(root.get("data-text-scale", "1"))
+        self.font_steps = layout_text.svg_steps(root)
         vb = root.get("viewBox", "0 0 0 0").split()
         self.canvas = (num(vb[2]), num(vb[3]))
         self.texts, self.rects, self.images, self.lines, self.circles = [], [], [], [], []
@@ -106,6 +109,9 @@ class Draft:
         self._badges()
         self._nets()
         self._leftover_texts()
+
+    def font_px(self, size):
+        return layout_text.font_size(size, self.text_scale, self.font_steps)
 
     # -- raw element walk (translate offsets applied, <g id> wrappers transparent) --------
     def _walk(self, el, ox, oy):
@@ -170,18 +176,18 @@ class Draft:
             title = None
             best = None
             for t in self.texts:
-                if t["used"] or t["anchor"] != "start" or t["weight"] not in ("600", "700", "bold") or t["fs"] < 14:
+                if t["used"] or t["anchor"] != "start" or t["weight"] not in ("600", "700", "bold") or t["fs"] < self.font_px(14):
                     continue
                 dx, dy = t["x"] - b[0], t["y"] - b[1]
-                if 0 <= dx <= 50 and 0 < dy <= 30 and (best is None or dy + dx < best[0]):
+                if 0 <= dx <= 50 and 0 < dy <= 30 * self.text_scale and (best is None or dy + dx < best[0]):
                     best = (dy + dx, t)
             cidr = None
             if best:
                 title = best[1]
                 title["used"] = "group"
                 for t in self.texts:
-                    if (not t["used"] and t["fs"] <= 12 and abs(t["x"] - title["x"]) <= 1
-                            and 14 <= t["y"] - title["y"] <= 18):
+                    if (not t["used"] and t["fs"] <= self.font_px(12) and abs(t["x"] - title["x"]) <= 1
+                            and abs(t["y"] - title["y"] - round(16 * self.text_scale)) <= 2):
                         cidr = t
                         t["used"] = "group"
                         break
@@ -229,8 +235,8 @@ class Draft:
             b = im["box"]
             cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
             label, subs = None, []
-            cands = [t for t in self.texts if not t["used"] and t["fs"] >= 13 and t["anchor"] == "middle"
-                     and abs(t["x"] - cx) <= 3 and b[3] < t["y"] <= b[3] + 30]
+            cands = [t for t in self.texts if not t["used"] and t["fs"] >= self.font_px(13) and t["anchor"] == "middle"
+                     and abs(t["x"] - cx) <= 3 and b[3] < t["y"] <= b[3] + 30 * self.text_scale]
             stack = [b]
             if cands:
                 label = min(cands, key=lambda t: t["y"])
@@ -238,8 +244,8 @@ class Draft:
                 stack.append(label["box"])
                 y = label["y"]
                 while True:
-                    nxt = [t for t in self.texts if not t["used"] and t["fs"] <= 12 and t["anchor"] == "middle"
-                           and abs(t["x"] - cx) <= 3 and 14 <= t["y"] - y <= 18]
+                    nxt = [t for t in self.texts if not t["used"] and t["fs"] <= self.font_px(12) and t["anchor"] == "middle"
+                           and abs(t["x"] - cx) <= 3 and abs(t["y"] - y - round(16 * self.text_scale)) <= 2]
                     if not nxt:
                         break
                     t = nxt[0]
@@ -279,7 +285,7 @@ class Draft:
                 continue
             digit = None
             for t in self.texts:
-                if not t["used"] and abs(t["x"] - c["c"][0]) <= 2 and abs(t["y"] - (c["c"][1] + 4)) <= 2:
+                if not t["used"] and abs(t["x"] - c["c"][0]) <= 2 and abs(t["y"] - (c["c"][1] + round(4 * self.text_scale))) <= 2:
                     digit = t
                     break
             if digit is None:
@@ -303,11 +309,11 @@ class Draft:
             for a, b in zip(ln["pts"], ln["pts"][1:]):
                 if abs(a[1] - b[1]) < 0.5:          # horizontal
                     lo, hi = sorted((a[0], b[0]))
-                    if lo - 2 <= c[0] <= hi + 2 and abs(c[1] - (a[1] - 14)) <= 3:
+                    if lo - 2 <= c[0] <= hi + 2 and abs(c[1] - (a[1] - (round(10 * self.text_scale) + 4))) <= 3:
                         return i
                 elif abs(a[0] - b[0]) < 0.5:        # vertical
                     lo, hi = sorted((a[1], b[1]))
-                    if lo - 2 <= c[1] <= hi + 2 and abs(c[0] - (a[0] - 22)) <= 3:
+                    if lo - 2 <= c[1] <= hi + 2 and abs(c[0] - (a[0] - (round(10 * self.text_scale) + 12))) <= 3:
                         return i
                 d = seg_dist(c, a, b)
                 if best is None or d < best[0]:
@@ -605,7 +611,11 @@ def compare(A, B, only=SECTIONS):
         if ba.get(k) != bb.get(k):
             add("d", "badge %s: original %s, generated %s" % (k, ba.get(k, "-"), bb.get(k, "-")))
     # (e) note
-    if A.note_desc != B.note_desc:
+    reflowed_note = ((A.text_scale > 1 or B.text_scale > 1)
+                     and A.note_kind in ("pane", "panel", "lines")
+                     and B.note_kind in ("pane", "panel", "lines")
+                     and A.note_desc.split()[1:] == B.note_desc.split()[1:])
+    if A.note_desc != B.note_desc and not reflowed_note:
         add("e", "note: original %s, generated %s" % (A.note_desc, B.note_desc))
     # (f) orders
     pos_b = {n["name"]: n for n in B.nodes}

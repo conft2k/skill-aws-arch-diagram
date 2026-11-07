@@ -199,6 +199,13 @@ reference ("the way out"); its last one is editing the generated draft by hand, 
 that first edit on the draft is the source — finish it with `check_layout.py --fix`
 (see [the draft path](#the-draft-path)) and do not regenerate it from the spec.
 
+The engine measures the smallest text at the reader's size: target 10pt on a fitted
+16:9 slide, or 11px in a 760px document/web column (narrower images keep their size).
+By default it enlarges every font together and lays out again, at most twice, keeping
+the earlier result if text shrinks or check/other rule counts grow. Use `text_scale: off`
+to retain the original layout, or a number such as `text_scale: 1.4` for a fixed multiplier.
+Below the 8pt/9px floor, split the diagram or write a `mode: slide` spec.
+
 ### 7. Export and verify
 Export the formats you need — any combination, from the same drafts:
 

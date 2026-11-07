@@ -60,6 +60,15 @@ Removable later: _stacked_between, lines_past/_inside/_past, diag_boxes, decisio
 Run time (budget, caching, pruning); false verdicts (report-only first, corpus tags both ways, shared constants, RT3 ignores within 12 px of hub); over-constraining (lexicographic min + report; R-rt > R-fit; R-twin vs R-rt by tiers). Out of scope: AWS correctness of `for`, grid reordering, global optimisation, spec rules on hand-drawn SVGs, geometric "not forced alike", PPTX.
 
 ## 6. User decisions (2026-11-07, after seeing tgw / nlb-mtls / latest2 cases)
+- Text fit (W4): judge the smallest drawn text at the size the reader sees. Slides use
+  svg2pptx's 16:9 fit: target 10pt, floor 8pt. Documents/web use a 760px body column:
+  `min_font_px × min(1, 760 / canvas_width)`, target 11px, floor 9px; never upscale
+  narrow images. Both use `layout_const.effective_text`; R-fit is tier 2. Document text
+  below either threshold is a warning, never a check problem or feedback score.
+  Default text scaling tries up to two uniform font enlargements (each at most 1.8×),
+  rounding to integer px and solving again. Keep an earlier result if effective text
+  decreases or check/other rule counts increase. `text_scale: off` disables it; a numeric
+  multiplier fixes the size without retries.
 - RT1: a route table right beside its hub passes when every line at that hub is associated with it (the "only table
   beside the hub" case, tgw TGW B RT) — no bracket needed then.
 - F5: labels and badges the spec places itself (label_at / step_at coordinates) are exempt, like L1.

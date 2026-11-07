@@ -67,7 +67,7 @@ SUBNET_TYPES = ("public", "private")
 VIA_NONE = "none"
 TGW_ICONS = ("service/AWS-Transit-Gateway",)
 
-TOP_KEYS = ("name", "mode", "title", "S", "font", "cols", "rows", "groups", "nodes", "edges", "note", "raw")
+TOP_KEYS = ("name", "mode", "title", "S", "font", "text_scale", "cols", "rows", "groups", "nodes", "edges", "note", "raw")
 TRACK_KEYS = ("id", "min_gap_before", "min_w", "flow", "align")
 FLOW_ALIGN = ("top", "center", "bottom")   # a flow column in its parent's height
 GROUP_KEYS = ("id", "type", "label", "cidr", "in", "per", "only", "over", "span", "pad", "pad_top", "pad_left",
@@ -531,6 +531,17 @@ class _Loader:
                 sp.font = d["font"]
         else:
             sp.font = default_font()
+        scale = d.get("text_scale", "auto")
+        # YAML 1.1 parses unquoted `off` as false.
+        if scale is False or scale == "off":
+            sp.text_scale = "off"
+        elif scale == "auto":
+            sp.text_scale = "auto"
+        elif _num(scale) and scale > 0:
+            sp.text_scale = float(scale)
+            sp.font_factor = float(scale)
+        else:
+            self.err("spec", f"text_scale: expected auto, off, or a positive finite multiplier, got {scale!r}{_nf(scale)}")
 
     # ---- tracks
     def tracks(self, d: dict) -> None:

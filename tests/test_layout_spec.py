@@ -638,7 +638,7 @@ def flow_col(d, **kw):
 # (case, mutation, exact problems)
 ERRORS = [
     ("unknown top-level key", lambda d: d.update(colz=1),
-     ["spec: unknown key 'colz' (did you mean 'cols'?) (known: name, mode, title, S, font, cols, rows, groups, "
+     ["spec: unknown key 'colz' (did you mean 'cols'?) (known: name, mode, title, S, font, text_scale, cols, rows, groups, "
       "nodes, edges, note, raw)"]),
     ("unknown group key", lambda d: d["groups"][1].update(lable="x"),
      ["groups[1] region: unknown key 'lable' (did you mean 'label'?) (known: id, type, label, cidr, in, per, "

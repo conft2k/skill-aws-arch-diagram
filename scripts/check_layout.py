@@ -143,6 +143,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import find_icon  # noqa: E402  (same directory; reuses the icon search and aliases)
 import layout_const as K  # noqa: E402  (same directory, stdlib only: every number shared with layout.py)
+from layout_text import register_checker, scaled_advisor, scaled_svg  # noqa: E402
 from layout_const import (  # noqa: E402
     BORDER_CLEAR, END_REACH, HEADER_CLEAR, HEADER_ICON_CLEAR, HUG_CLEAR, HUG_OVERLAP, ICON_CLEAR,
     IN_LINE_CROSS_GAP, IN_LINE_EPS, IN_LINE_GAP, JOIN_REACH, LABEL_CLEAR, LABEL_REACH, LINE_CLEAR, MIN_ARROW, MIN_FONT,
@@ -1094,6 +1095,7 @@ def ref_id(r):
     return r
 
 
+@scaled_svg
 def run_checks(root):
     texts, segs, masks, icons, canvas = collect(root)
     cw, ch = canvas[2], canvas[3]
@@ -1350,7 +1352,9 @@ def run_checks(root):
                     f"({i['box'][0]:g},{i['box'][1]:g})", [i, s], i=i, s=s)
                 break
     nodes = [i for i in icons if not i["badge"]]
-    for g in (i for i in icons if i["badge"] and not i.get("dot") and i["box"][2] - i["box"][0] > GROUP_BADGE_MIN):
+    for g in (i for i in icons if i["badge"] and not i.get("dot")
+              and i["el"].tag != NS + "circle"
+              and i["box"][2] - i["box"][0] > GROUP_BADGE_MIN):
         for n in nodes:
             if boxes_overlap(expand(g["box"], ICON_CLEAR), n["box"]) and not boxes_overlap(g["box"], n["box"]):
                 add("BADGE NEAR ICON", f"BADGE NEAR ICON group badge at ({g['box'][0]:g},{g['box'][1]:g}) is within "
@@ -1568,6 +1572,7 @@ def slide_fits(w, h, title, px=K.MIN_FONT):
 NOT_POSITIONAL = {"SMALL TEXT", "CIDR COLOR", "GLYPH STEP", "SERVICE AS TEXT", "CIDR IN TITLE"}
 
 
+@scaled_advisor
 class Advisor:
     """Computes the fix hint for each problem, checking a candidate change by re-running the
     check on the tree with the change applied."""
@@ -2329,7 +2334,8 @@ class Advisor:
         rest = re.sub(r"[(\[]\s*[)\]]", " ", rest)
         rest = re.sub(r"\s+", " ", rest).strip(" -–—·:,|/()[]")
         y = fnum(num(el.get("y")) + CIDR_PITCH)
-        attrs = [("x", el.get("x") or "0"), ("y", y), ("font-size", "12"), ("fill", CIDR_COLOR.upper())]
+        attrs = [("x", el.get("x") or "0"), ("y", y),
+                 ("font-size", str(K.TEXT_CIDR.size)), ("fill", CIDR_COLOR.upper())]
         if el.get("text-anchor"):
             attrs.insert(2, ("text-anchor", el.get("text-anchor")))
         new = "<text " + " ".join(f'{k}="{v}"' for k, v in attrs) + f">{cidr}</text>"
@@ -2337,7 +2343,8 @@ class Advisor:
                 f"(nested boxes then start at container.y + {NESTED_TOP_CIDR}){self.local(t)}")
         if not rest:
             return Hint(f"{self.tdesc(t)} is only a CIDR: title the box with its name and put {cidr!r} on its "
-                        f'own line under it (same x, baseline 16px lower, font-size="12" fill="{CIDR_COLOR.upper()}", '
+                        f'own line under it (same x, baseline {CIDR_PITCH}px lower, '
+                        f'font-size="{K.TEXT_CIDR.size}" fill="{CIDR_COLOR.upper()}", '
                         f"no font-weight){self.local(t)}")
         if len(el):
             return Hint(text)
@@ -2680,6 +2687,8 @@ def main():
     if bad:
         sys.exit(1)
 
+
+register_checker(sys.modules[__name__])
 
 if __name__ == "__main__":
     main()

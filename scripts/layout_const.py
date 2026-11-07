@@ -441,6 +441,24 @@ SLIDE_AVAIL_W_PT = 924                 # (13.333 in − 2 × 0.25 in) × 72
 SLIDE_AVAIL_H_PT = {True: 450, False: 504}   # 7.5 in − 2 × 0.25 in (− 0.75 in title) in pt
 SLIDE_MIN_PT = 10                      # svg2pptx MIN_PT
 SLIDE_FLOOR_PT = 8                     # svg2pptx FLOOR_PT
+DOCUMENT_COLUMN_PX = 760              # rules-design §6: body column, never upscale
+DOCUMENT_TARGET_PX = 11
+DOCUMENT_FLOOR_PX = 9
+
+
+def effective_text(mode: str, canvas_w: float, canvas_h: float, min_px: float,
+                   title: bool = True) -> Tuple[float, str, float, float]:
+    """Smallest text as the reader sees it: (size, unit, target, floor).
+
+    Slides use svg2pptx's available 16:9 area; documents/web images shrink to a
+    760px body column, retaining their native size when narrower.
+    """
+    if mode == "slide":
+        return slide_pt(canvas_w, canvas_h, title, min_px), "pt", SLIDE_MIN_PT, SLIDE_FLOOR_PT
+    if mode == "document":
+        return (min_px * min(1, DOCUMENT_COLUMN_PX / canvas_w), "px",
+                DOCUMENT_TARGET_PX, DOCUMENT_FLOOR_PX)
+    raise ValueError(f"unknown text medium: {mode!r}")
 
 
 def slide_pt(w: float, h: float, title: bool = True, px: float = MIN_FONT) -> float:
@@ -466,7 +484,7 @@ def smallest_pt(w: float, h: float, title: bool, texts: Iterable[Tuple[float, st
     """(pt, smallest) for the smallest text drawn on a w × h slide canvas: the size svg2pptx
     gives it (slide_pt) and its (font-size, text); no text at all is no text too small (inf)."""
     t = smallest_text(texts)
-    return (math.inf if t is None else slide_pt(w, h, title, t[0])), t
+    return (math.inf if t is None else effective_text("slide", w, h, t[0], title)[0]), t
 
 
 # --------------------------------------------------------------------------------------
@@ -474,8 +492,8 @@ def smallest_pt(w: float, h: float, title: bool, texts: Iterable[Tuple[float, st
 # produced in. GROUP holds every group (outer → inner, overlays last; per group rect, badge,
 # title, CIDR), NODE every node (mask → icon → label lines).
 
-# A document wider than this reads poorly on a page (~900 px: 12px text at ≤ 6px); the
-# widest example is 1679 (bedrock-dx). layout.py warns above it.
+# Legacy width preference for routing feedback (do not widen past this only for a
+# shape miss). Reader-visible text fit is measured separately by effective_text().
 DOC_WIDE = 1800
 
 Z_RAW_BELOW = 0
