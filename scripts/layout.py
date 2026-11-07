@@ -400,9 +400,10 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
             pa, pb = _end_center(b.geom, e.a), _end_center(b.geom, e.b)
             if pa is None or pb is None:
                 continue
+            ends = [f"node:{i}" for i, k in ((e.a, e.a_kind), (e.b, e.b_kind)) if k == "node"]
             for axis, i in (("x", 0), ("y", 1)):
-                if abs(pa[i] - pb[i]) > 1:
-                    widen(axis, (pa[i] + pb[i]) / 2, "drew another shape", M.edge_eid(e.n))
+                if abs(pa[i] - pb[i]) > 1:      # two nodes of one flow column: their pitch
+                    widen(axis, (pa[i] + pb[i]) / 2, "drew another shape", M.edge_eid(e.n), ends)
     return changed
 
 
@@ -456,7 +457,9 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
     w = where_to_widen(p)
     st = stack_bracket(spec, geom, p.owners, w[1]) if w and w[0] == "y" else None
     if st:
-        tips.append(f"cols: {{id: {st[3]}, flow: {M.fmt_num(st[2] + WIDEN)}}}")
+        al = spec.track(st[3]).align
+        tips.append(f"cols: {{id: {st[3]}, flow: {M.fmt_num(st[2] + WIDEN)}"
+                    + (f", align: {al}" if al != "center" else "") + "}")
     elif w:
         br = bracket(geom, w[0], w[1])
         if br:

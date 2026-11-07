@@ -422,6 +422,27 @@ class FlowColumnFixes(unittest.TestCase):
         self.assertLessEqual(abs((top + bot) / 2 - cloud.cy), 1)
         self.assertTrue(any("centered in the drawing" in e for e in g.explain if e.startswith("y flow")))
 
+    def test_drew_another_shape_widens_the_stack_pitch(self):
+        """The re-solve after a stack edge drew another shape widens that pitch, not a row."""
+        spec, b = built(flow_column_spec())
+        e = next(e for e in spec.edges if (e.a, e.b) == ("cw", "s3"))
+        b.warnings.append(f"{e.src} cw ..> s3: drew UHVH instead of V (re-solve may be needed)")
+        extra = {}
+        self.assertTrue(layout.feedback(b, [], extra, {}))
+        self.assertIn(("y", "node:cw", "node:s3"), extra)
+
+    def test_pitch_tip_keeps_the_align(self):
+        d = flow_column_spec()
+        d["cols"][-1]["align"] = "bottom"
+        spec, b = built(d)
+        g = b.geom
+        cw, s3 = g.nodes["cw"], g.nodes["s3"]
+        txt = {"box": (cw.cx - 20, cw.last_baseline - 10, cw.cx + 20, cw.last_baseline + 3), "el": None}
+        ico = {"box": (s3.icon.x0, s3.icon.y0, s3.icon.x1, s3.icon.y1), "el": None}
+        iss = CL.Issue("TEXT NEAR ICON", "TEXT NEAR ICON ...", [], {"t": txt, "i": ico})
+        tip = layout.spec_fix(spec, g, layout.Problem(iss, ["node:cw", "node:s3"], [txt, ico]))
+        self.assertIn(f"cols: {{id: svc, flow: {M.fmt_num(s3.cy - cw.cy + layout.WIDEN)}, align: bottom}}", tip)
+
 
 class LabelOnLine(unittest.TestCase):
     def test_no_room_above_or_below_puts_the_label_on_its_line(self):
