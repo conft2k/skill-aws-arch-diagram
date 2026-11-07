@@ -180,7 +180,7 @@ class ShapeMissResolve(unittest.TestCase):
         b.warnings += ["edges[1] alb -> asg: drew UHVH instead of H (re-solve may be needed)",
                        "edges[0] igw -> alb: drew VHV instead of HVH, refusing the requested shape: HVH — …",
                        "note: something else"]
-        self.assertEqual(layout.shape_misses(b), 2)
+        self.assertEqual(layout.shape_misses(b), 1)       # a refused request is not a miss
 
     def test_clean_check_still_resolves(self):
         """Round 0 is clean but drew another shape: a feedback round widens the gap the edge
@@ -203,6 +203,119 @@ class ShapeMissResolve(unittest.TestCase):
     def test_no_miss_no_round(self):
         rc, text, builds = self.run_main(0)
         self.assertEqual((rc, len(builds)), (0, 1), text)
+
+    def test_refused_shape_runs_no_round(self):
+        """A clean draft whose only warning is a refused shape: one build (widening the gaps is
+        not what a refused request needs; its warning says what is)."""
+        real, builds = layout.build, []
+
+        def build(spec, *a, **kw):
+            b = real(spec, *a, **kw)
+            b.warnings.append("edges[1] alb -> asg: drew VHV instead of HVH, refusing the requested shape: HVH — "
+                              "no HVH fits; try widen the gap")
+            builds.append(b)
+            return b
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(layout, "build", build), \
+                redirect_stdout(io.StringIO()):
+            rc = layout.main([str(SPECS / "example.layout.yaml"), "-o", str(Path(tmp) / "e.svg")])
+        self.assertEqual((rc, len(builds)), (0, 1))
+
+    def test_slide_limit_counts_in_the_score(self):
+        """A miss-only round that widens a fitting slide past the 10pt limit is not written:
+        the slide that came out too small counts as a problem (alb slide: 1107 × 536 fits,
+        widening users → r53 makes it 1123 wide)."""
+        real, builds = layout.build, []
+
+        def build(spec, *a, **kw):
+            b = real(spec, *a, **kw)
+            if not builds:
+                e = spec.edges[0]
+                b.warnings.append(f"{e.src} {e.a} {e.op} {e.b}: drew UHVH instead of HVH (re-solve may be needed)")
+            builds.append(b)
+            return b
+
+        buf = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(layout, "build", build), redirect_stdout(buf):
+            rc = layout.main([str(SPECS / "slides" / "alb-reference-architecture.layout.yaml"),
+                              "-o", str(Path(tmp) / "s.svg")])
+        text = buf.getvalue()
+        self.assertEqual(len(builds), 2, text)
+        self.assertGreater(builds[1].geom.canvas_w, K.SLIDE_MAX_W)        # the widened round overflows
+        self.assertEqual(rc, 0, text)
+        self.assertIn("canvas: 1107 × 536 (slide)", text)
+        self.assertNotIn("SLIDE TOO SMALL", text)
+        self.assertNotIn("check: ", text)
+
+
+def row_spec(groups=True, **edge):
+    """Three nodes in one row (in the AWS Cloud unless groups=False) and a, b, c joined
+    a → b → c and a → c: b blocks a → c's straight line, so the router goes round."""
+    def n(i, col):
+        return dict(id=i, icon="service/AWS-Lambda", label=i.upper(), at=[col, "r1"],
+                    **({"in": "cloud"} if groups else {}))
+    d = {"name": "u", "mode": "document", "cols": ["a", "b", "c"], "rows": ["r1"],
+         "nodes": [n("na", "a"), n("nb", "b"), n("nc", "c")],
+         "edges": [{"e": "na -> nb"}, {"e": "nb -> nc"}, dict({"e": "na -> nc"}, **edge)]}
+    if groups:
+        d["groups"] = [{"id": "cloud", "type": "cloud"}]
+    return d
+
+
+class DetourRoom(unittest.TestCase):
+    """A route the router drew round the outside of the box both ends are in (LINE LEAVES
+    BOX), or past the canvas edge (LINE OFF CANVAS), gets room on that side: the box border
+    (or the canvas) moves out past it by its overshoot + 12 and the next round's route,
+    kept where it was relative to its ends, runs inside."""
+
+    def run_main(self, d):
+        buf = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "u.layout.json"
+            src.write_text(json.dumps(d), encoding="utf-8")
+            out = Path(tmp) / "u.draft.svg"
+            with redirect_stdout(buf):
+                rc = layout.main([str(src), "-o", str(out)])
+            return rc, buf.getvalue(), ET.fromstring(out.read_bytes())
+
+    def test_round_zero_leaves_the_cloud(self):
+        """Without feedback a → c goes under the Cloud and off the canvas: one problem (the
+        segment out of the box and off the canvas is reported once), with a pad tip."""
+        spec, b = built(row_spec())
+        probs = layout.problems_of(b.svg)[0]
+        self.assertEqual([p.iss.kind for p in probs], ["LINE OFF CANVAS"], [p.iss.msg for p in probs])
+        self.assertIn("past the bottom border of 'AWS Cloud'", probs[0].iss.msg)
+        self.assertEqual(probs[0].owners, ["edge:2", "group:cloud"])
+        self.assertIn("groups[0] cloud: pad_bottom: ", layout.spec_fix(spec, b.geom, probs[0]))
+
+    def test_cloud_grows_under_the_route(self):
+        rc, text, root = self.run_main(row_spec())
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        self.assertIn("check: 1 feedback round (line off canvas (cloud bottom): node:na → group:cloud.B ≥ ", text)
+        self.assertNotIn("drew another shape:", text)              # the room is the answer, not wider gaps
+        cloud = next(e for e in root.iter(NS + "rect") if e.get("stroke"))
+        line = next(e for e in root.iter(NS + "polyline"))
+        leg = max(float(v.split(",")[1]) for v in line.get("points").split())
+        bottom = float(cloud.get("y")) + float(cloud.get("height"))
+        self.assertGreaterEqual(bottom - leg, CL.HUG_CLEAR)
+        self.assertLess(bottom, float(root.get("viewBox").split()[3]))
+
+    def test_canvas_moves_off_a_route_above(self):
+        """No box: the route round the top runs past the canvas edge; everything moves down."""
+        rc, text, root = self.run_main(row_spec(groups=False))
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        self.assertIn("line off canvas (canvas top): origin → node:na ≥ ", text)
+        line = next(e for e in root.iter(NS + "polyline"))
+        self.assertGreaterEqual(min(float(v.split(",")[1]) for v in line.get("points").split()), 12)
+
+    def test_labelled_route_in_a_vpc(self):
+        d = row_spec(label="replication")
+        d["groups"].append({"id": "vpc", "type": "vpc", "label": "VPC", "in": "cloud"})
+        for n in d["nodes"]:
+            n["in"] = "vpc"
+        rc, text, _ = self.run_main(d)
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        self.assertIn("line leaves box (vpc bottom): node:na → group:vpc.B ≥ ", text)
 
 
 def flow_column_spec():

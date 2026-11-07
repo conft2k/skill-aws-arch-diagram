@@ -298,14 +298,19 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   `shape` / `from_side` / `to_side`, the line goes on with `refusing the requested …`, what
   blocked it (`bend_y tgwa.y0-60 = 148: LINE OVER TEXT '10.1.0.0/16' of svcs`) and what to
   try — a clean `bend_y: 181`, widening the gap between the ends, or for a same-side
-  out-and-back `give <box> pad_right`).
-- `check: …` lines: what the engine already widened or repaired on its own.
+  out-and-back `give <box> pad_right`; a refused request runs no re-solve of its own).
+- `check: …` lines: what the engine already widened or repaired on its own — e.g. `line
+  leaves box (vpc bottom): node:a → group:vpc.B ≥ 94` when a route went round the outside of
+  the box both ends are in (or `line off canvas (canvas top)` past the canvas edge): it
+  grew the room on that side so the route runs inside. A round never trades a slide that
+  fits for one under 10pt.
 - **Problems**: `check_layout.py`'s message, then up to three lines — `fix:` the draft
   coordinate correction (spec path: ignore it; it applies only once you edit the draft),
   `spec:` the spec items behind the problem (`edges[3] alb -> asg (label)`), `try:` the
   spec change to make (`label_at: …`, `shape / bend_x / …`, `dx / dy` (a flow-column
   node: `dx` and the column's `flow` / `align`), `pad / min_w`,
-  `cols: {id: app, min_gap_before: 140}`). `SLIDE TOO SMALL` lists the constraint chain of
+  `cols: {id: app, min_gap_before: 140}`; for `LINE LEAVES BOX` / `LINE OFF CANVAS` the
+  room that side of the box needs, `groups[0] cloud: pad_bottom: 41`). `SLIDE TOO SMALL` lists the constraint chain of
   the overflowing axis.
 - Last line `Layout OK` (exit 0) or `N problems` (exit 1). Change the spec, re-run, until
   `Layout OK`; then look at the PNG. The same spec always gives a byte-identical draft.

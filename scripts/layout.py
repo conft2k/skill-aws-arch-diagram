@@ -14,11 +14,17 @@ The check applies check_layout --fix's fixed-answer repairs, then answers what i
 kind and solves again (at most 5 rounds): SHORT ARROW, LINE HUGS BORDER and a label or
 badge crowded by a border, icon or another label widen the column / row gap it sits in
 (in a flow column, which has no rows, the pitch between its two nodes around the spot);
-a connector over a label or icon takes that edge's next routing candidate; an edge the
-router could not draw in its planned shape (its "drew X instead of Y" warning) widens the
-gaps it spans — a round runs for that even when the check is clean, since the detour
-it drew may still pass the check. The round with the fewest problems (then the fewest
-edges drawn in another shape) is written.
+a connector over a label or icon takes that edge's next routing candidate; LINE LEAVES BOX
+and LINE OFF CANVAS (a detour around the outside of the box both ends are in, or past the
+canvas edge) grow the room on that side — the box's border (as its pad_top / pad_bottom /
+pad_left / pad_right would) or the canvas moves out past the line by its overshoot + 12,
+so the next route runs inside (a line still past it after that takes its next routing
+candidate); an edge the router could not draw in its planned shape (its "drew X instead
+of Y" warning) widens the gaps it spans — a round runs for that even when the check is
+clean, since the detour it drew may still pass the check (a shape the spec asked for and
+the router refused is not counted: no widening is planned for it). The round with the
+fewest problems (a slide that comes out too small counts as one), then the fewest edges
+drawn in another shape, is written.
 
 Output: a summary (canvas, the size 12px text gets on a 16:9 slide, the note, the icon
 refs, warnings), then check_layout's problem lines, each with the spec items behind it and
@@ -31,6 +37,7 @@ Needs PyYAML for .yaml specs (`uv run --with pyyaml python3 scripts/layout.py ..
 is missing; a .json spec needs nothing). Python 3.9+, standard library otherwise.
 """
 import argparse
+import math
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -53,6 +60,11 @@ WIDEN = 16              # px a feedback round adds to a gap
 MAX_SKIP = 3            # candidates an edge may skip before its gap is widened instead
 # The router's warning for an edge drawn in another shape than plan() reserved space for.
 SHAPE_MISS = re.compile(r"drew (\S+) instead of")
+# A shape the spec asked for and the router refused (the warning says what to change).
+REFUSED = "refusing the requested"
+# check_layout's detour problems: the room on that side of the box (or canvas) grows.
+DETOURS = ("LINE OFF CANVAS", "LINE LEAVES BOX")
+SIDE_VAR = {"left": "L", "right": "R", "top": "T", "bottom": "B"}
 SVG_NS = "http://www.w3.org/2000/svg"
 # The tags, and the <g> attributes, svg2pptx.collect accepts (DRAWN / its <g> rule).
 RAW_TAGS = {"g", "rect", "image", "text", "line", "polyline", "circle", "tspan"}
@@ -74,6 +86,8 @@ def value(var: str, geom: Geometry, axis: str) -> float:
     """A Requirement variable's value on a solved geometry (layout_model section 4)."""
     if var == "origin":
         return 0.0
+    if var == "drawing":
+        return geom.drawing.x1 if axis == "x" else geom.drawing.y1
     kind, ref = var.split(":", 1)
     if kind == "col" or kind == "row":
         return geom.track(ref)
@@ -254,17 +268,20 @@ def problems_of(data: bytes, hints: bool = False) -> Tuple[List[Problem], "CL.Ad
     """Every check_layout problem, with the element ids (<g id>) of what it involves; with
     hints, check_layout's fix line for each (slow: it re-checks candidate moves)."""
     root = ET.fromstring(data)
-    adv = CL.Advisor(root)
+    adv = CL.Advisor(root, engine=True)
     hint_list = [(iss, adv.hint(iss)) for iss in adv.issues] if hints else []
     parent = {c: p for p in root.iter() for c in p}
     out = []
     for iss in adv.issues:
         owners, items = [], []
         for v in iss.ctx.values():
-            if not (isinstance(v, dict) and "el" in v):
+            if isinstance(v, tuple) and len(v) == 5:     # a container rect (x, y, w, h, element)
+                el = v[4]
+            elif isinstance(v, dict) and "el" in v:
+                items.append(v)
+                el = v["el"]
+            else:
                 continue
-            items.append(v)
-            el = v["el"]
             while el is not None and not (el.tag.endswith("}g") and el.get("id")):
                 el = parent.get(el)
             if el is not None and el.get("id") not in owners:
@@ -357,6 +374,7 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
     """Answer the problems left with new requirements / skips. False when nothing changes."""
     changed = False
     widened = set()
+    roomed = set()          # edges whose detour got room on its side this round
 
     def widen(axis: str, v: float, why: str, owner: str, owners: Sequence[str] = ()):
         nonlocal changed
@@ -378,6 +396,17 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
         edges = [e for e in (edge_of(o) for o in p.owners) if e]
         line_edges = [n for n, part in edges if part == ""]
         owner = p.owners[0] if p.owners else "check"
+        if k in DETOURS and line_edges:
+            n = line_edges[0]
+            r = room(b, p, n)
+            if r is not None and (r.d > (extra[(r.axis, r.a, r.b)].d if (r.axis, r.a, r.b) in extra else -1e9)):
+                extra[(r.axis, r.a, r.b)] = r
+                roomed.add(n)
+                changed = True
+            elif skip.get(n, 0) < MAX_SKIP:     # the room is there and the route still leaves it
+                skip[n] = skip.get(n, 0) + 1
+                changed = True
+            continue
         if k in ("LINE OVER TEXT", "LINE OVER ICON", "LINE NEAR TEXT") and line_edges \
                 and p.iss.ctx["s"].get("kind") == "connector":
             n = line_edges[0]
@@ -397,6 +426,8 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
         for e in b.spec.edges:
             if e.src != m.group(1) or not re.search(re.escape(f"{e.a}") + r"\b", wmsg):
                 continue
+            if e.n in roomed:       # its detour is being given room: that is the answer this round
+                continue
             pa, pb = _end_center(b.geom, e.a), _end_center(b.geom, e.b)
             if pa is None or pb is None:
                 continue
@@ -408,8 +439,62 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
 
 
 def shape_misses(b: Build) -> int:
-    """How many edges the router drew in another shape than planned (each asks a re-solve)."""
-    return sum(1 for w in b.warnings if SHAPE_MISS.search(w))
+    """How many edges the router drew in another shape than planned (each asks a re-solve);
+    a shape the spec asked for and the router refused is left out (widening the gaps the
+    edge spans is not what it needs: its warning says what is)."""
+    return sum(1 for w in b.warnings if SHAPE_MISS.search(w) and REFUSED not in w)
+
+
+def detour_side(p: Problem, spec: Spec) -> Optional[Tuple[Optional[str], str, float]]:
+    """(group id or None for the canvas, side, px past it) of a LINE LEAVES BOX / LINE OFF
+    CANVAS problem: the box it leaves (an off-canvas line out of its box too: that box);
+    None for a box that is no spec group (a raw rect)."""
+    c = p.iss.ctx
+    side = c["side"]
+    if c.get("r") is None:
+        return None, side, c["d"]
+    gid = next((M.split_eid(o)[1] for o in p.owners if M.split_eid(o)[0] == "group"
+                and M.split_eid(o)[1] in spec.groups), None)
+    if gid is None:
+        return None
+    return gid, side, c["box_d"] if c.get("box_d") is not None else c["d"]
+
+
+def room(b: Build, p: Problem, n: int) -> Optional[Requirement]:
+    """The requirement that moves the border (or canvas edge) a detour leaves past out by
+    its overshoot + HUG_CLEAR, measured from edge n's end on that axis: the router keeps
+    its detour where it was relative to the ends, so it then runs inside."""
+    spec, geom = b.spec, b.geom
+    where = detour_side(p, spec)
+    if where is None:
+        return None
+    gid, side, over = where
+    e = spec.edges[n]
+    axis = "x" if side in ("left", "right") else "y"
+    far = side in ("right", "bottom")
+    end = next((f"node:{i}" for i, kd in ((e.a, e.a_kind), (e.b, e.b_kind)) if kd == "node"), None)
+    if end is None:
+        g = next((i for i, kd in ((e.a, e.a_kind), (e.b, e.b_kind)) if kd == "group" and i != gid), None)
+        if g is None:
+            return None
+        end = f"group:{g}.{SIDE_VAR[side]}"
+    if gid is not None:
+        wall = f"group:{gid}.{SIDE_VAR[side]}"
+        need = over + CL.HUG_CLEAR
+    elif far:
+        # the canvas edge is the drawing's + canvas_margin (more with a note below)
+        wall = "drawing"
+        edge = geom.canvas_w if axis == "x" else geom.canvas_h
+        need = edge + over + CL.HUG_CLEAR - spec.const.canvas_margin - value("drawing", geom, axis)
+    else:
+        wall = "origin"
+        need = over + CL.HUG_CLEAR
+    if need <= 0:
+        return None
+    a, c = (end, wall) if far else (wall, end)
+    cur = value(c, geom, axis) - value(a, geom, axis)
+    where = f"{gid} {side}" if gid else f"canvas {side}"
+    return Requirement(axis, a, c, cur + need, f"feedback: {p.iss.kind.lower()} ({where})", M.edge_eid(n))
 
 
 def _end_center(geom: Geometry, eid: str) -> Optional[Tuple[float, float]]:
@@ -442,6 +527,8 @@ def spec_item(spec: Spec, owner: str) -> str:
 def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
     """A spec change to try for a problem the engine could not clear."""
     tips = []
+    if p.iss.kind in DETOURS and detour_tip(spec, geom, p):
+        tips.append(detour_tip(spec, geom, p))
     stacked = {nid: col for (_, col), ids in spec.flow_stacks().items() for nid in ids}
     for o in p.owners:
         kind, ref, part = M.split_eid(o)
@@ -476,6 +563,27 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
             seen.add(t)
             out.append(t)
     return "; ".join(out)
+
+
+def detour_tip(spec: Spec, geom: Geometry, p: Problem) -> str:
+    """The room a detour past a box border (or the canvas edge) needs: that side's pad, at
+    the room it has now + the overshoot + 12 — or, on the canvas, a route between the ends."""
+    where = detour_side(p, spec)
+    if where is None:
+        return ""
+    gid, side, over = where
+    if gid is None:
+        return (f"the canvas {side} edge leaves no room for a route round the ends: from_side / to_side / shape "
+                f"that keep the line between them, or a node / box beyond them on that side")
+    r = geom.groups[gid].rect
+    inner = [n.icon if side == "top" else n.footprint() for n in geom.nodes.values()]
+    inner += [g.rect for i, g in geom.groups.items() if i != gid]
+    inner = [b for b in inner if r.x0 <= b.x0 and b.x1 <= r.x1 and r.y0 <= b.y0 and b.y1 <= r.y1 and b != r]
+    k = {"left": 0, "top": 1, "right": 2, "bottom": 3}[side]
+    edge = (r.x0, r.y0, r.x1, r.y1)[k]
+    have = min((abs(edge - (b.x0, b.y0, b.x1, b.y1)[k]) for b in inner), default=0.0)
+    return (f"{spec.groups[gid].src}: pad_{side}: {M.fmt_num(math.ceil(have + over + CL.HUG_CLEAR))} "
+            f"(room {side} of what it holds for the line, {M.fmt_num(have)} now)")
 
 
 def summary(spec: Spec, b: Build, out_path: Path) -> List[str]:
@@ -556,7 +664,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     place = None
     try:
         for rnd in range(MAX_ROUNDS + 1):
-            b = build(spec, list(extra.values()), dict(skip), place, source)
+            try:
+                b = build(spec, list(extra.values()), dict(skip), place, source)
+            except M.LayoutError:
+                if best is None:
+                    raise
+                break                   # a feedback requirement the spec cannot meet: keep the best round
             place = b.nb.place if b.nb.place != "none" else None
             if a.no_check:
                 best = ((0, 0), rnd, b, [], {})
@@ -564,7 +677,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             probs = problems_of(b.svg)[0]
             # A clean check with an edge drawn in another shape still re-solves: the router's
             # fallback (a U around the outside) can pass the check and still be a detour.
-            score = (len(probs), shape_misses(b))
+            # A slide that comes out too small counts as a problem: a round that widened a gap
+            # for a miss alone must not trade a fitting slide for one under 10pt.
+            score = (len(probs) + (1 if slide_problem(spec, b.geom) else 0), shape_misses(b))
             if best is None or score < best[0]:
                 best = (score, rnd, b, list(extra.values()), dict(skip))
             if score == (0, 0) or rnd == MAX_ROUNDS:

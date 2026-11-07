@@ -80,7 +80,12 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
             around the spot, on the axis that separates the two things, get
             "track b − track a ≥ current + 16" (owner the element's id, why "feedback: …").
           LINE OVER TEXT / ICON, LINE NEAR TEXT on a connector: skip[n] += 1 (≤ 3), then widen.
-          route.draw's "drew X instead of Y" warning: widen the gaps between the edge's ends.
+          LINE LEAVES BOX / LINE OFF CANVAS on a connector: the box's border on that side
+            (group:<gid>.L/R/T/B) or the canvas ("drawing" / "origin") ≥ current + the
+            overshoot + 12 from the edge's end; when that room is already there, skip[n] += 1.
+          route.draw's "drew X instead of Y" warning: widen the gaps between the edge's ends
+            (not for an edge given room above that round, nor a refused requested shape).
+          The round kept: fewest problems (+1 for SLIDE TOO SMALL), then fewest such misses.
         Later rounds keep the note place of the first (only the pane width is recomputed).
     nb.requirements must hold on geom (same place and width as nb0); W5 checks that and
     warns when one is short by more than 0.5 px.
