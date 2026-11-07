@@ -1464,7 +1464,7 @@ def _end_off(ctx: _Ctx, x: "_Edge", end: str, side: str, ports: Dict[Tuple[int, 
         return min(free, key=lambda v: (abs(v), -first * v))
     if half < 0:
         return 0.0                      # an icon too small for more than its center
-    grid = [k / 2 for k in range(-int(2 * half), int(2 * half) + 1)]
+    grid = sorted({k / 2 for k in range(-int(2 * half), int(2 * half) + 1)} | {-half, half})
     return max(grid, key=lambda v: (min(abs(v - o) for o in others), -abs(v), first * v))
 
 

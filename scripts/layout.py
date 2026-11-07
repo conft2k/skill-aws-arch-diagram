@@ -562,7 +562,8 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
         elif kind == "edge":
             # two flows out of (into) one port: an offset gives one a port of its own (a
             # group end, whose ports the router does not split); one offset is shared by
-            # all the instances of a `.*` line, which merge with trunk: true instead
+            # all the instances of a `.*` line, which merge with trunk: true or take one
+            # spec line each with its own offset
             offs = (" / from_offset / to_offset (instances of one line: trunk: true when they"
                     " merge, else one spec line each with its own offset)") \
                 if p.iss.kind == "LINE ON LINE" else ""

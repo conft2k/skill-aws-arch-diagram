@@ -906,8 +906,9 @@ class DetourPorts(unittest.TestCase):
         self.assertEqual(R._end_off(ctx, x, "b", "top", ports), 0.0)
 
     def test_crowded_side_finds_a_free_spot(self):
-        """The fourth line onto a 48px side (0, then ±12 taken, ±24 off the icon) takes the
-        widest free gap, never a taken port."""
+        """A line onto a crowded side: a spot a pitch clear of every taken port, else the spot
+        farthest from all of them (the fourth onto a 48px side after 0 and ±12, ±24 off the
+        icon: its end toward the other end, -20), never a taken one while another exists."""
         ctx, xs, ports = self.setup()
         ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False), (6, "a", 12.0, 6, False), (7, "a", -12.0, 7, False)]
         self.assertEqual(R._end_off(ctx, xs[0], "b", "top", ports), -20.0)     # toward x (left)
@@ -923,6 +924,12 @@ class DetourPorts(unittest.TestCase):
                                        for i, o in enumerate([-20.0, -16.0, -8.0, 0.0, 8.0, 16.0, 20.0])]
         v = R._end_off(ctx, xs[0], "b", "top", ports)
         self.assertEqual(v, -4.0)                       # gaps of 8: the middle nearest the center, toward x
+        g = ctx.geom.nodes["y"]                         # an icon of 8.5: half 0.25, its center taken
+        xs[0].B.box = M.Box(g.cx - 4.25, g.cy - 4.25, g.cx + 4.25, g.cy + 4.25)
+        ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False)]
+        self.assertEqual(R._end_off(ctx, xs[0], "b", "top", ports), -0.25)
+        xs[0].B.box = M.Box(g.cx - 2, g.cy - 2, g.cx + 2, g.cy + 2)        # half < 0: the center only
+        self.assertEqual(R._end_off(ctx, xs[0], "b", "top", ports), 0.0)
 
 
 if __name__ == "__main__":
