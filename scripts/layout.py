@@ -15,8 +15,10 @@ kind and solves again (at most 5 rounds): SHORT ARROW, LINE HUGS BORDER and a la
 badge crowded by a border, icon or another label widen the column / row gap it sits in
 (in a flow column, which has no rows, the pitch between its two nodes around the spot);
 a connector over a label or icon takes that edge's next routing candidate; an edge the
-router could not draw in its planned shape widens the gaps it spans. The round with the
-fewest problems is written.
+router could not draw in its planned shape (its "drew X instead of Y" warning) widens the
+gaps it spans — a round runs for that even when the check is clean, since the detour
+it drew may still pass the check. The round with the fewest problems (then the fewest
+edges drawn in another shape) is written.
 
 Output: a summary (canvas, the size 12px text gets on a 16:9 slide, the note, the icon
 refs, warnings), then check_layout's problem lines, each with the spec items behind it and
@@ -49,6 +51,8 @@ from layout_model import Element, Geometry, NoteBlock, Requirement, Spec  # noqa
 MAX_ROUNDS = 5          # feedback rounds after the first solve (DESIGN 4.10)
 WIDEN = 16              # px a feedback round adds to a gap
 MAX_SKIP = 3            # candidates an edge may skip before its gap is widened instead
+# The router's warning for an edge drawn in another shape than plan() reserved space for.
+SHAPE_MISS = re.compile(r"drew (\S+) instead of")
 SVG_NS = "http://www.w3.org/2000/svg"
 # The tags, and the <g> attributes, svg2pptx.collect accepts (DRAWN / its <g> rule).
 RAW_TAGS = {"g", "rect", "image", "text", "line", "polyline", "circle", "tspan"}
@@ -402,6 +406,11 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
     return changed
 
 
+def shape_misses(b: Build) -> int:
+    """How many edges the router drew in another shape than planned (each asks a re-solve)."""
+    return sum(1 for w in b.warnings if SHAPE_MISS.search(w))
+
+
 def _end_center(geom: Geometry, eid: str) -> Optional[Tuple[float, float]]:
     if eid in geom.nodes:
         n = geom.nodes[eid]
@@ -536,20 +545,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     extra: Dict[Tuple[str, str, str], Requirement] = {}
     skip: Dict[int, int] = {}
-    best = None                     # (problems, round, build, feedback reqs, skips)
+    best = None                     # ((problems, shape misses), round, build, feedback reqs, skips)
     place = None
     try:
         for rnd in range(MAX_ROUNDS + 1):
             b = build(spec, list(extra.values()), dict(skip), place, source)
             place = b.nb.place if b.nb.place != "none" else None
             if a.no_check:
-                best = (0, rnd, b, [], {})
+                best = ((0, 0), rnd, b, [], {})
                 break
             probs = problems_of(b.svg)[0]
-            n = len(probs)
-            if best is None or n < best[0]:
-                best = (n, rnd, b, list(extra.values()), dict(skip))
-            if not probs or rnd == MAX_ROUNDS:
+            # A clean check with an edge drawn in another shape still re-solves: the router's
+            # fallback (a U around the outside) can pass the check and still be a detour.
+            score = (len(probs), shape_misses(b))
+            if best is None or score < best[0]:
+                best = (score, rnd, b, list(extra.values()), dict(skip))
+            if score == (0, 0) or rnd == MAX_ROUNDS:
                 break
             if not feedback(b, probs, extra, skip):
                 break

@@ -252,7 +252,9 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 - **Summary**: `draft:` path, `canvas: W × H (mode); on a 16:9 slide 12px text → N pt`,
   `note:` place and size, `icons`, `alias` resolutions, `warning:` lines (read them —
   an LB inside a template, note text past the canvas, a phase-2 key drawn another way;
-  `drew X instead of Y`: something blocks the planned shape — run `--explain` to see
+  `drew X instead of Y`: something blocks the planned shape — the engine re-solves with
+  the gaps the edge spans widened (a feedback round, even when the check is clean) and
+  keeps the warning only when that didn't help; run `--explain` to see
   which tracks coincide, then separate them with `min_gap_before`; when Y was your own
   `shape` / `from_side` / `to_side`, the line goes on with `refusing the requested …`, what
   blocked it (`bend_y tgwa.y0-60 = 148: LINE OVER TEXT '10.1.0.0/16' of svcs`) and what to

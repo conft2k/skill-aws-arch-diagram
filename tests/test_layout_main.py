@@ -13,6 +13,7 @@ import time
 import unittest
 import xml.etree.ElementTree as ET
 from contextlib import redirect_stdout
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -148,6 +149,60 @@ class Feedback(unittest.TestCase):
         extra, skip = {}, {}
         layout.feedback(b, [layout.Problem(iss, ["edge:2", "node:tgw"], [txt, seg])], extra, skip)
         self.assertEqual((extra, skip), ({}, {2: 1}))
+
+
+class ShapeMissResolve(unittest.TestCase):
+    """An edge the router drew in another shape than planned ("drew X instead of Y") asks a
+    re-solve even when the check is clean: its fallback route may pass the check and still
+    be a detour around the outside."""
+
+    def run_main(self, miss_rounds):
+        """layout.main on the example spec, with the router's warning added to the builds of
+        the first `miss_rounds` rounds; (exit code, output, builds made)."""
+        real, builds = layout.build, []
+
+        def build(spec, *a, **kw):
+            b = real(spec, *a, **kw)
+            if len(builds) < miss_rounds:
+                e = spec.edges[1]
+                b.warnings.append(f"{e.src} {e.a} {e.op} {e.b}: drew UHVH instead of H (re-solve may be needed)")
+            builds.append(b)
+            return b
+
+        buf = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(layout, "build", build), redirect_stdout(buf):
+            rc = layout.main([str(SPECS / "example.layout.yaml"), "-o", str(Path(tmp) / "e.svg")])
+        return rc, buf.getvalue(), builds
+
+    def test_shape_misses(self):
+        spec, b = built("example")
+        self.assertEqual(layout.shape_misses(b), 0)
+        b.warnings += ["edges[1] alb -> asg: drew UHVH instead of H (re-solve may be needed)",
+                       "edges[0] igw -> alb: drew VHV instead of HVH, refusing the requested shape: HVH — …",
+                       "note: something else"]
+        self.assertEqual(layout.shape_misses(b), 2)
+
+    def test_clean_check_still_resolves(self):
+        """Round 0 is clean but drew another shape: a feedback round widens the gap the edge
+        spans, and the round without the miss is written."""
+        rc, text, builds = self.run_main(1)
+        self.assertEqual(len(builds), 2, text)
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        self.assertIn("check: 1 feedback round (drew another shape: col:", text)
+        self.assertNotIn("instead of", text)
+
+    def test_resolve_is_bounded(self):
+        """A miss no widening clears: at most MAX_ROUNDS feedback rounds, and the warning is
+        reported (round 0's draft, no worse than the others, is kept)."""
+        rc, text, builds = self.run_main(99)
+        self.assertEqual(len(builds), layout.MAX_ROUNDS + 1)
+        self.assertEqual(rc, 0, text)
+        self.assertIn("warning: edges[1] alb -> asg: drew UHVH instead of H", text)
+        self.assertNotIn("check: ", text)
+
+    def test_no_miss_no_round(self):
+        rc, text, builds = self.run_main(0)
+        self.assertEqual((rc, len(builds)), (0, 1), text)
 
 
 def flow_column_spec():
