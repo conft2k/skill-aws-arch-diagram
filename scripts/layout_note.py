@@ -8,11 +8,13 @@ block (QR 169-183, DG "The note — one place per diagram" and "Step legend").
 
 Places (DESIGN 4.7):
   panel  documents: a box below the drawing, one row per step (badge, bold hop, description
-         column 16 right of the widest hop), or one summary row, or label rows.
+         column 16 right of the widest hop), or one summary row, or label rows; descriptions
+         wrap within the column and add rows to the panel.
   pane   a box left of the AWS Cloud, steps only, descriptions wrapped under each hop; the
          Cloud starts 24 right of it and what sits left of the Cloud goes below it.
   lines  slides: plain 12px lines below the drawing at the Cloud's left edge, step items
-         flowed in a row (20 from a text end to the next badge), ≤ 3 lines.
+         flowed in a row (20 from a text end to the next badge), ≤ 3 lines. Overflowing
+         notes use the full footer width, wrapping words onto 16px text lines.
   none   no note.
 Auto rule: a document with steps gets a pane when its drawing is taller than 0.7 × its
 width, or when top-level items sit left of the AWS Cloud and the pane fits above them
@@ -48,8 +50,9 @@ SIZE = K.TEXT_NOTE.size   # every note text is 12 px
 # =======================================================================================
 # Public entry point
 
-def block(spec: Spec, geom: Geometry, place: Optional[str] = None, width: Optional[float] = None) -> NoteBlock:
-    """The note for this geom. place / width fix the place and the pane width (W5's second call)."""
+def block(spec: Spec, geom: Geometry, place: Optional[str] = None, width: Optional[float] = None,
+          *, wrap_text: bool = True) -> NoteBlock:
+    """The note for this geom. wrap_text=False retains the drawing's feedback evaluation."""
     note = spec.note
     if note is None or not (note.steps or note.summary or note.rows):
         return NoteBlock("none")
@@ -86,9 +89,9 @@ def block(spec: Spec, geom: Geometry, place: Optional[str] = None, width: Option
     if want == "pane":
         nb = _pane(spec, geom, cloud, w if w is not None else pane_width(spec, geom, cloud, fixed_w))
     elif want == "panel":
-        nb = _panel(spec, geom)
+        nb = _panel(spec, geom, wrap_text=wrap_text)
     else:
-        nb = _lines(spec, geom, cloud)
+        nb = _lines(spec, geom, cloud, wrap_text=wrap_text)
     nb.warnings = warns + nb.warnings
     return nb
 
@@ -166,6 +169,11 @@ def wrap(text: str, width: float, size: float = SIZE) -> List[str]:
     return [s for s in out if s] or [""]
 
 
+def _wrap_if_needed(text: str, width: float) -> List[str]:
+    """Keep fitting text byte-for-byte; wrap only overflow or explicit line breaks."""
+    return [text] if "\n" not in text and M.text_width(text, SIZE) <= width else wrap(text, width)
+
+
 def _t(s: str, x: float, y: float, style: K.TextStyle, anchor: str = "start") -> Element:
     return M.el_text(TextLine(s, x, y, style.size, style.fill, style.weight, anchor), z=Z, owner=OWNER)
 
@@ -195,46 +203,50 @@ def _panel_kind(note) -> Tuple[str, List[str]]:
     return kinds[0], warns
 
 
-def _panel(spec: Spec, geom: Geometry) -> NoteBlock:
+def _panel(spec: Spec, geom: Geometry, *, wrap_text: bool = True) -> NoteBlock:
     note = spec.note
     kind, warns = _panel_kind(note)
-    n = len(note.steps) if kind == "steps" else len(note.rows) if kind == "rows" else 1
     x0, y0 = K.PANEL_X, geom.drawing.y1 + K.PANEL_GAP
-    w, h = geom.canvas_w - 2 * K.PANEL_X, panel_height(n)
-    rect = Box.xywh(x0, y0, w, h)
-    els = [_rect(rect)]
-    right = rect.x1 - (K.PANEL_ROW_X - K.PANEL_X)        # rows keep the 12 px inset on the right too
+    w = geom.canvas_w - 2 * K.PANEL_X
+    right = x0 + w - (K.PANEL_ROW_X - K.PANEL_X)
 
-    def base(i):
-        return y0 + K.PANEL_FIRST + K.PANEL_PITCH * i
+    def text_lines(text, room):
+        return _wrap_if_needed(text, room) if wrap_text else [text]
 
     if kind == "steps":
         col = K.PANEL_HOP_X + max(M.text_width(hop, SIZE) for hop, _ in note.steps) + K.PANEL_DESC_GAP
-        for i, (hop, desc) in enumerate(note.steps):
-            b = base(i)
-            els += _badge(K.PANEL_BADGE_CX, b - K.BADGE_TEXT_DY, i + 1)
-            els.append(_t(hop, K.PANEL_HOP_X, b, K.TEXT_HOP))
-            if desc:
-                els.append(_t(desc, col, b, K.TEXT_NOTE))
-            end = (col + M.text_width(desc, SIZE)) if desc else K.PANEL_HOP_X + M.text_width(hop, SIZE)
-            if end > right:
-                warns.append(f"{note.src}: step {i + 1} runs {end - right:.0f}px past the bottom panel; "
-                             f"shorten it or use place: pane")
+        rows = [(hop, text_lines(desc, right - col) if desc else [])
+                for hop, desc in note.steps]
     elif kind == "rows":
         col = K.PANEL_ROW_X + max(M.text_width(lab, SIZE) for lab, _ in note.rows) + K.PANEL_DESC_GAP
-        for i, (lab, text) in enumerate(note.rows):
-            b = base(i)
-            els.append(_t(lab, K.PANEL_ROW_X, b, K.TEXT_HOP))
-            if text:
-                els.append(_t(text, col, b, K.TEXT_NOTE))
+        rows = [(lab, text_lines(text, right - col) if text else [])
+                for lab, text in note.rows]
+    else:
+        col = K.PANEL_ROW_X
+        rows = [("", text_lines(note.summary, right - col))]
+    n = sum(max(1, len(lines)) for _, lines in rows)
+    h = panel_height(n)
+    rect = Box.xywh(x0, y0, w, h)
+    els = [_rect(rect)]
+    row = 0
+    for i, (label, lines) in enumerate(rows):
+        b = y0 + K.PANEL_FIRST + K.PANEL_PITCH * row
+        if kind == "steps":
+            els += _badge(K.PANEL_BADGE_CX, b - K.BADGE_TEXT_DY, i + 1)
+        if kind != "summary":
+            label_x = K.PANEL_HOP_X if kind == "steps" else K.PANEL_ROW_X
+            els.append(_t(label, label_x, b, K.TEXT_HOP))
+            end = label_x + M.text_width(label, SIZE)
+            if end > right:
+                warns.append(f"{note.src}: {kind[:-1]} {i + 1} label runs {end - right:.0f}px "
+                             f"past the bottom panel; shorten it")
+        for k, text in enumerate(lines):
+            els.append(_t(text, col, b + K.PANEL_PITCH * k, K.TEXT_NOTE))
             end = col + M.text_width(text, SIZE)
             if end > right:
-                warns.append(f"{note.src}: row {i + 1} runs {end - right:.0f}px past the bottom panel; shorten it")
-    else:
-        els.append(_t(note.summary, K.PANEL_ROW_X, base(0), K.TEXT_NOTE))
-        end = K.PANEL_ROW_X + M.text_width(note.summary, SIZE)
-        if end > right:
-            warns.append(f"{note.src}: the summary runs {end - right:.0f}px past the bottom panel; shorten it")
+                warns.append(f"{note.src}: {kind[:-1] if kind != 'summary' else kind} {i + 1}: "
+                             f"{text!r} runs {end - right:.0f}px past the bottom panel; shorten it")
+        row += max(1, len(lines))
     return NoteBlock("panel", w=w, h=h, rect=rect, elements=els, warnings=warns)
 
 
@@ -378,13 +390,40 @@ def _line_items(note) -> Tuple[List[str], List[str]]:
     return items, plain
 
 
-def _lines(spec: Spec, geom: Geometry, cloud: Optional[Box]) -> NoteBlock:
+def _lines_height(els: List[Element], last_b: float, bottom: float) -> float:
+    """Fit badge ink inside the footer, reusing its spare top space before growing it."""
+    # A badge extends below its digit's baseline by r - BADGE_TEXT_DY, which can
+    # exceed the text's bottom allowance. Reuse the empty space above the legend
+    # before growing the canvas: slides already at 10pt must not shrink their text
+    # just to exchange unused top space for the missing bottom of a circle.
+    text_end = last_b + K.LINES_END
+    badges = [e for e in els if e.kind == "circle"]
+    if badges:
+        def radius(e):
+            a = e.attrs
+            return float(a["r"]) + (float(a.get("stroke-width", 1)) / 2
+                                   if a.get("stroke", "none") != "none" else 0)
+
+        top = min(float(e.attrs["cy"]) - radius(e) for e in badges)
+        end = max(float(e.attrs["cy"]) + radius(e) for e in badges)
+        shift = min(max(0, end - text_end), max(0, top - bottom - K.LINES_END))
+        if shift:
+            for e in els:
+                key = "cy" if e.kind == "circle" else "y"
+                e.attrs[key] = float(e.attrs[key]) - shift
+        text_end = max(text_end, end - shift)
+    return text_end - bottom
+
+
+def _lines(spec: Spec, geom: Geometry, cloud: Optional[Box], *, wrap_text: bool = True) -> NoteBlock:
     note = spec.note
     warns: List[str] = []
     x0 = cloud.x0 if cloud is not None else geom.drawing.x0
     limit = geom.canvas_w - spec.const.canvas_margin
     bottom = geom.drawing.y1
     items, plain = _line_items(note)
+    needs_wrap = (any("\n" in s or M.text_width(s, SIZE) > limit - x0 - K.LINES_TEXT_DX for s in items)
+                  or any("\n" in s or M.text_width(s, SIZE) > limit - x0 for s in plain))
     els: List[Element] = []
     n_lines, last_b, right = 0, None, x0
 
@@ -423,27 +462,100 @@ def _lines(spec: Spec, geom: Geometry, cloud: Optional[Box]) -> NoteBlock:
     if n_lines > K.LINES_MAX:
         warns.append(f"{note.src}: {n_lines} note lines on a slide (≤ {K.LINES_MAX}); drop the route line "
                      f"or shorten the items")
-    # A badge extends below its digit's baseline by r - BADGE_TEXT_DY, which can
-    # exceed the text's bottom allowance. Reuse the empty space above the legend
-    # before growing the canvas: slides already at 10pt must not shrink their text
-    # just to exchange unused top space for the missing bottom of a circle.
-    text_end = last_b + K.LINES_END
-    badges = [e for e in els if e.kind == "circle"]
-    if badges:
-        def radius(e):
-            a = e.attrs
-            return float(a["r"]) + (float(a.get("stroke-width", 1)) / 2
-                                   if a.get("stroke", "none") != "none" else 0)
+    h = _lines_height(els, last_b, bottom)
+    if wrap_text and needs_wrap:
+        return _wrapped_lines(spec, geom, items, plain, h)
+    rect = Box(x0, bottom, right, bottom + h)
+    return NoteBlock("lines", w=rect.w, h=h, rect=rect, elements=els, warnings=warns)
 
-        top = min(float(e.attrs["cy"]) - radius(e) for e in badges)
-        end = max(float(e.attrs["cy"]) + radius(e) for e in badges)
-        shift = min(max(0, end - text_end), max(0, top - bottom - K.LINES_END))
-        if shift:
-            for e in els:
-                key = "cy" if e.kind == "circle" else "y"
-                e.attrs[key] = float(e.attrs[key]) - shift
-        text_end = max(text_end, end - shift)
-    h = text_end - bottom
+
+def _wrapped_lines(spec: Spec, geom: Geometry, items: List[str], plain: List[str],
+                   min_h: float) -> NoteBlock:
+    """Flow overflowing notes across the canvas, wrapping words and sharing tail space.
+
+    Fitting notes retain the Cloud-aligned layout above. Long notes use all available
+    footer width and 16px text lines so wrapping need not shrink the diagram on a slide.
+    Badge rows with horizontally overlapping badges retain their 24px separation.
+    Keep the original footer height as a minimum: compacting text must not change the
+    drawing's choice of diagonal layout or the routes that depend on that choice.
+    """
+    x0 = spec.const.canvas_margin
+    limit = geom.canvas_w - spec.const.canvas_margin
+    bottom = geom.drawing.y1
+    tx = x0 + K.LINES_TEXT_DX
+    b = bottom + K.LINES_FIRST_CY + K.BADGE_TEXT_DY
+    n_lines = 1 if items else 0
+    right = x0
+    els: List[Element] = []
+    warns: List[str] = []
+    badges: List[Tuple[float, float]] = []
+
+    def next_line(badge: bool = False):
+        nonlocal tx, b, n_lines
+        tx = x0 + K.LINES_TEXT_DX
+        pitch = K.LINES_TEXT_PITCH
+        if badge:
+            cx = x0 + K.LINES_BADGE_DX
+            for bx, baseline in badges:
+                if abs(cx - bx) < 2 * K.BADGE_R:
+                    pitch = max(pitch, baseline + K.LINES_ROW_PITCH - b)
+        b += pitch
+        n_lines += 1
+
+    for i, text in enumerate(items):
+        first = text.split()[0] if text.split() else ""
+        if i:
+            tx += K.LINES_ITEM_GAP + K.LINES_TEXT_DX
+            if tx + M.text_width(first, SIZE) > limit:
+                next_line(badge=True)
+        cx = tx - (K.LINES_TEXT_DX - K.LINES_BADGE_DX)
+        els += _badge(cx, b - K.BADGE_TEXT_DY, i + 1)
+        badges.append((cx, b))
+        for p, para in enumerate(text.split("\n")):
+            if p:
+                next_line()
+            cur = ""
+            for word in para.split():
+                cand = f"{cur} {word}" if cur else word
+                if cur and tx + M.text_width(cand, SIZE) > limit:
+                    els.append(_t(cur, tx, b, K.TEXT_NOTE))
+                    right = max(right, tx + M.text_width(cur, SIZE))
+                    next_line()
+                    cur = word
+                else:
+                    cur = cand
+                if not cur or tx + M.text_width(cur, SIZE) <= limit:
+                    continue
+                # Move a word that fits a full line out of the remaining tail space.
+                if M.text_width(cur, SIZE) <= limit - x0 - K.LINES_TEXT_DX:
+                    next_line()
+                else:
+                    warns.append(f"{spec.note.src}: step {i + 1}: {word!r} does not fit "
+                                 f"the canvas text column ({limit - x0 - K.LINES_TEXT_DX:.0f}px)")
+            els.append(_t(cur, tx, b, K.TEXT_NOTE))
+            tx += M.text_width(cur, SIZE)
+            right = max(right, tx)
+
+    last_b = b if items else None
+    after_items = bool(items)
+    for text in plain:
+        b = (bottom + K.LINES_TEXT_ONLY_DY if last_b is None else
+             last_b + (K.LINES_ROW_PITCH if after_items else K.LINES_TEXT_PITCH))
+        after_items = False
+        for k, line in enumerate(_wrap_if_needed(text, limit - x0)):
+            if k:
+                b += K.LINES_TEXT_PITCH
+            els.append(_t(line, x0, b, K.TEXT_NOTE))
+            end = x0 + M.text_width(line, SIZE)
+            right = max(right, end)
+            if end > limit:
+                warns.append(f"{spec.note.src}: {line!r} runs {end - limit:.0f}px past the canvas; shorten it")
+            n_lines += 1
+        last_b = b
+    if n_lines > K.LINES_MAX:
+        warns.append(f"{spec.note.src}: {n_lines} note lines on a slide (≤ {K.LINES_MAX}); drop the route line "
+                     f"or shorten the items")
+    h = max(min_h, _lines_height(els, last_b, bottom))
     rect = Box(x0, bottom, right, bottom + h)
     return NoteBlock("lines", w=rect.w, h=h, rect=rect, elements=els, warnings=warns)
 

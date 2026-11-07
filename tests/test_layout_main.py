@@ -121,6 +121,56 @@ class SlideDiagonals(unittest.TestCase):
         self.assertEqual(w.call_count, 1)
 
 
+class SlideNoteOverflow(unittest.TestCase):
+    def test_document_notes_fit_on_slides_without_smaller_text(self):
+        for name, old_pt in (("gwlb", 8.737864), ("tgw", 9.356962), ("bedrock-dx", 4.354838)):
+            with self.subTest(example=name):
+                spec = layout_spec.load(copy.deepcopy(spec_dict(f"{name}-reference-architecture")),
+                                        mode="slide")
+                b = layout.build(spec, [], {}, None, "x.layout.yaml")
+                self.assertEqual(b.nb.place, "lines")
+                texts = [e.text for e in b.nb.elements
+                         if e.kind == "text" and e.attrs["fill"] == K.GRAY]
+                expected = " ".join(f"{hop} {desc}" for hop, desc in spec.note.steps)
+                self.assertEqual(" ".join(texts).split(), expected.split())
+                self.assertFalse(any(p.iss.kind == "OFF CANVAS"
+                                     for p in layout.problems_of(b.svg)[0]))
+                self.assertGreaterEqual(layout.slide_text_pt(spec, b.svg)[0], old_pt)
+                self.assertFalse(any("past the canvas" in w or "does not fit" in w
+                                     for w in b.nb.warnings))
+
+    def test_fitting_final_notes_preserve_feedback_and_drafts(self):
+        original_block = layout.layout_note.block
+
+        def unwrapped(*args, **kwargs):
+            kwargs["wrap_text"] = False
+            return original_block(*args, **kwargs)
+
+        cases = ((ROOT / "tests/corpus/rt/gw-ret.layout.yaml", "slide"),
+                 (SPECS / "serverless-order-pipeline.layout.yaml", "document"))
+        with tempfile.TemporaryDirectory() as tmp:
+            for path, mode in cases:
+                with self.subTest(case=path.name, mode=mode):
+                    before, after = Path(tmp) / "before.svg", Path(tmp) / "after.svg"
+                    with redirect_stdout(io.StringIO()), \
+                            mock.patch.object(layout.layout_note, "block", side_effect=unwrapped):
+                        layout.main([str(path), "--mode", mode, "-o", str(before)])
+                    with redirect_stdout(io.StringIO()):
+                        layout.main([str(path), "--mode", mode, "-o", str(after)])
+                    self.assertEqual(before.read_bytes(), after.read_bytes())
+
+    def test_wrapped_panel_height_reaches_the_canvas(self):
+        spec, b = built({
+            "name": "wrapped-panel", "cols": ["client"], "rows": ["main"],
+            "nodes": [{"id": "client", "icon": "resource/Client", "label": "Client",
+                       "at": ["client", "main"]}],
+            "note": {"place": "panel", "summary": "한글 words " * 30},
+        })
+        self.assertGreater(b.nb.h, 44)
+        self.assertGreaterEqual(b.geom.canvas_h, b.nb.rect.y1 + K.PANEL_GAP)
+        self.assertFalse(any(p.iss.kind == "OFF CANVAS" for p in layout.problems_of(b.svg)[0]))
+
+
 class RouteTableBeside(unittest.TestCase):
     """A node with a box above it and one below it on one side of its columns, both drawing
     lines past it, goes beside them, unweighed: the Spoke RT (at [rtsp, main]) stays

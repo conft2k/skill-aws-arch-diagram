@@ -322,6 +322,36 @@ class PanelTest(unittest.TestCase):
         self.assertEqual(len(nb.elements), 1 + 5 * 4)
         self.assertTrue(any("one row kind" in w for w in nb.warnings))
 
+    def test_long_descriptions_wrap_and_move_following_rows(self):
+        spec, geom = DOCS["tgw"].build()
+        desc = "한국어 설명과 English words를 단어 경계에서 이어 읽습니다. " * 12
+        spec.note = M.NoteSpec(steps=[("VPN → TGW", desc), ("TGW → VPC", "짧은 설명")])
+        nb = N.block(spec, geom, place="panel")
+        _, _, texts = elements(nb)
+        descriptions = [t for t in texts if t["fill"] == K.GRAY]
+        wrapped = descriptions[:-1]
+        self.assertGreater(len(wrapped), 1)
+        self.assertEqual(" ".join(t["s"] for t in wrapped), desc.strip())
+        right = nb.rect.x1 - (K.PANEL_ROW_X - K.PANEL_X)
+        self.assertTrue(all(t["x"] + M.text_width(t["s"], 12) <= right for t in descriptions))
+        self.assertEqual(nb.h, N.panel_height(len(descriptions)))
+        self.assertGreater(descriptions[-1]["y"], wrapped[-1]["y"])
+        self.assertEqual(nb.warnings, [])
+
+    def test_summary_and_label_rows_wrap(self):
+        spec, geom = DOCS["tgw"].build()
+        text = "긴 설명 English words " * 40
+        for note in (M.NoteSpec(summary=text), M.NoteSpec(rows=[("Route", text)])):
+            with self.subTest(note=note):
+                spec.note = note
+                nb = N.block(spec, geom, place="panel")
+                _, _, texts = elements(nb)
+                lines = [t for t in texts if t["fill"] == K.GRAY]
+                self.assertGreater(len(lines), 1)
+                self.assertEqual(" ".join(t["s"] for t in lines), text.strip())
+                self.assertEqual(nb.h, N.panel_height(len(lines)))
+                self.assertEqual(nb.warnings, [])
+
 
 class PaneTest(unittest.TestCase):
     WIDTH = {"nlb-mtls": 320, "bedrock-dx": 456}
@@ -465,9 +495,32 @@ class SlideLinesTest(unittest.TestCase):
                 if radius == 14 or stroke:
                     self.assertGreater(nb.h, K.LINES_FIRST_CY + K.BADGE_TEXT_DY + K.LINES_END)
 
+    def test_word_wrapped_notes_fit_complete_badge_ink(self):
+        spec, geom = SLIDES["tgw"].build()
+        spec.note = M.NoteSpec(steps=[("Hop", "한국어 English words " * 40), ("Last", "")])
+        factory = N._badge
+        for radius, stroke in ((8, 0), (10, 0), (12, 0), (14, 0), (10, 4)):
+            with self.subTest(radius=radius, stroke=stroke):
+                def badge(cx, cy, n):
+                    els = factory(cx, cy, n)
+                    els[0].attrs["r"] = radius
+                    if stroke:
+                        els[0].attrs.update(stroke=K.BADGE_FILL, **{"stroke-width": stroke})
+                    return els
+
+                with mock.patch.object(N, "_badge", side_effect=badge):
+                    nb = N.block(spec, geom)
+                circles = [e.attrs for e in nb.elements if e.kind == "circle"]
+                self.assertEqual(len(circles), 2)
+                for circle in circles:
+                    ink_r = radius + stroke / 2
+                    self.assertGreaterEqual(circle["cy"] - ink_r, geom.drawing.y1 + K.LINES_END)
+                    self.assertLessEqual(circle["cy"] + ink_r, geom.drawing.y1 + nb.h)
+
     def test_wrapped_badge_rows_fit_and_keep_their_pitch(self):
         spec, geom = SLIDES["tgw"].build()
-        spec.note = M.NoteSpec(steps=[("Hop " * 35, "")] * 3)
+        # Each item fits a line; exercise badge-row flow rather than word wrapping.
+        spec.note = M.NoteSpec(steps=[("Hop " * 25, "")] * 3)
         nb = N.block(spec, geom)
         circles = [e.attrs for e in nb.elements if e.kind == "circle"]
         cys = sorted({c["cy"] for c in circles})
@@ -525,6 +578,44 @@ class SlideLinesTest(unittest.TestCase):
         t = nb.elements[0].attrs
         self.assertEqual((t["x"], t["y"]), (geom.groups["cloud"].rect.x0, geom.drawing.y1 + 17))
         self.assertEqual(nb.h, 17 + 4)
+
+    def test_long_steps_wrap_without_losing_words_or_badges(self):
+        spec, geom = SLIDES["gwlb"].build()
+        text = "한글 설명과 English words를 모두 읽을 수 있습니다. " * 16
+        spec.note = M.NoteSpec(steps=[("IGW → GWLBe", text), ("GWLB → EC2", text)])
+        nb = N.block(spec, geom)
+        _, circles, texts = elements(nb)
+        lines = [t for t in texts if t["fill"] == K.GRAY]
+        self.assertEqual(len(circles), 2)
+        expected = " ".join(N._line_items(spec.note)[0]).split()
+        self.assertEqual(" ".join(t["s"] for t in lines).split(), expected)
+        limit = geom.canvas_w - spec.const.canvas_margin
+        self.assertTrue(all(t["x"] + M.text_width(t["s"], 12) <= limit for t in lines))
+        self.assertGreater(nb.h, K.LINES_FIRST_CY + K.BADGE_TEXT_DY + K.LINES_END)
+        self.assertFalse(any("past" in w or "does not fit" in w for w in nb.warnings))
+
+    def test_long_plain_notes_wrap(self):
+        spec, geom = SLIDES["nlb"].build()
+        text = "한국어와 English words " * 40
+        spec.note = M.NoteSpec(summary=text, rows=[("경로", text)])
+        nb = N.block(spec, geom)
+        _, circles, texts = elements(nb)
+        self.assertEqual(circles, [])
+        self.assertEqual(" ".join(t["s"] for t in texts).split(),
+                         (text + " 경로 " + text).split())
+        self.assertTrue(all(t["x"] + M.text_width(t["s"], 12)
+                            <= geom.canvas_w - spec.const.canvas_margin for t in texts))
+        self.assertEqual(nb.rect.y1, texts[-1]["y"] + K.LINES_END)
+
+    def test_only_unbreakable_words_keep_overflow_warnings(self):
+        spec, geom = SLIDES["gwlb"].build()
+        spec.note = M.NoteSpec(steps=[("IGW", "x" * 400 + " 다음 단어")])
+        nb = N.block(spec, geom)
+        self.assertEqual(len([w for w in nb.warnings if "does not fit" in w]), 1)
+        _, _, texts = elements(nb)
+        lines = [t["s"] for t in texts if t["fill"] == K.GRAY]
+        self.assertIn("x" * 400, lines)
+        self.assertIn("다음 단어", lines)
 
 
 if __name__ == "__main__":
