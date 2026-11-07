@@ -143,5 +143,8 @@ corpus에 옮겨 2단계(규칙 판정으로 배치 고르기)의 시험 사례�
 - **corpus 태그:** 문서 모드에도 R-fit 판정이 생기면서 `slide-fit/nfw-s2`, `slide-fit/nfw-t3`,
   `slides/nfw-reference-architecture`의 `good R-fit` 태그 3개가 document run과 맞지 않습니다.
   태그를 slide 모드로 한정해야 합니다.
+- **corpus 범위:** `slide-fit/nfw-s2`, `slide-fit/nfw-t3`, `slides/nfw-reference-architecture`는 `good R-fit`을 slide에만
+  적용하려고 `modes`를 slide로 줄였습니다. 그래서 document 모드 run 3개(R-rt, R-label 검사)가 빠졌습니다.
+  `good`에 모드별 map을 지원하면 document run을 되살릴 수 있습니다.
 - **범례(note):** 줄바꿈이 홉 이름(`GWLBe → EC2` 등) 가운데서 일어날 수 있습니다.
 - **글자 확대 기록:** `w4-text-fit-validation.md`의 수치는 88872ab 기준입니다. 병합 후 수치는 위 "지금 상태"에 있습니다.
