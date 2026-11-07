@@ -80,11 +80,11 @@ class Draft:
                                "fill": g("fill", ""), "overlay": owner in self.overlays})
         elif tag == "image":
             self.images.append({"x": num(g("x")) + ox, "y": num(g("y")) + oy, "w": num(g("width")),
-                                "h": num(g("height")), "ref": g("href", "")[len("bundle:"):]})
+                                "h": num(g("height")), "ref": g("href", "")[len("bundle:"):], "owner": owner})
         elif tag == "text":
             self.texts.append({"s": "".join(el.itertext()).strip(), "x": num(g("x")) + ox, "y": num(g("y")) + oy,
                                "fs": num(g("font-size")), "fill": (g("fill") or "").upper(),
-                               "weight": g("font-weight", ""), "anchor": g("text-anchor", "start")})
+                               "weight": g("font-weight", ""), "anchor": g("text-anchor", "start"), "owner": owner})
         elif tag in ("line", "polyline"):
             if tag == "line":
                 pts = [(num(g("x1")), num(g("y1"))), (num(g("x2")), num(g("y2")))]
@@ -128,6 +128,7 @@ class Draft:
     def label_stack(self, i):
         cx = i["x"] + i["w"] / 2
         return sorted((t for t in self.texts if t["anchor"] == "middle" and abs(t["x"] - cx) < 0.5
+                       and (not i["owner"].startswith("node:") or t["owner"] == i["owner"])
                        and i["y"] + i["h"] < t["y"] <= i["y"] + i["h"] + K.NODE_LABEL_DY + K.SUB_PITCH * 4),
                       key=lambda t: t["y"])
 

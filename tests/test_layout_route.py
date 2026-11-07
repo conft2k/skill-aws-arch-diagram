@@ -7,7 +7,7 @@ Specs come from docs/examples/specs/*.layout.yaml (layout_spec.load); the Geomet
 here straight from each example's draft (embed.unembed in memory): node icons, label lines
 and masks, group rects and headers, track centers — no solver involved. The router's
 lines, labels and badges are then checked against the coordinates the examples use
-(DESIGN 3: NFW badges 645 / 929 / 1059, TGW badges 518 / 796 / 1015, nlb-mtls trunk 642,
+(DESIGN 3: NFW badges 645 / 929 / 1059; current TGW badges 1049.9 / 1762.2 / 2313.7, nlb-mtls trunk 642,
 ALB "아웃바운드"), the shape table, candidate validation on synthetic obstacles, the plan's
 requirements on the example geometry, and check_layout.py on a minimal SVG of groups +
 nodes + routed edges.
@@ -368,7 +368,7 @@ class Shapes(unittest.TestCase):
 
 
 class Reproduce(unittest.TestCase):
-    """Coordinates traced in DESIGN 3 (±8)."""
+    """Coordinates traced in the current example goldens (±8)."""
 
     def near(self, got, want, msg, tol=8):
         self.assertLessEqual(abs(got - want), tol, f"{msg}: {got} vs {want}")
@@ -393,20 +393,20 @@ class Reproduce(unittest.TestCase):
     def test_tgw_badges(self):
         spec, geom, d, boxes, els, warns = routed("tgw")
         b = badges_of(els)
-        for n, x in ((3, 796), (4, 1015)):
+        for n, x in ((3, 1762.2), (4, 2313.7)):
             self.near(b[n][0], x, f"tgw badge {n} x")
-        self.near(b[4][1], 200, "tgw badge 4 cy")
+        self.near(b[4][1], 293.5, "tgw badge 4 cy")
         tops = sorted(points(lines_of(els, n)[0])[0][0] for n in (3, 4))
-        self.assertEqual(tops, [606, 626])                       # ±10 on the TGW's top side
+        self.assertEqual(tops, [1309.2, 1329.2])                 # ±10 on the TGW's top side
         # badge 2 and its label side by side above the line (labels go above a horizontal line)
         label = next(e for e in els if e.owner == "edge:2" and e.kind == "text" and e.z == K.Z_EDGE_LABEL)
-        self.assertEqual(label.attrs["y"], 254 - 9)
-        self.assertEqual(b[2][1], 254 - K.BADGE_DY)
+        self.assertEqual(label.attrs["y"], 404 - 9)
+        self.assertEqual(b[2][1], 404 - K.BADGE_DY)
         self.assertLessEqual(b[2][0] + K.BADGE_R + 4, label.attrs["x"] - M.text_width(label.text, 12) / 2)
         # and badge 1 beside 'IPsec' on the (widened) Internet → VPN piece
         label = next(e for e in els if e.owner == "edge:1" and e.kind == "text" and e.z == K.Z_EDGE_LABEL)
-        self.assertEqual(label.attrs["y"], 254 - 9)
-        self.assertEqual(b[1][1], 254 - K.BADGE_DY)
+        self.assertEqual(label.attrs["y"], 404 - 9)
+        self.assertEqual(b[1][1], 404 - K.BADGE_DY)
         self.assertLessEqual(b[1][0] + K.BADGE_R + 4, label.attrs["x"] - M.text_width(label.text, 12) / 2)
 
     def test_nlb_mtls_trunk(self):

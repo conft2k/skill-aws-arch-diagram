@@ -74,10 +74,11 @@ class Draft:
         corners = {(r["x"], r["y"]) for r in self.boxes}
         self.icons = [i for i in self.images if i["w"] >= 40 and (i["x"], i["y"]) not in corners]
 
-    def _walk(self, el, ox, oy):
+    def _walk(self, el, ox, oy, owner=""):
         dx, dy = CL.translate(el)
         ox, oy = ox + dx, oy + dy
         tag, g = el.tag.replace(NS, ""), el.get
+        owner = g("id", owner)
         if tag == "defs":
             return
         if tag == "rect" and g("x") is not None:
@@ -88,15 +89,15 @@ class Draft:
                                "sw": num(g("stroke-width")), "fill": g("fill", "")})
         elif tag == "image":
             self.images.append({"x": num(g("x")) + ox, "y": num(g("y")) + oy, "w": num(g("width")),
-                                "h": num(g("height")), "ref": g("href", "")[len("bundle:"):]})
+                                "h": num(g("height")), "ref": g("href", "")[len("bundle:"):], "owner": owner})
         elif tag == "text":
             self.texts.append({"s": "".join(el.itertext()).strip(), "x": num(g("x")) + ox, "y": num(g("y")) + oy,
                                "fs": num(g("font-size")), "fill": (g("fill") or "").upper(),
-                               "weight": g("font-weight", ""), "anchor": g("text-anchor", "start")})
+                               "weight": g("font-weight", ""), "anchor": g("text-anchor", "start"), "owner": owner})
         elif tag == "circle":
             self.circles.append({"cx": num(g("cx")) + ox, "cy": num(g("cy")) + oy, "r": num(g("r"))})
         for c in el:
-            self._walk(c, ox, oy)
+            self._walk(c, ox, oy, owner)
 
     # --- the note as the example draws it -------------------------------------------
     def note_area(self):
@@ -156,6 +157,7 @@ class Draft:
     def label_stack(self, i):
         cx = i["x"] + i["w"] / 2
         return sorted((t for t in self.texts if t["anchor"] == "middle" and abs(t["x"] - cx) < 0.5
+                       and (not i["owner"].startswith("node:") or t["owner"] == i["owner"])
                        and i["y"] + i["h"] < t["y"] <= i["y"] + i["h"] + K.NODE_LABEL_DY + K.SUB_PITCH * 4),
                       key=lambda t: t["y"])
 
