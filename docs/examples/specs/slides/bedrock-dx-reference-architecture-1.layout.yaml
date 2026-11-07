@@ -1,0 +1,59 @@
+# Slide 1/2: Seoul Claude global inference; slide 2 keeps option B on the same DX gateway.
+# Folded representation: each endpoint icon denotes its two AZ ENIs, explicitly labelled; the private-subnet group covers AZ1 and AZ2. No service or connection is removed across the pair.
+# Omitted to keep text >=10pt: exact CIDRs (no CIDR routes drawn), CLI environment/telemetry settings, DNS suffix/hostname lists, API method names, and detailed IAM/SCP ARN/RequestedRegion conditions. These operational details remain in the document spec's eight-step legend.
+name: bedrock-dx-reference-architecture-1
+mode: slide
+text_scale: off
+cols: [pc, rtr, dx, dxgw, vgw, ep1, ep2, {id: svc, flow: 104}, dst]
+rows: [top, {id: main, min_gap_before: 112}, bot]
+
+groups:
+  - {id: onprem, type: onprem, label: On-premises}
+  - {id: cloud, type: cloud}
+  - {id: rs, type: region, label: ap-northeast-2 · 서울, in: cloud}
+  - {id: rsso, type: region, label: 서울 · SSO, in: cloud} # same source Region, folded into a separate control-path box
+  - {id: vpcs, type: vpc, label: VPC, in: rs}
+  - {id: sn, type: private, label: Private · AZ1 / AZ2, in: vpcs, pad_top: 64, pad_left: 12}
+  - {id: dst, type: generic, label: 목적지 리전, dash: "6,4", in: cloud}
+
+nodes:
+  - {id: pc, icon: resource/Client, label: 개발자 PC, sub: Claude Code, in: onprem, at: [pc, main]}
+  - {id: dns, icon: resource/Server, label: 사내 DNS, in: onprem, at: [rtr, top]}
+  - {id: rtr, icon: resource/Amazon-VPC_Customer-Gateway, label: 고객 라우터, in: onprem, at: [rtr, main]}
+  - {id: dx, icon: service/AWS-Direct-Connect, label: Direct Connect, sub: private VIF · BGP, at: [dx, main]}
+  - {id: inet, icon: resource/Internet, label: Internet, sub: 프록시 경유, at: [dx, bot]}
+  - {id: dxgw, icon: resource/AWS-Direct-Connect_Gateway, label: DX gateway, sub: "옵션 B → slide 2", in: cloud, at: [dxgw, main]}
+  - {id: vgws, icon: resource/Amazon-VPC_VPN-Gateway, label: VGW, on: vpcs, at: [vgw, main]}
+  - {id: res, icon: resource/Amazon-Route-53_Resolver, label: Resolver, sub: Inbound · 2 AZ, in: sn, at: [ep1, top]}
+  - {id: sts, icon: resource/Amazon-VPC_Endpoints, label: sts, sub: 2 AZ ENIs, in: sn, at: [ep2, top]}
+  - {id: bed, icon: resource/Amazon-VPC_Endpoints, label: bedrock, sub: 2 AZ ENIs, in: sn, at: [ep1, bot]}
+  - {id: br, icon: resource/Amazon-VPC_Endpoints, label: bedrock-runtime, sub: 2 AZ ENIs, in: sn, at: [ep2, bot]}
+  - {id: beds, icon: service/Amazon-Bedrock, label: Bedrock, sub: global. Claude, in: rs, col: svc}
+  - {id: stss, icon: resource/AWS-Identity-Access-Management_AWS-STS, label: AWS STS, sub: sts 엔드포인트, in: rs, col: svc}
+  - {id: ct, icon: service/AWS-CloudTrail, label: CloudTrail, sub: 서울 호출 로그, in: rs, col: svc}
+  - {id: idc, icon: service/AWS-IAM-Identity-Center, label: Identity Center, sub: aws sso login, in: rsso, at: [dxgw, bot]}
+  - {id: bdst, icon: service/Amazon-Bedrock, label: Bedrock, sub: AWS 네트워크, in: dst, at: [dst, top]}
+
+edges:
+  - {e: "pc ..> inet", label: HTTPS}
+  - {e: "inet ..> idc"}
+  - {e: "pc -> dns", label: "DNS :53"}
+  - {e: "dns -> rtr", points: [["dns.cx", "dns.label.y1+4"], ["rtr.cx", "rtr.y0-4"]]} # caption clearance keeps the DNS path off the HTTPS label
+  - {e: "pc -> rtr", label: HTTPS}
+  - {e: "rtr -> dx"}
+  - {e: "dx -> dxgw"}
+  - {e: "dxgw -> vgws"}
+  - {e: "vgws -- sn", points: [["vgws.x1", "vgws.cy"], ["sn.x0+12", "vgws.cy"]]}
+  - {e: "vgws -- sn", points: [["sn.x0+12", "res.y0-36"], ["sn.x0+12", "bed.y0-36"]]}
+  - {e: "vgws -- sn", points: [["sn.x0+12", "res.y0-36"], ["sts.cx", "res.y0-36"]]}
+  - {e: "vgws -> res", points: [["res.cx", "res.y0-36"], ["res.cx", "res.y0-4"]]}
+  - {e: "vgws -> sts", points: [["sts.cx", "sts.y0-36"], ["sts.cx", "sts.y0-4"]]}
+  - {e: "vgws -- sn", points: [["sn.x0+12", "bed.y0-36"], ["br.cx", "bed.y0-36"]]}
+  - {e: "vgws -> bed", points: [["bed.cx", "bed.y0-36"], ["bed.cx", "bed.y0-4"]]}
+  - {e: "vgws -> br", points: [["br.cx", "br.y0-36"], ["br.cx", "br.y0-4"]]}
+  - {e: "br -> beds"}
+  - {e: "beds ..> dst"}
+
+note:
+  place: lines
+  summary: "API :443 · Private DNS → ENI IP · 응답 동일 경로 · 서울 Claude: global.만 · SSO: 인터넷 (VPCE 미지원)"

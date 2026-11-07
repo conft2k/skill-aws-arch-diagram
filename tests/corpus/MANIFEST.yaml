@@ -1201,6 +1201,16 @@ examples:
     rules: [R-flow, R-label, R-rt, R-twin, R-border, R-fit]
     what: "Centralized egress slide with each VPC's two identical AZ paths folded: App VPC A/B → TGW → Security VPC firewall → NAT → IGW → Internet, with both TGW tables and all outbound/return routes"
     good: [R-flow, R-label, R-rt, R-twin, R-border, R-fit]
+  - path: ../../docs/examples/specs/slides/bedrock-dx-reference-architecture-1.layout.yaml
+    modes: [slide, slide-no-title]
+    rules: [R-flow, R-label, R-border, R-fit]
+    what: "Bedrock/DX slide 1: Seoul global inference, two-AZ endpoint ENIs folded by type, private DX/VGW buses, separate Internet SSO path and destination Region"
+    good: [R-flow, R-label, R-border, R-fit]
+  - path: ../../docs/examples/specs/slides/bedrock-dx-reference-architecture-2.layout.yaml
+    modes: [slide, slide-no-title]
+    rules: [R-flow, R-label, R-border, R-fit]
+    what: "Bedrock/DX slide 2: us-west-2 option B, the same global DX gateway and a second VGW, Resolver inbound and runtime endpoint in AZ1, in-Region/us. profiles"
+    good: [R-flow, R-label, R-border, R-fit]
   - path: ../../docs/examples/specs/slides/gwlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "GWLB inspection slide: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs"
