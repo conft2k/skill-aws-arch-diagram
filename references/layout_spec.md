@@ -269,12 +269,19 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 
 ## Common patterns (all from `docs/examples/specs/`)
 
-- **Long pipeline** (serverless-order-pipeline; more than ~10 nodes in a row): fold it into lanes —
-  one row per lane (request `sync`, then `ana` and `ful` for the rule's two consumers), each
-  lane left → right on shared columns. The one wrap edge goes back left in the corridor
-  above the next lane (`shape: VHV, from_side: bottom, to_side: top, bend_y: "gap(auth,ana)"`,
-  room from `min_gap_before` on the lane's row); a fork down into per-AZ targets takes
-  `from_offset: 0` so both branches share one stem. layout.py warns past 1800 px wide.
+- **Long pipeline** (serverless-order-pipeline; more than ~8 nodes in one row): fold it into
+  lanes. A lane is one main row read left → right plus the helper rows it needs (a node
+  above or below the line, such as an authorizer or a payment step, or a VPC's AZ rows);
+  every lane shares the same columns. The wrap edge from the end of one lane goes back left
+  in the corridor above the next lane's main row (`shape: VHV, from_side: bottom, to_side:
+  top`; the router finds the bend and reserves the corridor — give `bend_y` as the gap
+  between the previous lane's main row and the next one's only when you must pin it). Put
+  side nodes in empty slots of an existing row rather than in a row of their own, so no
+  row is left mostly empty. The shared columns take the widest pitch any lane needs, and
+  a VPC lane's rows (labels before a trunk bend, subnet headers beside an overlay) usually
+  set it: keep the labels in the VPC short and put a long one on the hop with room. A
+  per-AZ fork is `trunk: true` (the example also sets `from_offset: 0`, a temporary
+  workaround so both branches leave from one port; drop it once trunk forks share one). layout.py warns past 1800 px wide.
 
 - **AZ template** (nlb): `az` with `per`, subnets `in: az`, nodes `col:` only, an ASG
   overlay over both EC2 columns and one arrow into it; the LB (`in: vpc, at: [pub, main]`)
