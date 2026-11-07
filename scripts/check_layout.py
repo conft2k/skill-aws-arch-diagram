@@ -41,7 +41,12 @@ Reports, and exits with status 1 on any of them:
                    (Y → T, then T → X out of T's same port) is two flows and is
                    reported, and so are two lines of different flows in a layout.py
                    draft (different data-flow values: only the instances of one
-                   `trunk: true` line share one) that leave or enter one point together
+                   `trunk: true` line share one) that leave or enter one point together.
+                   Two lines of different spec lines (data-flow) with a piece each on
+                   one line, their facing ends less than 16px apart (24px with a third
+                   line crossing the gap) but not touching, are reported too: read as
+                   one straight line, the two flows join through the gap (one out of a
+                   port to the left, the other 12px beside it to the right)
   LOOSE END        a connector that no other line touches has an end without an arrowhead
                    on nothing — no node (icon or the labels under it), no line, no
                    container border within 6px: a branch cut off the trunk it
@@ -665,6 +670,13 @@ def two_flows(run, other):
     return a is not None and b is not None and a != b
 
 
+def two_lines(run, other):
+    """Do two connectors draw flows of different spec lines (data-flow "<line>" or
+    "<line>.<instance>")? The instances of one `.*` line fanning out of one node read as
+    the one line they are."""
+    return two_flows(run, other) and flow_of(run).split(".")[0] != flow_of(other).split(".")[0]
+
+
 def lines_on_lines(paths):
     """Pairs of connectors of different nets (see joined) running on top of each other for
     more than ON_LINE_RUN px: [(segment, other segment, shared px)], one per pair of lines.
@@ -683,6 +695,77 @@ def lines_on_lines(paths):
                 for o in paths[b]:
                     d = collinear_run(s, o)
                     if d > ON_LINE_RUN and (best is None or d > best[2]):
+                        best = (s, o, d)
+            if best:
+                out.append(best)
+    return out
+
+
+# Two flows' parallel pieces on one line (2px or less across) with their facing ends closer
+# than this read as one straight line through the gap (12px: the port pitch, two fallbacks
+# out of one side); the 16 / 20px two lines into one side are split by read as two ...
+IN_LINE_GAP = 16
+# ... unless a third line crosses the gap, which then reads as two lines crossing (a "+")
+# up to two port pitches.
+IN_LINE_CROSS_GAP = 24
+
+
+def in_line_gap(s, o, gap=ON_LINE_GAP):
+    """How far apart along their line two straight segments lying on (or within gap px of)
+    one line are (0 when they touch or overlap); None when they are not on one line."""
+    (x1, y1), (x2, y2) = s["p"], s["q"]
+    (u1, v1), (u2, v2) = o["p"], o["q"]
+    if abs(x1 - x2) < 0.5 and abs(u1 - u2) < 0.5 and abs(x1 - u1) <= gap:
+        a, b = (min(y1, y2), max(y1, y2)), (min(v1, v2), max(v1, v2))
+    elif abs(y1 - y2) < 0.5 and abs(v1 - v2) < 0.5 and abs(y1 - v1) <= gap:
+        a, b = (min(x1, x2), max(x1, x2)), (min(u1, u2), max(u1, u2))
+    else:
+        return None
+    return max(0.0, max(a[0], b[0]) - min(a[1], b[1]))
+
+
+def crosses_gap(s, o, segs):
+    """Does a segment of segs run across the line s and o lie on, between their facing
+    ends?"""
+    vertical = abs(s["p"][0] - s["q"][0]) < 0.5
+    i = 1 if vertical else 0                    # the axis along the line
+    at = s["p"][1 - i]
+    lo = min(max(s["p"][i], s["q"][i]), max(o["p"][i], o["q"][i]))
+    hi = max(min(s["p"][i], s["q"][i]), min(o["p"][i], o["q"][i]))
+    for g in segs:
+        (x1, y1), (x2, y2) = g["p"], g["q"]
+        u, v = (x1, x2) if vertical else (y1, y2)       # across: the other axis
+        w = y1 if vertical else x1
+        if abs(u - v) > 0.5 and abs((y1 - y2) if vertical else (x1 - x2)) < 0.5 \
+                and min(u, v) < at < max(u, v) and lo < w < hi:
+            return True
+    return False
+
+
+def lines_in_line(paths, skip=()):
+    """Pairs of connectors of different spec lines by their data-flow (layout.py drafts:
+    two_lines) with a piece each on one line, apart along it by less than IN_LINE_GAP px (or IN_LINE_CROSS_GAP
+    with a third line crossing the gap) but not touching (a join: lines_on_lines' rules)
+    nor running on top of each other: [(segment, other segment, gap px)], one per pair
+    (the closest), leaving out the pairs (id, id) in skip. Read as one straight line, the
+    two flows join into one through the gap (x-fork-b: tgw -> enib.1 out to the left and
+    tgw -> seni.2 out to the right along one row, 12px apart)."""
+    ids = list(paths)
+    out = []
+    for a_i, a in enumerate(ids):
+        for b in ids[a_i + 1:]:
+            if (a, b) in skip or (b, a) in skip or not two_lines(paths[a], paths[b]):
+                continue
+            best = None
+            for s in paths[a]:
+                for o in paths[b]:
+                    d = in_line_gap(s, o)
+                    if d is None or d < 0.5 or d >= IN_LINE_CROSS_GAP or collinear_run(s, o) > ON_LINE_RUN:
+                        continue
+                    if d >= IN_LINE_GAP and not crosses_gap(s, o, [g for k, r in paths.items()
+                                                                   if k not in (a, b) for g in r]):
+                        continue
+                    if best is None or d < best[2]:
                         best = (s, o, d)
             if best:
                 out.append(best)
@@ -839,13 +922,25 @@ def run_checks(root):
     # splits: an unannounced merge. Lines joined at a point (a trunk, a stem out of one
     # port, a merge into one) are one net and share their stem on purpose; an arrow into
     # the port the next flow leaves from is not (see attached / chained).
-    for s, o, d in lines_on_lines(paths):
+    on_lines = lines_on_lines(paths)
+    for s, o, d in on_lines:
         box = union(seg_box(s), seg_box(o))
         if masked((box[0], box[1], box[2] + 0.1, box[3] + 0.1), min(s["o"], o["o"]), masks):
             continue
         add("LINE ON LINE", f"LINE ON LINE    connector {fmt(s)} runs on top of connector {fmt(o)} for {d:g}px — "
             f"two flows read as one line; give each its own lane ({HUG_CLEAR}px apart) or draw them as one trunk",
             [s, o], s=s, o=o, d=d)
+    # Two flows' pieces on one line with a gap under two port pitches between them read as
+    # one straight line through it (a fork out of one side to both directions, a "+" with a
+    # third line crossing the gap): the same problem, reported as LINE ON LINE.
+    on = {(id(s["el"]), id(o["el"])) for s, o, _ in on_lines}
+    for s, o, d in lines_in_line(paths, on):
+        box = union(seg_box(s), seg_box(o))
+        if masked((box[0], box[1], box[2] + 0.1, box[3] + 0.1), min(s["o"], o["o"]), masks):
+            continue
+        add("LINE ON LINE", f"LINE ON LINE    connector {fmt(s)} lies on one line with connector {fmt(o)}, "
+            f"{d:g}px apart — two flows read as one straight line through the gap; take one off that line "
+            f"(another shape, port or lane) or draw them as one trunk", [s, o], s=s, o=o, d=d)
     feet = footprints(icons, texts, segs, own_lines)
     # A line alone in its net (no other line's end on it, its ends on no other line) with an
     # end on nothing leads nowhere: a merge branch left short of its trunk, a fork stem off

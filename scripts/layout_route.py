@@ -51,7 +51,11 @@ Geometry: icon ends at cx ± (S/2 + 4), top at icon.y − 4, bottom at the last 
 + 8; group ends 4 off the border, at the other end's center when it faces the side, else
 the group's row / column center. Several lines on one node side split ±8 (left/right) /
 ±10 (top/bottom), 12 apart from three on; a straight line keeps the center and the others
-move ±12. A bend goes in the free stretch of its gutter (icons, labels, parallel borders
+move ±12; lines meeting one side of a group at one point are split the same way
+(_group_ports). A shape other than the chosen one onto a side other lines take gets a port
+of its own on either end of their row (_end_offs); one misread against a line already
+drawn (_conflicts) ranks with the detours, one with no port of its own left is unclean
+(_crowded). A bend goes in the free stretch of its gutter (icons, labels, parallel borders
 + trunk clearance avoided), preferring a last segment of arrow_target (48 / 20), else the
 middle of the free stretch nearest the target. Every candidate is tested with
 check_layout's own seg_hits_box against icons, labels and borders (LINE OVER ICON/TEXT,
@@ -1351,7 +1355,7 @@ def _out_and_back(ctx: _Ctx, x: _Edge, leg_x: bool, i: int, pa: Pt, pb: Pt, side
 def _candidates(ctx: _Ctx, x: _Edge, ports: Dict[Tuple[int, str], float]):
     """(shape, pa, pb, bend) in preference order: the chosen shape's bends, then the
     alternative shapes'. An alternative's end on a side another edge's chosen shape uses
-    takes a port of its own beside that edge's (_end_off)."""
+    takes a port of its own beside that edge's, on either end of their row (_end_offs)."""
     t = x.t
     out = []
     for k, shape in enumerate((t.shape,) + ALTERNATIVES.get(t.shape, ())):
@@ -1360,14 +1364,14 @@ def _candidates(ctx: _Ctx, x: _Edge, ports: Dict[Tuple[int, str], float]):
             ob = x.off_b if x.e.to_offset is not None else ports.get((x.e.n, "b"), 0.0)
         else:
             sa, sb = x.sides(shape)
-            oa = _end_off(ctx, x, "a", sa, ports)
-            ob = _end_off(ctx, x, "b", sb, ports)
-        pa, pb = x.ends(shape, oa, ob)
-        bends = _bends(ctx, x, shape, pa, pb)
-        if shape in (HVH, VHV) and not bends:
-            continue
-        for b in (bends or [None]):
-            out.append((shape, pa, pb, b))
+            oa, ob = _end_offs(ctx, x, "a", sa, ports), _end_offs(ctx, x, "b", sb, ports)
+        for a_off, b_off in itertools.product(oa if k else [oa], ob if k else [ob]):
+            pa, pb = x.ends(shape, a_off, b_off)
+            bends = _bends(ctx, x, shape, pa, pb)
+            if shape in (HVH, VHV) and not bends:
+                continue
+            for b in (bends or [None]):
+                out.append((shape, pa, pb, b))
     out += _detours(ctx, x, ports)
     return out
 
@@ -1411,9 +1415,17 @@ def _note_drawn(ctx: _Ctx, x: "_Edge", r: "_Route") -> None:
     on its lead's line is no port and is left out."""
     if x.t.shape == P or len(r.pts) < 2:
         return
-    planned = x.sides(x.t.shape)
     trunk = bool(x.e.trunk or x.e.fork)
-    for k, (end, g, kind, p) in enumerate((("a", x.A, x.e.a_kind, r.pts[0]), ("b", x.B, x.e.b_kind, r.pts[-1]))):
+    for end, g, side, off in _off_plan_ends(x, r.pts):
+        ctx.drawn_use.setdefault((g.id, side), []).append((x.e.n, end, off, x.e.line, trunk))
+
+
+def _off_plan_ends(x: "_Edge", pts: Sequence[Pt]):
+    """The ends of polyline pts that meet a node of x on a side x's chosen shape does not
+    use, as (end, node, side, port offset): a fallback's or a detour's ends (a trunk
+    follower's end on its lead's line is no port and is left out)."""
+    planned = x.sides(x.t.shape) if x.t.shape != P else (None, None)
+    for k, (end, g, kind, p) in enumerate((("a", x.A, x.e.a_kind, pts[0]), ("b", x.B, x.e.b_kind, pts[-1]))):
         if kind != "node":
             continue
         b = g.box
@@ -1428,44 +1440,90 @@ def _note_drawn(ctx: _Ctx, x: "_Edge", r: "_Route") -> None:
         off = p[0] - g.cx if side in VERT else p[1] - g.cy
         if _len(p, _port(g, side, 0.0, off)) > 0.5:
             continue                    # not on the node's port line (a follower's junction)
-        ctx.drawn_use.setdefault((g.id, side), []).append((x.e.n, end, off, x.e.line, trunk))
+        yield end, g, side, off
 
 
-def _end_off(ctx: _Ctx, x: "_Edge", end: str, side: str, ports: Dict[Tuple[int, str], float]) -> float:
-    """The port offset of x's `end` on `side` in a shape other than its chosen one: the
-    spec's from_offset / to_offset; on the chosen shape's side its assigned port; on a side
-    other edges use, PORT_PITCH past their outermost port toward the other end (so an arrow
-    into a node never lands on the port the next flow leaves from: alb → ec2.2's detour
-    into EC2's right side beside ec2.2 ..> cw); when neither end of the row of ports has
-    room on the icon, a spot PORT_PITCH clear of every taken port (the center, or one
-    pitch beside a taken one), else the spot on the side farthest from every taken port
-    (the fourth fallback onto a 48px side, after 0 and ±12: the icon's end toward the other
-    end, ±20) — never a taken one while the side has another; else the center."""
+def _crowded(ctx: _Ctx, x: "_Edge", pts: Sequence[Pt]) -> List[str]:
+    """An end of pts on a side other lines take (a fallback's, a detour's) less than
+    PORT_PITCH from one of their ports: no room there for a port of its own (the fourth
+    fallback onto a 48px side, 8px from the third's): parallel stems that close read as
+    one, so the route counts as unclean and, drawn as the best left, is warned about."""
+    out = []
+    for end, g, side, off in _off_plan_ends(x, pts):
+        near = [o for o in _side_taken(ctx, x, end, side) if abs(o - off) < K.PORT_PITCH - 0.5]
+        if near:
+            gap = min(abs(o - off) for o in near)
+            out.append(f"no room for a port of its own on {g.id} {side} ({M.fmt_num(gap)}px from another line's)")
+    return out
+
+
+def _conflicts(x: "_Edge", pts: Sequence[Pt], drawn) -> int:
+    """How many routes already drawn (drawn: [(data-flow, points, end ids)]) of other flows
+    polyline pts would be misread against: a piece of each on one line two port pitches
+    apart or less (read as one straight line through the gap: x-fork-b's tgw -> enib.1
+    out to the left, tgw -> seni.2 12px beside it out to the right; check_layout reports
+    the closer ones), or, for a route sharing an end with it, a crossing (a fan out of one
+    side whose lines swap over: read as a junction)."""
+    flow, mine = _flow(x.e), {x.e.a, x.e.b}
+    segs = [{"p": p, "q": q} for p, q in zip(pts, pts[1:])]
+    n = 0
+    for f, dpts, ends in drawn:
+        if f == flow:
+            continue
+        other = [{"p": p, "q": q} for p, q in zip(dpts, dpts[1:])]
+        hit = any((d := CL.in_line_gap(s, o)) is not None and d <= 2 * K.PORT_PITCH + 0.5 for s in segs for o in other)
+        if not hit and mine & set(ends):
+            hit = _crossings([pts, dpts]) > 0
+        n += hit
+    return n
+
+
+def _end_offs(ctx: _Ctx, x: "_Edge", end: str, side: str, ports: Dict[Tuple[int, str], float]) -> List[float]:
+    """The port offsets x's `end` may take on `side` in a shape other than its chosen one,
+    best first: the spec's from_offset / to_offset; on the chosen shape's side its assigned
+    port; on a side other edges use, PORT_PITCH past their outermost port toward the other
+    end, then PORT_PITCH past the innermost one on the far side (so an arrow into a node
+    never lands on the port the next flow leaves from: alb → ec2.2's detour into EC2's
+    right side beside ec2.2 ..> cw; and draw() can take the one whose leg crosses no line
+    already drawn from there: x-fork-b's tgw -> enib.2 outside enib.1's turn); when
+    neither end of the row of ports has room on the icon, a spot PORT_PITCH clear of every
+    taken port (the center, or one pitch beside a taken one), else the spot on the side
+    farthest from every taken port (the fourth fallback onto a 48px side, after 0 and ±12:
+    the icon's end toward the other end, ±20, which draw() counts as no room: _crowded) —
+    never a taken one while the side has another; else the center."""
     e = x.e
     fixed = e.from_offset if end == "a" else e.to_offset
     if fixed is not None:
-        return fixed
+        return [fixed]
     if x.t.shape != P and side == x.sides(x.t.shape)[0 if end == "a" else 1]:
-        return ports.get((e.n, end), 0.0)
+        return [ports.get((e.n, end), 0.0)]
     others = _side_taken(ctx, x, end, side)
     if not others:
-        return 0.0
+        return [0.0]
     g, other = (x.A, x.B) if end == "a" else (x.B, x.A)
     center, toward = (g.cy, other.cy) if side in HORIZ else (g.cx, other.cx)
     half = (g.box.y1 - g.box.y0 if side in HORIZ else g.box.x1 - g.box.x0) / 2 - K.END_GAP
     first = -1 if toward <= center else 1
+    out = []
     for d in (first, -first):
         v = (min(others) - K.PORT_PITCH) if d < 0 else (max(others) + K.PORT_PITCH)
         if abs(v) <= half:
-            return v
+            out.append(v)
+    if out:
+        return out
     spots = [0.0] + [o + k * K.PORT_PITCH for o in others for k in (-1, 1)]
     free = [v for v in spots if abs(v) <= half and all(abs(v - o) >= K.PORT_PITCH - 0.5 for o in others)]
     if free:
-        return min(free, key=lambda v: (abs(v), -first * v))
+        return [min(free, key=lambda v: (abs(v), -first * v))]
     if half < 0:
-        return 0.0                      # an icon too small for more than its center
+        return [0.0]                    # an icon too small for more than its center
     grid = sorted({k / 2 for k in range(-int(2 * half), int(2 * half) + 1)} | {-half, half})
-    return max(grid, key=lambda v: (min(abs(v - o) for o in others), -abs(v), first * v))
+    return [max(grid, key=lambda v: (min(abs(v - o) for o in others), -abs(v), first * v))]
+
+
+def _end_off(ctx: _Ctx, x: "_Edge", end: str, side: str, ports: Dict[Tuple[int, str], float]) -> float:
+    """The best of _end_offs."""
+    return _end_offs(ctx, x, end, side, ports)[0]
 
 
 def _detours(ctx: _Ctx, x: _Edge, ports: Optional[Dict[Tuple[int, str], float]] = None):
@@ -2049,7 +2107,8 @@ def _where(e: Edge) -> str:
 # draw(): ports and bend groups
 
 def _assign_ports(ctx: _Ctx, xs: Dict[int, _Edge]) -> Dict[Tuple[int, str], float]:
-    """Split several lines on one node side (DESIGN 4.5 ports)."""
+    """Split several lines on one node side (DESIGN 4.5 ports), and those meeting one side
+    of a group at one point (_group_ports)."""
     sides: Dict[Tuple[str, str], List[Tuple[float, int, str, bool, List[Tuple[int, str]]]]] = {}
     # the instances of one `trunk` line leaving one node side (a fork) or entering one (a
     # merge) share a port, whatever their shape: one stem that forks, not parallel lines
@@ -2113,6 +2172,73 @@ def _assign_ports(ctx: _Ctx, xs: Dict[int, _Edge]) -> Dict[Tuple[int, str], floa
         for it, o in zip(items, offs):
             for key in it[4]:
                 out[key] = o
+    out.update(_group_ports(ctx, xs, ends, count))
+    return out
+
+
+def _group_ports(ctx: _Ctx, xs: Dict[int, _Edge], ends: Dict[Tuple[int, str], set],
+                 count: Dict[int, int]) -> Dict[Tuple[int, str], float]:
+    """Split the lines that meet one side of a group at one point (_port: the other end's
+    coordinate where it faces the side, else the group's row / column center) as a node's
+    side is split: two ±PORT_SIDE / ±PORT_TOPBOT apart, more PORT_PITCH apart, in the order
+    of their other ends; a straight line facing the side keeps its spot. Two flows into one
+    point would share its last run and one arrowhead (a -> vpc and b -> vpc from above and
+    below, into the VPC's row center). The instances of one trunk line share their point,
+    and an end with from_offset / to_offset keeps it."""
+    sides: Dict[Tuple[str, str], List[Tuple[float, float, bool, List[Tuple[int, str]]]]] = {}
+    first: Dict[Tuple[int, str], List[Tuple[int, str]]] = {}
+    for n, x in xs.items():
+        t, e = x.t, x.e
+        if t.shape == P:
+            continue
+        sa, sb = x.sides(t.shape)
+        for end, eid, kind, side, g, other, fixed in (("a", e.a, e.a_kind, sa, x.A, x.B, e.from_offset),
+                                                      ("b", e.b, e.b_kind, sb, x.B, x.A, e.to_offset)):
+            if kind != "group" or side is None or fixed is not None:
+                continue
+            shared = (t.trunk == "fork" and end == "a") or (t.trunk == "merge" and end == "b") or (
+                (e.trunk or e.fork) and count.get(e.line, 0) > 1 and len(ends[(e.line, end)]) == 1)
+            if shared and (e.line, end) in first:
+                first[(e.line, end)].append((n, end))
+                continue
+            toward = other.cy if side in HORIZ else other.cx
+            p = _port(g, side, toward)
+            coord = p[1] if side in HORIZ else p[0]
+            facing = abs(coord - toward) < 0.5 and t.shape in (H, V)
+            members = [(n, end)]
+            if shared:
+                first[(e.line, end)] = members
+            sides.setdefault((eid, side), []).append((coord, toward, facing, members))
+    out: Dict[Tuple[int, str], float] = {}
+    for (gid, side), items in sides.items():
+        items.sort(key=lambda it: (it[0], it[1]))
+        clusters: List[List[Tuple[float, float, bool, List[Tuple[int, str]]]]] = []
+        for it in items:
+            if clusters and it[0] - clusters[-1][-1][0] < K.PORT_PITCH - 0.5:
+                clusters[-1].append(it)
+            else:
+                clusters.append([it])
+        for c in clusters:
+            if len(c) < 2:
+                continue
+            c.sort(key=lambda it: it[1])
+            base = next((it[0] for it in c if it[2]), None)
+            if base is not None:            # a straight line keeps its spot, the rest fan out round it
+                below = [it for it in c if not it[2] and it[1] < base]
+                above = [it for it in c if not it[2] and it[1] >= base]
+                want = {id(it): base for it in c if it[2]}
+                for k, it in enumerate(reversed(below)):
+                    want[id(it)] = base - K.PORT_PITCH * (k + 1)
+                for k, it in enumerate(above):
+                    want[id(it)] = base + K.PORT_PITCH * (k + 1)
+            else:
+                mid = sum(it[0] for it in c) / len(c)
+                d = (K.PORT_SIDE if side in HORIZ else K.PORT_TOPBOT) if len(c) == 2 else None
+                want = {id(it): mid + ((-d if k == 0 else d) if d is not None else (k - (len(c) - 1) / 2) * K.PORT_PITCH)
+                        for k, it in enumerate(c)}
+            for it in c:
+                for key in it[3]:
+                    out[key] = want[id(it)] - it[0]
     return out
 
 
@@ -2227,12 +2353,20 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
     ctx.side_use = _side_use(xs, ports)
     routes: Dict[int, _Route] = {}
     done_lines: List[Tuple[Pt, Pt]] = []
+    drawn: List[Tuple[str, List[Pt], Tuple[str, str]]] = []     # (data-flow, points, end ids)
+
+    def commit(x: _Edge, r: _Route) -> None:
+        routes[x.e.n] = r
+        done_lines.extend(zip(r.pts, r.pts[1:]))
+        drawn.append((_flow(x.e), r.pts, (x.e.a, x.e.b)))
+        _note_drawn(ctx, x, r)
 
     def build(x: _Edge, cand) -> _Route:
         shape, pa, pb, bend = cand
         pts, stem = _drawn(x, shape, pa, pb, bend, None)
         hs, he = x.hs and len(pts) >= 2, x.he and len(pts) >= 2
-        r = _Route(x.e.n, shape, pts, hs, he, _line_problems(ctx, pts, hs, he), stem, bend)
+        probs = _line_problems(ctx, pts, hs, he) + (_crowded(ctx, x, pts) if shape != x.t.shape else [])
+        r = _Route(x.e.n, shape, pts, hs, he, probs, stem, bend)
         if r.probs:
             r.quality = 3
         elif x.e.step is None and not (x.e.label or x.e.verb):
@@ -2260,8 +2394,17 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
             return build(x, (t.shape, pa, pb, lead.bend))
         # a clean line in the chosen shape beats any other shape (that would change the
         # gutters plan() reserved); a detour into (or out of) a side other lines use comes
-        # after every other clean shape; within a shape, the better label / badge spot wins
-        ranked = [((r.quality == 3, r.shape != t.shape, _u_taken(ctx, x, c[0], c[1], c[2]), r.quality), i, r)
+        # after every other clean shape, then a detour and a shape misread against a line
+        # already drawn (on one line with it, or crossing a line out of the same node:
+        # _conflicts) after the rest — the two last resorts in candidate order, so that a
+        # misread VH (which check_layout reports, and the feedback re-solves) still comes
+        # before a detour, fewer misreadings first; within a shape, the better label /
+        # badge spot wins
+        def last(r: _Route) -> int:
+            if r.shape == t.shape:
+                return 0
+            return r.shape.startswith("U") + _conflicts(x, r.pts, drawn)
+        ranked = [((r.quality == 3, r.shape != t.shape, _u_taken(ctx, x, c[0], c[1], c[2]), last(r), r.quality), i, r)
                   for i, (c, r) in enumerate((c, build(x, c)) for c in _candidates(ctx, x, ports))]
         if not ranked:
             pa, pb = x.ends(H, 0, 0)
@@ -2345,16 +2488,11 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         if len(todo) >= 2:
             chosen = shared(todo)
             for n, r in (chosen or {}).items():
-                routes[n] = r
-                done_lines.extend(zip(r.pts, r.pts[1:]))
-                _note_drawn(ctx, xs[n], r)
+                commit(xs[n], r)
         for x in members:
             if x.e.n in routes:
                 continue
-            r = points_route(x) if x.t.shape == P else individual(x, skip.get(x.e.n, 0))
-            routes[x.e.n] = r
-            done_lines.extend(zip(r.pts, r.pts[1:]))
-            _note_drawn(ctx, x, r)
+            commit(x, points_route(x) if x.t.shape == P else individual(x, skip.get(x.e.n, 0)))
     def refused(x: _Edge, r: _Route) -> str:
         """Why the spec's own shape (`shape`, or the one from_side / to_side imply) was not
         drawn, and the change that would let it."""

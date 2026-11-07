@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import check_layout as CL  # noqa: E402
 import layout  # noqa: E402
 import layout_const as K  # noqa: E402
+import layout_route as R  # noqa: E402
 import layout_model as M  # noqa: E402
 import layout_solve  # noqa: E402
 import layout_spec  # noqa: E402
@@ -1140,7 +1141,8 @@ class FallbackPorts(unittest.TestCase):
         (a, fa), (c, fc) = got["enib.1"], got["seni.2"]
         self.assertNotEqual(fa, fc)                     # two spec lines, two data-flow values
         self.assertNotEqual(a[0], c[0], got)            # not one port, and (below) no shared stem
-        self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg)) if i.kind == "LINE ON LINE"], [])
+        self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg))
+                          if i.kind == "LINE ON LINE" and "runs on top of" in i.msg], [])
 
     def test_checker_flags_the_shared_stem(self):
         """Without the drawn-port bookkeeping the two share the stem: LINE ON LINE says so
@@ -1151,6 +1153,124 @@ class FallbackPorts(unittest.TestCase):
         self.assertEqual(got["enib.1"][0], got["seni.2"][0], got)
         iss = [i for i in CL.run_checks(ET.fromstring(b.svg)) if i.kind == "LINE ON LINE"]
         self.assertEqual(len(iss), 1, [i.msg for i in iss])
+
+
+def main_on(d):
+    """layout.main on spec dict d: (exit code, stdout, the draft's root)."""
+    buf = io.StringIO()
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "u.layout.json"
+        src.write_text(json.dumps(d), encoding="utf-8")
+        out = Path(tmp) / "u.draft.svg"
+        with redirect_stdout(buf):
+            rc = layout.main([str(src), "-o", str(out)])
+        return rc, buf.getvalue(), ET.fromstring(out.read_bytes())
+
+
+def connectors(root):
+    """{id(element): segments} of a draft's connectors, as check_layout reads them."""
+    paths = {}
+    for sg in CL.collect(root)[1]:
+        if sg["kind"] == "connector":
+            paths.setdefault(id(sg["el"]), []).append(sg)
+    return paths
+
+
+def tgw_lines(spec, root):
+    """{target: points} of the lines out of / into the TGW."""
+    out = {}
+    for g in root.iter(NS + "g"):
+        for e in spec.edges:
+            if g.get("id") == f"edge:{e.n}" and "tgw" in (e.a, e.b):
+                pl = [c for c in g if c.tag in (NS + "polyline", NS + "line")][0]
+                if pl.tag == NS + "line":
+                    pts = [(float(pl.get("x1")), float(pl.get("y1"))), (float(pl.get("x2")), float(pl.get("y2")))]
+                else:
+                    pts = [tuple(map(float, p.split(","))) for p in pl.get("points").split()]
+                out[e.b if e.a == "tgw" else e.a] = pts
+    return out
+
+
+class InLineFallbacks(unittest.TestCase):
+    """Fallbacks out of one crowded node side neither cross each other nor lie on one line
+    (review rr-port: x-fork-b without `trunk: true` on tgw -> enib.*: enib.2's vertical
+    crossed enib.1's leg 91px under the TGW, a "+", and enib.1's and seni.2's legs ran
+    along one row 12px apart, one straight line through the TGW's ports, Layout OK; the
+    ce-tgw family drew seni.2's VH beside the trunk's leg on one row)."""
+
+    def xnt(self):
+        return FallbackPorts().spec()
+
+    def ce_tgw(self):
+        d = spec_dict("centralized-egress")
+        for n in d["nodes"]:
+            if n["id"] == "tgw":
+                n["label"] = "TGW"
+        return d
+
+    def test_fallback_takes_the_port_outside_the_others_turn(self):
+        """Round 0: tgw -> enib.2 falls back beside enib.1's VH on the side that keeps its
+        leg off enib.1's (outside its turn), not toward its other end across it."""
+        spec, b = built(self.xnt())
+        got = tgw_lines(spec, ET.fromstring(b.svg))
+        e1, e2 = got["enib.1"], got["enib.2"]
+        self.assertEqual(R._crossings([e1, e2]), 0, got)
+
+    def test_main_draws_each_in_its_own_shape(self):
+        for name, d in (("xnt", self.xnt()), ("ce-tgw", self.ce_tgw())):
+            with self.subTest(name):
+                rc, text, root = main_on(d)
+                self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+                paths = connectors(root)
+                self.assertEqual(CL.lines_in_line(paths), [])
+                self.assertEqual(CL.lines_on_lines(paths), [])
+                spec = layout_spec.load(copy.deepcopy(d))
+                got = tgw_lines(spec, root)
+                tgw = next(g for g in root.iter(NS + "g") if g.get("id") == "node:tgw")
+                icon = next(c for c in tgw.iter() if c.tag in (NS + "image", NS + "svg", NS + "g") and c.get("x"))
+                right = float(icon.get("x")) + float(icon.get("width"))
+                self.assertGreater(got["seni.2"][0][0], right, got)     # out of the TGW's right side
+                fans = [got[k] for k in got if k.startswith("enib.")]
+                self.assertEqual(R._crossings(fans), 0, got)
+
+
+class GroupPorts(unittest.TestCase):
+    """Two lines into one side of a group that both land on its row center get a point
+    each, as on a node's side (review rr-port gm4: plain a -> vpc and b -> vpc, from above
+    and below, shared the last 48px and one arrowhead at (160,190): LINE ON LINE, which the
+    router could not answer)."""
+
+    def spec(self, off=None):
+        d = {"name": "gm4", "cols": ["c1", "c2", "c3"], "rows": ["r1", "r2", "r3"],
+             "groups": [{"id": "cloud", "type": "cloud"}, {"id": "vpc", "type": "vpc", "label": "VPC", "in": "cloud"}],
+             "nodes": [{"id": "a", "icon": "service/Amazon-EC2", "label": "A", "in": "cloud", "at": ["c1", "r1"]},
+                       {"id": "b", "icon": "service/Amazon-EC2", "label": "B", "in": "cloud", "at": ["c1", "r3"]},
+                       {"id": "m", "icon": "service/Amazon-Simple-Storage-Service", "label": "M", "in": "cloud",
+                        "at": ["c2", "r1"]},
+                       {"id": "n", "icon": "service/Amazon-Simple-Storage-Service", "label": "N", "in": "cloud",
+                        "at": ["c2", "r3"]},
+                       {"id": "z", "icon": "service/Amazon-EC2", "label": "Z", "in": "vpc", "at": ["c3", "r2"]}],
+             "edges": [{"e": "a -> vpc"}, {"e": "b -> vpc"}]}
+        if off is not None:
+            d["edges"][1]["to_offset"] = off
+        return d
+
+    def ends(self, root):
+        return [s for s in sorted(connectors(root).values(), key=lambda r: r[0]["p"][1])]
+
+    def test_two_arrowheads_apart(self):
+        rc, text, root = main_on(self.spec())
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        a, b = self.ends(root)
+        (xa, ya), (xb, yb) = a[-1]["q"], b[-1]["q"]
+        self.assertEqual(xa, xb)
+        self.assertEqual(yb - ya, 2 * K.PORT_SIDE)          # ±8 round the row center, a (above) on top
+
+    def test_an_offset_keeps_its_point(self):
+        rc, text, root = main_on(self.spec(12))
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        a, b = self.ends(root)
+        self.assertEqual(b[-1]["q"][1] - a[-1]["q"][1], 12)
 
 
 class LabelOnLine(unittest.TestCase):

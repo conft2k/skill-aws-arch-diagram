@@ -255,17 +255,26 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   12 per extra lane. A line drawn in another shape than its rule's (a detour `UHVH` /
   `UVHV` back into a node, or an alternative) never lands on the port another line uses on
   that side: it takes its own, 12px past theirs toward its other end (alb → ec2.2 coming
-  back into EC2's right side, where `ec2.2 ..> cw` leaves), and a detour onto such a side
-  is drawn only when no other shape is clean; nor does it land on a port another fallback
-  already drawn there took (two lines that both fall back to a VH out of one node's bottom
-  leave 12px apart, not as one stem). Two different lines on one run are a
-  `LINE ON LINE` problem — an arrow into a node's port and the next flow out of that same
-  port included, and two edges out of (or into) one port that share its stem; write
-  `trunk: true` when they are meant to merge. The router splits the ports on a node's side
-  only: two lines into one side of a group can land on one point, so give one a
-  `to_offset` (`from_offset`) of its own — or, for the instances of one `.*` line (an
-  offset is the same for all of them), write `trunk: true` when they are meant to merge,
-  else one spec line per instance with its own offset.
+  back into EC2's right side, where `ec2.2 ..> cw` leaves) or past them on the far side,
+  whichever keeps its leg off the lines already drawn from there, and a detour onto such
+  a side is drawn only when no other shape is clean; nor does it land on a port another
+  fallback already drawn there took (two lines that both fall back to a VH out of one
+  node's bottom leave 12px apart, not as one stem). A fallback that would cross a line out
+  of the same node, or lie on one line with another flow's piece, comes after the other
+  clean shapes, level with a detour; one with no port of its own left on the side (a
+  fourth line onto a 48px side) is drawn only as the last resort and warned about
+  (`no room for a port of its own`). Two different lines on one run are a `LINE ON LINE`
+  problem — an arrow into a node's port and the next flow out of that same port included,
+  and two edges out of (or into) one port that share its stem — and so are two spec lines
+  with a piece each on one line less than 16px apart (24px with a third line crossing the
+  gap): read as one straight line, the two flows join through the gap (one out of a
+  port to the left, the other 12px beside it to the right); layout.py's feedback widens
+  the gap along that line where they part, so the fallback can take its planned shape.
+  For the instances of one `.*` line on one run, write `trunk: true` when they are meant
+  to merge. Lines that meet one side of a group at one point (a group end takes the other
+  end's coordinate where it faces the side, else the group's row / column center) are
+  split as on a node's side, two ±8 (±10 on top / bottom) apart, more 12px apart; a
+  `to_offset` (`from_offset`) sets an end's own.
 - `label`: protocol and port, 12px squid ink (`"HTTPS :443"`). `verb`: a verb or
   attachment type, 12px grey (`DNS 조회`, `VPC attachment`). The loader rejects either one
   when it names a service with an official icon (SERVICE AS TEXT) — make it a node.

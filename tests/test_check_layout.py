@@ -377,6 +377,25 @@ class LineOnLine(unittest.TestCase):
                 iss = kinds(root, "LINE ON LINE")
                 self.assertEqual([i.ctx["d"] for i in iss], [76] * n, [i.msg for i in iss])
 
+    def test_two_flows_on_one_line_through_a_gap(self):
+        """Review rr-port xnt: tgw -> enib.1 turns left and tgw -> seni.2 right along one row
+        out of TGW bottom ports 12px apart: one straight line through the gap, flagged for
+        two spec lines; the 16 / 20px two lines into one side are split by read as two
+        unless a third line crosses the gap; the instances of one `.*` line (one fanning
+        out), lines without data-flow and lines touching (a join) are not reported."""
+        leg = '<polyline points="{pts}" fill="none" stroke="#232F3E" stroke-width="1.5"{flow}/>'
+        cross = POLY.format(pts="320,60 320,200")
+        for a, b, fa, fb, extra, n in ((304, 316, "3.0", "5.0", (), 1), (310, 330, "3.0", "5.0", (), 0),
+                                       (310, 330, "3.0", "5.0", (cross,), 1), (304, 316, "3.0", "3.1", (), 0),
+                                       (304, 316, None, "5.0", (), 0), (310, 310, "3.0", "5.0", (), 0)):
+            with self.subTest(gap=b - a, flows=(fa, fb), cross=bool(extra)):
+                root = svg(*CLOUD, ICON.format(x=286, y=40),
+                           leg.format(pts=f"{a},104 {a},150 150,150", flow=f' data-flow="{fa}"' if fa else ""),
+                           leg.format(pts=f"{b},104 {b},150 450,150", flow=f' data-flow="{fb}"' if fb else ""),
+                           *extra)
+                iss = [i for i in kinds(root, "LINE ON LINE") if "lies on one line" in i.msg]
+                self.assertEqual([i.ctx["d"] for i in iss], [b - a] * n, [i.msg for i in iss])
+
     def test_arrow_in_where_the_next_flow_leaves(self):
         """Y → T arrives at T's port and T → X leaves from it, sharing (320,144)→(376,144):
         two flows (it reads as Y forking to T and X), flagged solid or dashed, although an

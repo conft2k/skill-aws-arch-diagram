@@ -336,9 +336,18 @@ def where_to_widen(p: Problem) -> Optional[Tuple[str, float]]:
         s = c["s"]
         return ("y" if _vertical(s) else "x"), _centre(s)[1 if _vertical(s) else 0]
     if k == "LINE ON LINE":
+        s = c["s"]
+        if CL.collinear_run(s, c["o"]) <= CL.ON_LINE_RUN:
+            # two flows on one line with a gap between them (lines_in_line): the gap along
+            # the line grows where they part, so the one drawn in a fallback out of the
+            # port beside the other's has room for its own shape (ce-tgw: tgw -> seni.2's
+            # HVH out of the TGW's right side, its bend before Firewall RT)
+            ax = "y" if _vertical(s) else "x"
+            i = 0 if ax == "x" else 1
+            ends = sorted(v for seg in (s, c["o"]) for v in (seg["p"][i], seg["q"][i]))
+            return ax, (ends[1] + ends[2]) / 2
         # two flows on one run: the gap the run lies in grows, so the router has room for a
         # lane each (layout_route lane_counts / _lanes)
-        s = c["s"]
         ax = "x" if _vertical(s) else "y"
         return ax, _centre(s)[0 if ax == "x" else 1]
     if k == "LINE HUGS BORDER":
@@ -461,6 +470,13 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
             for axis, i in (("x", 0), ("y", 1)):
                 if abs(pa[i] - pb[i]) > 1:      # two nodes of one flow column: their pitch
                     widen(axis, (pa[i] + pb[i]) / 2, "drew another shape", M.edge_eid(e.n), ends)
+                    # and every other gap between the two ends' tracks: the obstacle that
+                    # kept the planned shape out may sit in any of them (ce-tgw: tgw ->
+                    # seni.2's HVH needs its bend before Firewall RT, not past it)
+                    lo, hi = sorted((pa[i], pb[i]))
+                    tr = sorted(v for v in (b.geom.cols if axis == "x" else b.geom.rows).values() if lo - 0.5 <= v <= hi + 0.5)
+                    for u, v in zip(tr, tr[1:]):
+                        widen(axis, (u + v) / 2, "drew another shape", M.edge_eid(e.n), ends)
     return changed
 
 
@@ -556,19 +572,24 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
     if p.iss.kind in DETOURS and detour_tip(spec, geom, p):
         tips.append(detour_tip(spec, geom, p))
     stacked = {nid: col for (_, col), ids in spec.flow_stacks().items() for nid in ids}
+    lines = {spec.edges[e[0]].line for e in (edge_of(o) for o in p.owners)
+             if e and e[1] == "" and e[0] < len(spec.edges)}
+    n_edges = sum(1 for o in p.owners if (e := edge_of(o)) and e[1] == "")
+    one_line = n_edges >= 2 and len(lines) == 1        # the instances of one `.*` line
     for o in p.owners:
         kind, ref, part = M.split_eid(o)
         if kind == "edge" and part in ("label", "badge"):
             tips.append(f"{spec_item(spec, o).split(' ')[0]}: "
                         + ("step_at: start|end|gap|[x, y]" if part == "badge" else "label_at: above|below|left|right"))
         elif kind == "edge":
-            # two flows out of (into) one port: an offset gives one a port of its own (a
-            # group end, whose ports the router does not split); one offset is shared by
-            # all the instances of a `.*` line, which merge with trunk: true or take one
-            # spec line each with its own offset
-            offs = (" / from_offset / to_offset (instances of one line: trunk: true when they"
-                    " merge, else one spec line each with its own offset)") \
-                if p.iss.kind == "LINE ON LINE" else ""
+            # two flows out of (into) one port: an offset gives one a port of its own; one
+            # offset is shared by all the instances of a `.*` line, which merge with
+            # trunk: true or take one spec line each with its own offset
+            offs = ""
+            if p.iss.kind == "LINE ON LINE":
+                offs = " / from_offset / to_offset" + (
+                    " (instances of one line: trunk: true when they merge, else one spec line each with its"
+                    " own offset)" if one_line else "")
             tips.append(f"{spec_item(spec, o).split(' ')[0]}: shape / bend_x / bend_y / from_side / to_side{offs}")
             if p.iss.kind == "LOOSE END" and ref.isdigit() and int(ref) < len(spec.edges) \
                     and spec.edges[int(ref)].trunk:

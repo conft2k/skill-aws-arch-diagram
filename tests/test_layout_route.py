@@ -931,6 +931,81 @@ class DetourPorts(unittest.TestCase):
         xs[0].B.box = M.Box(g.cx - 2, g.cy - 2, g.cx + 2, g.cy + 2)        # half < 0: the center only
         self.assertEqual(R._end_off(ctx, xs[0], "b", "top", ports), 0.0)
 
+    def test_both_ends_of_the_row_are_offered(self):
+        """A side with one taken port offers a pitch past it toward the other end first, then
+        on the far side (draw() takes the one whose leg crosses no line drawn there)."""
+        ctx, xs, ports = self.setup()
+        ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False)]
+        self.assertEqual(R._end_offs(ctx, xs[0], "b", "top", ports), [-12.0, 12.0])     # x is left of y
+        ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False), (6, "a", -12.0, 6, False)]
+        self.assertEqual(R._end_offs(ctx, xs[0], "b", "top", ports), [12.0])            # -24 is off the icon
+
+    def test_no_room_for_a_port_of_its_own(self):
+        """An end on a side another line takes, less than a pitch from its port: unclean
+        (no room), at a pitch or more: clean."""
+        ctx, xs, ports = self.setup()
+        x = xs[0]
+        ctx.drawn_use[("y", "top")] = [(5, "a", -12.0, 5, False)]
+        self.assertEqual(R._crowded(ctx, x, [(128, 200), (480, 200), (480, 172)]),
+                         ["no room for a port of its own on y top (8px from another line's)"])
+        self.assertEqual(R._crowded(ctx, x, [(128, 200), (500, 200), (500, 172)]), [])
+
+    def test_conflicts(self):
+        """Misread against a drawn line: a piece on one line with another flow's two port
+        pitches apart or less, or a crossing with a line sharing an end; the same flow, a
+        line farther along, or a crossing with an unrelated line are not."""
+        ctx, xs, ports = self.setup()
+        x = xs[0]                                       # x -> y, flow "0.0"
+        pts = [(500, 228), (500, 260), (300, 260)]
+        self.assertEqual(R._conflicts(x, pts, [("1.0", [(512, 228), (512, 260), (700, 260)], ("y", "w"))]), 1)
+        self.assertEqual(R._conflicts(x, pts, [("1.0", [(524, 228), (524, 260), (700, 260)], ("y", "w"))]), 1)
+        self.assertEqual(R._conflicts(x, pts, [("1.0", [(530, 228), (530, 260), (700, 260)], ("y", "w"))]), 0)
+        self.assertEqual(R._conflicts(x, pts, [("0.0", [(512, 228), (512, 260), (700, 260)], ("y", "w"))]), 0)
+        across = [(400, 240), (400, 300)]
+        self.assertEqual(R._conflicts(x, pts, [("1.0", across, ("y", "w"))]), 1)
+        self.assertEqual(R._conflicts(x, pts, [("1.0", across, ("z", "w"))]), 0)
+
+
+class GroupPorts(unittest.TestCase):
+    """Lines meeting one side of a group at one point get a point each (review rr-port gm4:
+    a -> vpc and b -> vpc, from above and below, both into the VPC's row center)."""
+
+    def setup(self, offset=None, third=False):
+        spec = M.Spec("t", cols=[M.Track("a", "col", 0), M.Track("v", "col", 1)],
+                      rows=[M.Track("r1", "row", 0), M.Track("r2", "row", 1), M.Track("r3", "row", 2)])
+        spec.groups = {"vpc": M.Group("vpc", "vpc", label="VPC", cols=("v", "v"), rows=("r2", "r2"))}
+        spec.nodes = {i: M.Node(i, "service/Amazon-EC2", i.upper(), col="a", row=r)
+                      for i, r in (("p", "r1"), ("q", "r3"), ("s", "r2"))[:3 if third else 2]}
+        spec.edges = [M.Edge(0, "p", "vpc", "->", line=0, b_kind="group"),
+                      M.Edge(1, "q", "vpc", "->", line=1, b_kind="group", to_offset=offset)]
+        if third:
+            spec.edges.append(M.Edge(2, "s", "vpc", "->", line=2, b_kind="group"))
+        cols, rows = {"a": 100, "v": 400}, {"r1": 100, "r2": 200, "r3": 300}
+        nodes = {}
+        for nid, n in spec.nodes.items():
+            cx, cy = cols[n.col], rows[n.row]
+            icon = M.Box(cx - 24, cy - 24, cx + 24, cy + 24)
+            nodes[nid] = M.NodeGeom(nid, cx, cy, icon, [M.TextLine(n.label, cx, icon.y1 + 18, 14, K.INK, "", "middle")])
+        geom = M.Geometry("document", 48, 600, 400, cols, rows, nodes=nodes,
+                          groups={"vpc": M.GroupGeom("vpc", M.Box(340, 150, 460, 250))})
+        ctx = R._Ctx(spec, geom)
+        topo = R._topology(spec)
+        xs = {e.n: R._Edge(ctx, e, topo[e.n]) for e in spec.edges}
+        return ctx, xs
+
+    def test_two_into_one_point_split(self):
+        ctx, xs = self.setup()
+        ports = R._assign_ports(ctx, xs)
+        self.assertEqual((ports[(0, "b")], ports[(1, "b")]), (-K.PORT_SIDE, K.PORT_SIDE))   # p above: on top
+
+    def test_offset_keeps_its_point_and_a_straight_line_its_spot(self):
+        ctx, xs = self.setup(offset=12)
+        self.assertNotIn((0, "b"), R._assign_ports(ctx, xs))       # alone at the center now
+        ctx, xs = self.setup(third=True)                            # s faces the side: straight
+        ports = R._assign_ports(ctx, xs)
+        self.assertEqual((ports[(0, "b")], ports[(1, "b")], ports[(2, "b")]),
+                         (-K.PORT_PITCH, K.PORT_PITCH, 0.0))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
