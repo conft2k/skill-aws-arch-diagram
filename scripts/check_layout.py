@@ -306,6 +306,11 @@ ICON_SETS = ("service", "resource")
 # each sub line this far below the line before it.
 NODE_LABEL_DY = 18
 SUB_PITCH = 16
+# A node's own label lines (label_stack): the centered lines with a baseline within
+# STACK_REACH of its icon's bottom (the label and its first sub line, with 10px to spare
+# for hand drafts), then each next centered line at most STACK_STEP under the one before.
+STACK_REACH = NODE_LABEL_DY + SUB_PITCH + 10
+STACK_STEP = SUB_PITCH + 4
 # A label this close to an icon's center line (but not within 3px) is that icon's label, off-center.
 OFF_CENTER = 24
 
@@ -324,15 +329,6 @@ def official_icon(phrase):
 def services_in_label(s):
     parts = re.split(r"\s+·\s+|[(),→⇄↔]|\s+-\s+", s)
     return [(p.strip(), ref) for p in parts if p.strip() for ref in [official_icon(p.strip())] if ref]
-
-
-def is_node_label(t, icons):
-    """A label (or its sub-caption) centered under an icon names that node, not a connector."""
-    for i in icons:
-        x0, y0, x1, y1 = i["box"]
-        if not i["badge"] and abs(t["cx"] - (x0 + x1) / 2) <= 3 and y1 < t["y"] <= y1 + 44:
-            return True
-    return False
 
 
 def expand(b, d):
@@ -398,15 +394,15 @@ def beyond(run, box, strict):
     return best[:3] if best else None
 
 
-def label_stack(box, texts):
-    """The labels centered under an icon box: the lines with a baseline within 44px of its
-    bottom (a label and its first sub line), then each next centered line while it sits a
-    SUB_PITCH (+ 4) under the one before (a label with two or more sub lines)."""
+def label_stack(box, texts, tol=3):
+    """The labels centered (within tol px) under an icon box: the lines with a baseline within
+    STACK_REACH of its bottom (a label and its first sub line), then each next centered line
+    while it sits at most STACK_STEP under the one before (a label with two or more sub lines)."""
     x0, _, x1, y1 = box
-    under = sorted((t for t in texts if abs(t["cx"] - (x0 + x1) / 2) <= 3 and t["y"] > y1), key=lambda t: t["y"])
+    under = sorted((t for t in texts if abs(t["cx"] - (x0 + x1) / 2) <= tol and t["y"] > y1), key=lambda t: t["y"])
     out = []
     for t in under:
-        if t["y"] <= y1 + 44 or (out and t["y"] - out[-1]["y"] <= SUB_PITCH + 4):
+        if t["y"] <= y1 + STACK_REACH or (out and t["y"] - out[-1]["y"] <= STACK_STEP):
             out.append(t)
         else:
             break
@@ -726,6 +722,10 @@ def ref_id(r):
 def run_checks(root):
     texts, segs, masks, icons, (cw, ch) = collect(root)
     issues = []
+    # A node's label and its sub lines (label_stack) name that node: they aren't connector
+    # labels, and they may sit close to their own icon.
+    stacks = {id(i): {id(t) for t in label_stack(i["box"], texts)} for i in icons if not i["badge"]}
+    node_labels = set().union(*stacks.values())
 
     def add(kind, msg, refs, **ctx):
         issues.append(Issue(kind, msg, refs, ctx))
@@ -861,7 +861,7 @@ def run_checks(root):
         if t["title"] and CIDR_IN.search(t["s"]):
             add("CIDR IN TITLE", f"CIDR IN TITLE   {t['s']!r} — put the CIDR on its own 12px {CIDR_COLOR.upper()} line "
                 "under the title (same x, baseline 16px lower)", [t], t=t)
-        if BARE_CIDR.match(t["s"]) and not is_node_label(t, icons):
+        if BARE_CIDR.match(t["s"]) and id(t) not in node_labels:
             titles = [h for h in texts if h["title"] and h is not t]
             under = any(abs(h["box"][0] - t["box"][0]) <= 1 and 14 <= t["y"] - h["y"] <= 18 for h in titles)
             if not under:
@@ -925,7 +925,7 @@ def run_checks(root):
         # near miss, not a label sitting on its own line. A connector label sits above its
         # line (as close as 3px in hand drafts) or 8px or more beside or below it, so only a
         # line skimming its top or its sides is another connector's.
-        own = not (t["header"] or is_node_label(t, icons))
+        own = not (t["header"] or id(t) in node_labels)
         b = expand(t["box"], LINE_CLEAR)
         for s in connectors:
             if own and not skims_top_or_side(t["box"], s):
@@ -937,7 +937,7 @@ def run_checks(root):
                 break
     for t in texts:
         near = expand(t["box"], LABEL_REACH)
-        if not is_node_label(t, icons) and any(seg_hits_box(s["p"], s["q"], near) for s in connectors):
+        if id(t) not in node_labels and any(seg_hits_box(s["p"], s["q"], near) for s in connectors):
             for phrase, ref in services_in_label(t["s"]):
                 add("SERVICE AS TEXT", f"SERVICE AS TEXT {phrase!r} in connector label {t['s']!r} has an "
                     f"official icon ({ref}) — draw it as a node", [t, phrase], t=t, phrase=phrase, ref=ref)
@@ -965,7 +965,7 @@ def run_checks(root):
         clear = HEADER_ICON_CLEAR if t["title"] else ICON_CLEAR
         for n in nodes:
             x0, y0, x1, y1 = n["box"]
-            own = abs(t["cx"] - (x0 + x1) / 2) <= 3 and y1 < t["y"] <= y1 + 44
+            own = id(t) in stacks[id(n)]
             if not own and boxes_overlap(expand(t["box"], clear), n["box"]) \
                     and not boxes_overlap(shrink(t["box"]), shrink(n["box"], 2.0)):
                 add("TEXT NEAR ICON", f"TEXT NEAR ICON  {t['s']!r} is within {clear}px of the icon at "
@@ -1183,6 +1183,8 @@ class Advisor:
         self.keys = {i.key for i in self.issues}
         self.texts, self.segs, self.masks, self.icons, self.canvas = collect(self.root)
         self.rects = container_rects(self.root)
+        # id(text el) of every node's label and sub lines (label_stack)
+        self.node_labels = {id(t["el"]) for i in self.icons if not i["badge"] for t in self.own_labels(i)}
         self.settled = {}                       # id(element) -> a checked move that clears all its problems
         self.last_keys = set()
         self.loose = loose_ends(self.root)
@@ -1428,8 +1430,7 @@ class Advisor:
         # A node label stays on its icon's center line and a title on its header row's x.
         if self.title_home(t) or (BARE_CIDR.match(t["s"]) and self.header_of(t)):
             return home                         # a box's title (and CIDR line) only goes back to its header slot
-        if any(not i["badge"] and abs(t["cx"] - (i["box"][0] + i["box"][2]) / 2) <= 3
-               and i["box"][3] < t["y"] <= i["box"][3] + 44 for i in self.icons):
+        if id(t["el"]) in self.node_labels:
             axes = axes.replace("x", "")
         obs = [ob]
         rel = self.related_boxes(t)
@@ -1488,10 +1489,10 @@ class Advisor:
         for n in self.icons:
             if n["badge"]:
                 continue
-            x0, _, x1, y1 = n["box"]
+            x0, _, x1, _ = n["box"]
             cx = (x0 + x1) / 2
-            if 3 < abs(t["cx"] - cx) <= OFF_CENTER and y1 < t["y"] <= y1 + 44 and not len(t["el"]) \
-                    and not t["title"]:
+            if 3 < abs(t["cx"] - cx) <= OFF_CENTER and not len(t["el"]) and not t["title"] \
+                    and any(o["el"] is t["el"] for o in label_stack(n["box"], self.texts, OFF_CENTER)):
                 el = t["el"]
                 new_x = fnum(cx - t["off"][0])
                 edits = [("attr", el, "x", new_x)]

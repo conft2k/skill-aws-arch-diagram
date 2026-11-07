@@ -575,5 +575,53 @@ class LooseEnd(unittest.TestCase):
         self.assertNotIn("trunk", hint)             # a hand-drawn line: no layout spec, no trunk
 
 
+class NodeLabelStack(unittest.TestCase):
+    """A node's label and every sub line under it (label_stack: within STACK_REACH of the
+    icon, then STACK_STEP apart) name that node, so a service named on its third line is
+    not a connector label's; a centered line farther down is a connector's label again."""
+
+    # q's label and two sub lines under its icon (80,40)–(128,88), the third 50px under it
+    STACK = ('<text x="104" y="106" font-size="14" text-anchor="middle">SQS</text>'
+             '<text x="104" y="122" font-size="12" text-anchor="middle">orders queue</text>'
+             '<text x="104" y="138" font-size="12" text-anchor="middle">DLQ · DynamoDB</text>')
+
+    def test_service_on_a_third_sub_line(self):
+        """q → f straight down from under q's stack (the rr-loose svc repro): Layout OK."""
+        self.assertGreater(138 - 88, CL.STACK_REACH)
+        root = svg(ICON.format(x=80, y=40), self.STACK, ICON.format(x=80, y=200),
+                   '<text x="104" y="266" font-size="14" text-anchor="middle">Lambda</text>',
+                   POLY.format(pts="104,146 104,196"))
+        self.assertEqual([i.msg for i in CL.run_checks(root)], [])
+
+    def connector_label(self, y):
+        """A flow passing under q's stack at y + 7, labelled 'writes · DynamoDB' centered under q."""
+        return svg(ICON.format(x=80, y=40), self.STACK, ICON.format(x=380, y=148),
+                   POLY.format(pts=f"20,{y + 7} 376,{y + 7}"),
+                   f'<text x="104" y="{y}" font-size="12" text-anchor="middle">writes · DynamoDB</text>')
+
+    def test_connector_label_under_the_stack(self):
+        """Centered under q but more than STACK_STEP under its last line: a connector label."""
+        iss = kinds(self.connector_label(138 + CL.STACK_STEP + 6), "SERVICE AS TEXT")
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+        self.assertIn("connector label 'writes · DynamoDB'", iss[0].msg)
+
+    def test_next_line_of_the_stack(self):
+        """The same line STACK_STEP under the last one continues the stack: q's own."""
+        self.assertEqual(kinds(self.connector_label(138 + CL.STACK_STEP), "SERVICE AS TEXT"), [])
+
+    def test_text_near_icon(self):
+        """A node's own stack may sit close to its icon; a connector label beside an icon, or
+        a stack's last line just over the next node's icon, is still too close."""
+        own = svg(ICON.format(x=80, y=40), self.STACK)
+        self.assertEqual(kinds(own, "TEXT NEAR ICON"), [])
+        beside = svg(ICON.format(x=80, y=40), self.STACK,
+                     '<text x="134" y="70" font-size="12" fill="#545B64">poll</text>')
+        self.assertEqual([i.msg for i in kinds(beside, "TEXT NEAR ICON")],
+                         ["TEXT NEAR ICON  'poll' is within 8px of the icon at (80,40)"])
+        over = svg(ICON.format(x=80, y=40), self.STACK, ICON.format(x=80, y=144))
+        self.assertEqual([i.msg for i in kinds(over, "TEXT NEAR ICON")],
+                         ["TEXT NEAR ICON  'DLQ · DynamoDB' is within 8px of the icon at (80,144)"])
+
+
 if __name__ == "__main__":
     unittest.main()
