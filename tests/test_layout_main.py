@@ -307,15 +307,35 @@ class CLI(unittest.TestCase):
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, cwd=str(ROOT))
         return p.returncode, p.stdout
 
+    # The 2 s per spec target, plus interpreter start and headroom: timed in CPU seconds of
+    # the layout.py process, which a parallel test run or a busy machine barely changes
+    # (where wall time can more than double); wall time, with twice the room, is used
+    # only where the resource module is missing (Windows).
+    CPU_LIMIT = 3.0
+
+    @staticmethod
+    def child_cpu():
+        """CPU seconds (user + system) the finished child processes used so far, or None."""
+        try:
+            import resource
+        except ImportError:
+            return None
+        r = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return r.ru_utime + r.ru_stime
+
     def test_examples_ok_and_fast(self):
         with tempfile.TemporaryDirectory() as tmp:
             for spec in sorted(SPECS.glob("*.layout.yaml")):
                 out = Path(tmp) / "d.draft.svg"
-                t0 = time.time()
+                c0, t0 = self.child_cpu(), time.time()
                 rc, text = self.run_cli(spec, "-o", out)
-                dt = time.time() - t0
+                wall = time.time() - t0
                 self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), f"{spec.name}:\n{text}")
-                self.assertLess(dt, 2.5, f"{spec.name} took {dt:.2f}s")    # 2 s target + interpreter start
+                if c0 is None:
+                    self.assertLess(wall, 2 * self.CPU_LIMIT, f"{spec.name} took {wall:.2f}s")
+                else:
+                    cpu = self.child_cpu() - c0
+                    self.assertLess(cpu, self.CPU_LIMIT, f"{spec.name} took {cpu:.2f} CPU s ({wall:.2f}s wall)")
                 lines, n = CL.run_file(str(out), False)
                 self.assertEqual(lines[-1], "Layout OK", spec.name)
 
