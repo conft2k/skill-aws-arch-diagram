@@ -25,9 +25,18 @@ Reports, and exits with status 1 on any of them:
                    official icon in the bundle — draw it as an icon node instead
                    (labels centered under an icon are node labels and are skipped)
   SHORT ARROW      the segment carrying an arrowhead is shorter than 20px (a head
-                   stuck on a bend or trunk junction)
+                   stuck on a bend or trunk junction), or has no length at all (a
+                   repeated point: the head points nowhere)
+  REPEATED POINT   a connector repeats a point (a zero-length piece without a head:
+                   often a route squeezed flat)
   LINE HUGS BORDER a connector runs alongside (or on top of) a container border less
                    than 12px from it for more than 20px
+  LINE ON LINE     two connectors run on top of each other (on one line, or 2px apart or
+                   less) for more than 8px: two flows read as one line that splits
+                   unannounced, and out-of-phase dashes look solid. Lines joined at a
+                   point — an end of one on the other: a trunk and its branches, a stem
+                   out of one shared port, a route drawn in pieces — are one net and are
+                   not reported
   LINE OFF CANVAS  a connector runs past (or on) the edge of the viewBox (when that piece
                    also leaves the box its ends are in, on the same side, the line says so
                    and it is not reported again as LINE LEAVES BOX)
@@ -39,7 +48,8 @@ Reports, and exits with status 1 on any of them:
                    another line: a trunk and its branches, a bracket and its stem, a bus
                    and its drops) count the ends of the whole net, so a line between nodes
                    in different boxes is never flagged. An end that touches nothing (no
-                   node, border or label within 6px: a bus line's open end) is left out
+                   node, border within 6px, nor a label its arrowhead points into: a bus
+                   line's open end, even with the bus's name beside it) is left out
                    when two or more ends of the net touch something
   TITLE OFFSET     a container title not on its box's header row (baseline box.y + 18;
                    the 15px AWS Cloud title + 22)
@@ -62,9 +72,13 @@ move that also clears the element's other problems (several problems of one elem
 the same move); "(still leaves its ...)", "but then: ..." or "(unverified)" says when it
 found no such move. A line ending in "[--fix]" is one --fix applies by itself. A move of a
 connector run takes the ends of the other lines sitting on it along (a branch, a stem, the
-next <line> of a route drawn in pieces); a move that would leave a line end touching
-nothing it touched before, or hide another line's detour by cutting it off its net, is
-never offered as clean.
+next <line> of a route drawn in pieces) and the junction dots on it; a move that would
+leave a line end touching nothing it touched before or a dot on no line, hide another
+line's detour by cutting it off its net, or lay a line on another (LINE ON LINE) is never
+offered as clean. A detour is brought in no closer than 12px to another connector's
+parallel run (nor to the run an earlier hint of the same check moved there), and never so
+far that a piece into the moved run would flip or vanish or an end piece drop under 20px
+(then the line needs a new route, and the hint says so).
 
 --fix repairs, in place, only the problems whose answer is fixed, and only when the
 re-check shows the change clears the problem and raises no new one:
@@ -430,9 +444,36 @@ def on_seg(pt, s, tol=JOIN_REACH):
     return math.hypot(x1 + t * dx - pt[0], y1 + t * dy - pt[1]) <= tol
 
 
-def anchored(pt, feet, rects=(), texts=()):
-    """Does a connector end attach to something: a node, a container border (an arrow into a
-    box) or a label, within END_REACH?"""
+def points_into(run, k, box):
+    """Does the arrowhead at end k (0: start, 1: end) of a connector point into box (within
+    END_REACH ahead of it)?"""
+    s = run[0] if k == 0 else run[-1]
+    if ("start" if k == 0 else "end") not in s.get("heads", ()):
+        return False
+    tip, tail = (s["p"], s["q"]) if k == 0 else (s["q"], s["p"])
+    length = math.hypot(tip[0] - tail[0], tip[1] - tail[1])
+    if length < 0.5:
+        return False
+    ux, uy = (tip[0] - tail[0]) / length, (tip[1] - tail[1]) / length
+    ahead = (tip[0] + ux * (END_REACH + 1), tip[1] + uy * (END_REACH + 1))
+    return seg_hits_box(tip, ahead, box)
+
+
+def text_anchor(t, run, k):
+    """Is label t what end k of a connector attaches to? Its arrowhead points into it, and
+    the label is not one beside the line's other pieces (the line's own label: a bus's name
+    at its open end does not close the bus)."""
+    if not points_into(run, k, t["box"]):
+        return False
+    rest = run[1:] if k == 0 else run[:-1]
+    near = expand(t["box"], LABEL_REACH)
+    return not any(seg_hits_box(s["p"], s["q"], near) for s in rest)
+
+
+def anchored(pt, feet, rects=(), texts=(), run=None, k=None):
+    """Does a connector end attach to something: a node (its icon and the labels under it),
+    a container border (an arrow into a box) or — with the connector's run and which end
+    (k) — a label its arrowhead points into (text_anchor), within END_REACH?"""
     if end_icon(pt, feet):
         return True
     x, y = pt
@@ -442,13 +483,15 @@ def anchored(pt, feet, rects=(), texts=()):
         on_y = min(abs(y - y0), abs(y - y1)) <= END_REACH and x0 - END_REACH <= x <= x1 + END_REACH
         if on_x or on_y:
             return True
-    return any(contains(expand(t["box"], END_REACH), (x, y, x, y), 0) for t in texts)
+    return run is not None and any(contains(expand(t["box"], END_REACH), (x, y, x, y), 0) and text_anchor(t, run, k)
+                                   for t in texts)
 
 
 def nets(paths, feet, rects=(), texts=()):
     """Connectors joined where one's end sits on another's line (a trunk and its branches, a
     bracket and its stem): [(the runs, the terminal ends — on no other line)]. A terminal end
-    that touches nothing (no node, container border or label: a bus line's open end) says
+    that touches nothing (no node, container border or label its arrowhead points into: a
+    bus line's open end) says
     nothing about the box the net belongs in and is left out — unless fewer than two ends
     touch something (a stub from one node: no detour can come back in)."""
     runs = list(paths.values())
@@ -462,25 +505,89 @@ def nets(paths, feet, rects=(), texts=()):
 
     terms = []
     for i, run in enumerate(runs):
-        for pt in (run[0]["p"], run[-1]["q"]):
+        for k, pt in enumerate((run[0]["p"], run[-1]["q"])):
             # two edges out of one node share their first point: each ends at the node
             hit = [] if end_icon(pt, feet) else [j for j, o in enumerate(runs)
                                                   if j != i and any(on_seg(pt, s) for s in o)]
             for j in hit:
                 parent[find(i)] = find(j)
             if not hit:
-                terms.append((i, pt))
+                terms.append((i, k, pt))
     out = {}
     for i, run in enumerate(runs):
         out.setdefault(find(i), ([], [], []))[0].append(run)
-    for i, pt in terms:
-        out[find(i)][1 if anchored(pt, feet, rects, texts) else 2].append(pt)
+    for i, k, pt in terms:
+        out[find(i)][1 if anchored(pt, feet, rects, texts, runs[i], k) else 2].append(pt)
     return [(rs, ends if len(ends) >= 2 else ends + loose) for rs, ends, loose in out.values()]
+
+
+# Two connectors this close (or closer) side by side read as one line ...
+ON_LINE_GAP = 2
+# ... and a shared run longer than this reads as one flow (a merge nobody drew).
+ON_LINE_RUN = 8
+
+
+def joined(paths):
+    """Connectors joined where an end of one sits on the other's line (a trunk and its
+    branches, a stem out of one shared port, a route drawn in pieces):
+    {id(element): net number}."""
+    ids = list(paths)
+    parent = {k: k for k in ids}
+
+    def find(k):
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    for k in ids:
+        run = paths[k]
+        for pt in (run[0]["p"], run[-1]["q"]):
+            for o in ids:
+                if o != k and find(o) != find(k) and any(on_seg(pt, s) for s in paths[o]):
+                    parent[find(k)] = find(o)
+    return {k: find(k) for k in ids}
+
+
+def collinear_run(s, o, gap=ON_LINE_GAP):
+    """Length of the stretch two straight (vertical or horizontal) segments share while
+    lying on (or within gap px of) one line; 0 when they don't."""
+    (x1, y1), (x2, y2) = s["p"], s["q"]
+    (u1, v1), (u2, v2) = o["p"], o["q"]
+    if abs(x1 - x2) < 0.5 and abs(u1 - u2) < 0.5 and abs(x1 - u1) <= gap:
+        lo, hi = max(min(y1, y2), min(v1, v2)), min(max(y1, y2), max(v1, v2))
+    elif abs(y1 - y2) < 0.5 and abs(v1 - v2) < 0.5 and abs(y1 - v1) <= gap:
+        lo, hi = max(min(x1, x2), min(u1, u2)), min(max(x1, x2), max(u1, u2))
+    else:
+        return 0.0
+    return max(0.0, hi - lo)
+
+
+def lines_on_lines(paths):
+    """Pairs of connectors of different nets (see joined) running on top of each other for
+    more than ON_LINE_RUN px: [(segment, other segment, shared px)], one per pair of lines."""
+    net = joined(paths)
+    ids = list(paths)
+    out = []
+    for a_i, a in enumerate(ids):
+        for b in ids[a_i + 1:]:
+            if net[a] == net[b]:
+                continue
+            best = None
+            for s in paths[a]:
+                for o in paths[b]:
+                    d = collinear_run(s, o)
+                    if d > ON_LINE_RUN and (best is None or d > best[2]):
+                        best = (s, o, d)
+            if best:
+                out.append(best)
+    return out
 
 
 def loose_ends(root):
     """The connector ends that touch nothing — no node, no other line, no container border,
-    no label — as {(id(element), 0 | 1): point}: a move that adds one cut a line off."""
+    no label its arrowhead points into — as {(id(element), 0 | 1): point}: a move that adds
+    one cut a line off."""
     texts, segs, _, icons, _ = collect(root)
     feet, rects = footprints(icons, texts), container_rects(root)
     paths = {}
@@ -490,10 +597,18 @@ def loose_ends(root):
     out = {}
     for eid, run in paths.items():
         for k, pt in ((0, run[0]["p"]), (1, run[-1]["q"])):
-            if not anchored(pt, feet, rects, texts) and not any(
+            if not anchored(pt, feet, rects, texts, run, k) and not any(
                     on_seg(pt, s) for o, other in paths.items() if o != eid for s in other):
                 out[(eid, k)] = pt
     return out
+
+
+def stray_dots(root):
+    """Junction dots (circles, r ≤ 6) on no connector, as {id(element): center}: a move
+    that adds one left its dot behind."""
+    _, segs, _, icons, _ = collect(root)
+    lines = [s for s in segs if s["kind"] == "connector"]
+    return {id(i["el"]): i["dot"] for i in icons if i.get("dot") and not any(on_seg(i["dot"], s, 1.0) for s in lines)}
 
 
 def box_name(r, texts):
@@ -563,9 +678,17 @@ def run_checks(root):
     for s in segs:
         if s.get("head"):
             (x1, y1), (x2, y2) = s["p"], s["q"]
-            if 0 < math.hypot(x2 - x1, y2 - y1) < MIN_ARROW:
+            length = math.hypot(x2 - x1, y2 - y1)
+            if length < 0.5:
+                add("SHORT ARROW", f"SHORT ARROW     {fmt(s)} has no length (a repeated point): its arrowhead "
+                    "points nowhere — route the line so its last piece runs into the node", [s], s=s)
+            elif length < MIN_ARROW:
                 add("SHORT ARROW", f"SHORT ARROW     {fmt(s)} is under {MIN_ARROW}px — widen the gap so the arrow "
                     "has a visible shaft", [s], s=s)
+        elif s["kind"] == "connector" and math.hypot(s["q"][0] - s["p"][0], s["q"][1] - s["p"][1]) < 0.5:
+            add("REPEATED POINT", f"REPEATED POINT  a connector repeats the point ({s['p'][0]:g},{s['p'][1]:g}) — "
+                "a zero-length piece, often a route squeezed flat: drop it, and check the line still reads as "
+                "the route it was", [s], s=s)
     for s in segs:
         if s["kind"] != "connector":
             continue
@@ -598,6 +721,16 @@ def run_checks(root):
             past = beyond(run, (0.0, 0.0, cw, ch), strict=False)
             if past:
                 off[k] = past
+    # Two flows on one run read as one line (out-of-phase dashes look solid) that then
+    # splits: an unannounced merge. Lines joined at a point (a trunk, a stem out of one
+    # port) are one net and share their stem on purpose.
+    for s, o, d in lines_on_lines(paths):
+        box = union(seg_box(s), seg_box(o))
+        if masked((box[0], box[1], box[2] + 0.1, box[3] + 0.1), min(s["o"], o["o"]), masks):
+            continue
+        add("LINE ON LINE", f"LINE ON LINE    connector {fmt(s)} runs on top of connector {fmt(o)} for {d:g}px — "
+            f"two flows read as one line; give each its own lane ({HUG_CLEAR}px apart) or draw them as one trunk",
+            [s, o], s=s, o=o, d=d)
     feet = footprints(icons, texts)
     leaves, boxed = [], {}
     for runs, ends in nets(paths, feet, rects, texts):
@@ -958,6 +1091,8 @@ class Advisor:
         self.settled = {}                       # id(element) -> a checked move that clears all its problems
         self.last_keys = set()
         self.loose = loose_ends(self.root)
+        self.stray = stray_dots(self.root)
+        self.claims, self.claimed = {}, []      # bring_inside's moves: id(edits) -> run; runs hints took
         self.titles = {}                        # id(rect el) -> its title text item
         for r in self.rects:
             for t in self.texts:
@@ -973,6 +1108,7 @@ class Advisor:
         try:
             after = run_checks(self.root)
             loose = loose_ends(self.root)
+            stray = stray_dots(self.root)
         finally:
             undo()
         keys = {i.key for i in after}
@@ -985,6 +1121,11 @@ class Advisor:
             if k not in self.loose:
                 new.append(Issue("LOOSE END", f"LOOSE END       a line end at ({fnum(pt[0])},{fnum(pt[1])}) no "
                                  "longer touches the node, line or border it was on", [], {}))
+                break
+        for k, pt in stray.items():
+            if k not in self.stray:
+                new.append(Issue("LOOSE DOT", f"LOOSE DOT       a junction dot at ({fnum(pt[0])},{fnum(pt[1])}) is "
+                                 "left on no line", [], {}))
                 break
         moved = {id(e[1]) for e in edits}
         for i in self.issues:
@@ -1395,9 +1536,23 @@ class Advisor:
             text += f" and y={fnum(num(cidr['el'].get('y')) + dy)} on its CIDR line {cidr['s']!r}"
         return Hint(text + self.local(t), edits)
 
+    def h_repeated_point(self, iss, s):
+        el = s["el"]
+        if el.tag.replace(NS, "") != "polyline":
+            return Hint(f"{self.sdesc(s)} has no length: give it its two real ends{self.local(s)}")
+        vals = [v for v in re.split(r"[ ,]+", el.get("points", "").strip()) if v]
+        pairs = [f"{vals[i]},{vals[i + 1]}" for i in range(0, len(vals) - 1, 2)]
+        del pairs[s["i"] + 1]
+        new = " ".join(pairs)
+        return Hint(f'drop the repeated point: points="{new}" on {self.sdesc(s)}{self.local(s)} — then check the '
+                    "route still runs where it should", edits=[("attr", el, "points", new)])
+
     def h_short_arrow(self, iss, s):
         (x1, y1), (x2, y2) = s["p"], s["q"]
         length = math.hypot(x2 - x1, y2 - y1)
+        if length < 0.5:
+            return Hint("re-route the line: its head piece has no length, so no move of its tail gives the "
+                        f"arrowhead a direction (widen the gap between the nodes by {MIN_ARROW}px or more)")
         need = math.ceil(MIN_ARROW - length)
         heads = s.get("heads", {"end"})
         # Lengthen away from the arrowhead: move the far point of the head segment back.
@@ -1448,6 +1603,21 @@ class Advisor:
                                                  f"{self.rdesc(b['el'])})"))
         return self.pick(iss.key, cands)
 
+    def h_line_on_line(self, iss, s, o, d):
+        """Give one of the two runs its own lane: shift it sideways off the other."""
+        cands = []
+        for k, run in enumerate((o, s)):           # the later-listed line first, then the other
+            vertical = abs(run["p"][0] - run["q"][0]) < 0.5
+            for rank, m in enumerate((HUG_CLEAR, 16, 24, 8)):     # 8: only when nothing wider is clean
+                for sign in (1, -1):
+                    dv = sign * m
+                    edits, text = self.move_run(run, dv if vertical else 0, 0 if vertical else dv)
+                    if edits:
+                        cands.append((rank + 0.5 * k, edits, f"{text} (its own lane, {m}px off the other line)"))
+        fallback = (f"give each flow its own lane, {HUG_CLEAR}px apart (in a layout spec: bend_x / bend_y on one "
+                    "line, or `trunk: true` when the instances of a `.*` line are meant to merge)")
+        return self.pick(iss.key, cands, fallback=fallback)
+
     def bring_inside(self, iss, run, side, r):
         """Move the runs of a connector that lie wholly past one side of the canvas (r None) or
         of box r back inside it, together (one edit per line), with the ends of the other
@@ -1486,6 +1656,8 @@ class Advisor:
                 riders.append((eid, idx, on))
         margins = (12, 16, 20, 24, 32, 40, 48) if r is None else tuple(HUG_CLEAR + e for e in (0, 4, 8, 12, 16, 24, 32))
         cands = []
+        span = (min(min(sg["p"][1 - axis], sg["q"][1 - axis]) for sg in out),
+                max(max(sg["p"][1 - axis], sg["q"][1 - axis]) for sg in out))
         for m in margins:
             target = edge + inward * m
             shifts = {}                             # id(element) -> {point index: shift}
@@ -1494,6 +1666,13 @@ class Advisor:
                     shifts.setdefault(id(el), {})[idx] = target - sg["p"][axis]
             for eid, idx, sg in riders:
                 shifts.setdefault(eid, {})[idx] = target - sg["p"][axis]
+            # never onto (or next to) another flow's run, nor one an earlier hint moved there
+            if self.lane_taken(axis, target, span, set(shifts)):
+                continue
+            # the pieces into the moved run keep their direction, the ends of the line its
+            # MIN_ARROW (a U squeezed flat leaves a zero-length head: converge 420)
+            if any(self.collapses(lines[eid][0], lines[eid][2], moves, axis, eid == id(el)) for eid, moves in shifts.items()):
+                continue
             edits = []
             for eid, moves in shifts.items():
                 oel = lines[eid][0]
@@ -1507,6 +1686,17 @@ class Advisor:
                         idxs = {i for i, v in moves.items() if v == dv}
                         pts = shift_points(pts, idxs, dv if axis == 0 else 0, dv if axis == 1 else 0)
                     edits.append(("attr", oel, "points", pts))
+            # a junction dot on the moved run (or at a rider's end) goes with it
+            for d in self.icons:
+                if not d.get("dot"):
+                    continue
+                on = next((sg for sg in out if on_seg(d["dot"], sg, 1.0)), None)
+                if on is None and not any(math.hypot(d["dot"][0] - lines[eid][2][idx][0],
+                                                     d["dot"][1] - lines[eid][2][idx][1]) <= 1.0
+                                          for eid, idx, _ in riders):
+                    continue
+                a = ("cx", "cy")[axis]
+                edits.append(("attr", d["el"], a, fnum(num(d["el"].get(a)) + target - d["dot"][axis])))
             dv0 = target - out[0]["p"][axis]
             _, text = self.move_run(out[0], *((dv0, 0) if axis == 0 else (0, dv0)), tail=False)
             more = f" (and its {len(out) - 1} other run{'s' if len(out) > 2 else ''} past that side)" if len(out) > 1 else ""
@@ -1516,9 +1706,41 @@ class Advisor:
                 ride = (f", with the end{'s' if len(names) > 1 else ''} of {', '.join(names)} that "
                         f"sit{'' if len(names) > 1 else 's'} on it")
             v = target - out[0]["off"][axis]
+            self.claims[id(edits)] = (axis, target, span)
             cands.append((m, edits, f"{text}{more}{ride} ({'xy'[axis]}={fnum(v)}, {m}px inside the {side} "
                                     f"{'edge' if r is None else 'border'} of {what})"))
         return cands, what, ""
+
+    def lane_taken(self, axis, target, span, moving):
+        """Is a run at `target` (on axis 0: x of a vertical run) spanning `span` within
+        HUG_CLEAR of another connector's parallel run (not one of the moving elements), or of
+        a run an earlier hint of this check moved there?"""
+        for sg in self.segs:
+            if sg["kind"] != "connector" or id(sg["el"]) in moving or abs(sg["p"][axis] - sg["q"][axis]) >= 0.5:
+                continue
+            lo, hi = sorted((sg["p"][1 - axis], sg["q"][1 - axis]))
+            if abs(sg["p"][axis] - target) < HUG_CLEAR and min(hi, span[1]) - max(lo, span[0]) > ON_LINE_RUN:
+                return True
+        return any(a == axis and abs(v - target) < HUG_CLEAR and min(sp[1], span[1]) - max(sp[0], span[0]) > ON_LINE_RUN
+                   for a, v, sp in self.claimed)
+
+    @staticmethod
+    def collapses(el, pts, moves, axis, main):
+        """Would shifting points `moves` ({index: shift} along axis) of a line flatten or
+        reverse a piece into them — or leave a head piece (on the moving line `main`: either
+        end piece) under MIN_ARROW?"""
+        new = [(p[0] + (moves.get(i, 0) if axis == 0 else 0), p[1] + (moves.get(i, 0) if axis == 1 else 0))
+               for i, p in enumerate(pts)]
+        last = len(pts) - 2
+        for i in range(len(pts) - 1):
+            if (i in moves) == (i + 1 in moves):
+                continue
+            d0, d1 = pts[i + 1][axis] - pts[i][axis], new[i + 1][axis] - new[i][axis]
+            head = (i == 0 and el.get("marker-start")) or (i == last and el.get("marker-end"))
+            need = MIN_ARROW if head or (main and i in (0, last)) else 0.5
+            if abs(d0) >= 0.5 and (d0 * d1 <= 0 or abs(d1) < need):
+                return True
+        return False
 
     def sdesc_pts(self, el, off, pts, idx):
         """A line named by the piece at one of its ends (idx 0: its first, else its last)."""
@@ -1553,6 +1775,7 @@ class Advisor:
         if not cands:
             return Hint(fallback)
         h = self.pick(iss.key, cands, fallback=fallback)
+        self.claim(h)
         h.text += grow if grow and grow not in h.text else ""
         return h
 
@@ -1563,7 +1786,15 @@ class Advisor:
                     "shape / bend_x / bend_y, or widen the gap between the ends)")
         if not cands:
             return Hint(fallback)
-        return self.pick(iss.key, cands, fallback=fallback)
+        return self.claim(self.pick(iss.key, cands, fallback=fallback))
+
+    def claim(self, h):
+        """Remember where the hint's move puts its run, so a later hint keeps off it (two
+        detours brought in by independent hints must not land on one lane)."""
+        c = self.claims.get(id(h.edits)) if h.edits else None
+        if c:
+            self.claimed.append(c)
+        return h
 
     def h_cidr_in_title(self, iss, t):
         el = t["el"]

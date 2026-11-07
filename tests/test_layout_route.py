@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -762,6 +763,77 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(R.same_side_problems(spec), [])
         self.assertTrue([r for r in R.plan(spec) if "out-and-back" in r.why])
 
+
+
+class Lanes(unittest.TestCase):
+    """Instances of one `.*` line whose legs would share a bend run in lanes of their own
+    (review: EC2 ×2 → a bottom-aligned flow-column CloudWatch, both legs on x=462 for
+    272px); a `trunk: true` line still merges on one leg."""
+
+    def setup(self, **edge):
+        spec = M.Spec("t", cols=[M.Track("a", "col", 0), M.Track("b", "col", 1)],
+                      rows=[M.Track("r", "row", 0), M.Track("s", "row", 1), M.Track("t", "row", 2)])
+        spec.nodes = {"x1": M.Node("x1", "service/Amazon-EC2", "X1", col="a", row="r"),
+                      "x2": M.Node("x2", "service/Amazon-EC2", "X2", col="a", row="s"),
+                      "y": M.Node("y", "service/Amazon-CloudWatch", "Y", col="b", row="t")}
+        spec.edges = [M.Edge(0, "x1", "y", "..>", line=0, k=0, src="edges[0]", **edge),
+                      M.Edge(1, "x2", "y", "..>", line=0, k=1, src="edges[0]", **edge)]
+        cols, rows = {"a": 100, "b": 400}, {"r": 100, "s": 250, "t": 400}
+        nodes = {}
+        for nid, n in spec.nodes.items():
+            cx, cy = cols[n.col], rows[n.row]
+            icon = M.Box(cx - 24, cy - 24, cx + 24, cy + 24)
+            nodes[nid] = M.NodeGeom(nid, cx, cy, icon, [M.TextLine(n.label, cx, icon.y1 + 18, 14, K.INK, "", "middle")])
+        return spec, M.Geometry("document", 48, 520, 500, cols, rows, nodes=nodes)
+
+    def legs(self, els):
+        return [points(lines_of(els, n)[0]) for n in (0, 1)]
+
+    def test_each_instance_its_own_lane(self):
+        spec, geom = self.setup()
+        self.assertEqual(R.shapes(spec), {0: "HVH", 1: "HVH"})
+        els, warns = R.draw(spec, geom)
+        a, b = self.legs(els)
+        self.assertEqual(len(a), 4)
+        self.assertEqual(len(b), 4)
+        self.assertEqual(abs(a[1][0] - b[1][0]), R.LANE_PITCH, (a, b))
+        # ordered so they don't cross: the upper source's leg runs outside (nearer the target)
+        self.assertGreater(a[1][0], b[1][0])
+        self.assertEqual(R._crossings([a, b]), 0)
+        self.assertFalse([w for w in warns if "instead of" in w], warns)
+        root = ET.fromstring('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 500">'
+                             + "".join(f'<polyline points="{" ".join(f"{x:g},{y:g}" for x, y in p)}" fill="none" '
+                                       'stroke="#232F3E"/>' for p in (a, b)) + "</svg>")
+        self.assertEqual([i for i in CL.run_checks(root) if i.kind == "LINE ON LINE"], [])
+
+    def test_trunk_instances_merge(self):
+        spec, geom = self.setup(trunk=True)
+        a, b = self.legs(R.draw(spec, geom)[0])
+        self.assertEqual(a[1][0], b[1][0])                  # one leg: the follower stops on it
+        self.assertEqual(b[-1], (a[1][0], a[-1][1]))
+
+    def test_plan_reserves_the_lanes(self):
+        spec, _ = self.setup()
+        self.assertEqual(R.lane_counts(spec), {0: 2, 1: 2})
+        with_lanes = {r.why: r.d for r in R.plan(spec) if "bend gutter" in r.why and not r.soft}
+        with unittest.mock.patch.object(R, "lane_counts", return_value={}):
+            without = {r.why: r.d for r in R.plan(spec) if "bend gutter" in r.why and not r.soft}
+        self.assertEqual(sorted(with_lanes), sorted(without))
+        for why, d in with_lanes.items():
+            self.assertEqual(d, without[why] + R.LANE_PITCH, why)
+        spec.edges = [M.Edge(e.n, e.a, e.b, e.op, line=e.line, k=e.k, trunk=True) for e in spec.edges]
+        self.assertEqual(R.lane_counts(spec), {})
+
+    def test_fan_to_both_sides_shares_its_bend(self):
+        """One source to targets above and below: the legs meet only at the source, one bend."""
+        spec, geom = self.setup()
+        spec.edges = [M.Edge(0, "x2", "x1", "->", line=0, k=0), M.Edge(1, "x2", "y", "->", line=0, k=1)]
+        spec.nodes["x1"].col = "b"
+        geom.nodes["x1"] = M.NodeGeom("x1", 400, 100, M.Box(376, 76, 424, 124),
+                                      [M.TextLine("X1", 400, 142, 14, K.INK, "", "middle")])
+        self.assertEqual(R.lane_counts(spec), {})
+        a, b = self.legs(R.draw(spec, geom)[0])
+        self.assertEqual(a[1][0], b[1][0])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

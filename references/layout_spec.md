@@ -205,7 +205,13 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   stem (gwlb `igw -> gwlbe.*`; into group boxes, nlb-mtls `nlb -> besg.*`), label and
   badge drawn once. Whatever shape its lines take, a trunk's shared end leaves (enters)
   one port: two VH from a source whose facing side is taken run down one stem
-  (serverless `sfn -> reserve.*`), with no `from_offset: 0`.
+  (serverless `sfn -> reserve.*`), with no `from_offset: 0`. Lines that are not a trunk
+  never share a run: when the instances' bends would put their legs on top of each other
+  (the target past every source on one side — `ec2.* ..> cw` with CloudWatch in a
+  bottom-aligned flow column — or one source to targets all on one side), each instance
+  gets its own lane, 12px apart and ordered so they don't cross, and the gutter grows by
+  12 per extra lane. Two different lines on one run are a `LINE ON LINE` problem; write
+  `trunk: true` when they are meant to merge.
 - `label`: protocol and port, 12px squid ink (`"HTTPS :443"`). `verb`: a verb or
   attachment type, 12px grey (`DNS 조회`, `VPC attachment`). The loader rejects either one
   when it names a service with an official icon (SERVICE AS TEXT) — make it a node.

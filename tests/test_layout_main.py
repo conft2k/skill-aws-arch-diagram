@@ -668,6 +668,72 @@ class FlowColumnFixes(unittest.TestCase):
                         self.assertAlmostEqual(f[lo].y0 - f[up].y1, sp + max(spec.const.sibling_gap, sp), delta=1)
 
 
+def lanes_spec(align="bottom", trunk=False):
+    """Review repro t4_one_bottom: EC2 in two AZs, CloudWatch alone in a flow column aligned
+    below (or above) both, `ec2.* ..> cw`."""
+    line = {"e": "ec2.* ..> cw"}
+    if trunk:
+        line["trunk"] = True
+    return {
+        "name": "t", "mode": "slide",
+        "cols": ["users", "igw", "pub", "app", {"id": "svc", "flow": 100, "align": align}],
+        "rows": ["az1", "main", "az2"],
+        "groups": [{"id": "cloud", "type": "cloud"}, {"id": "region", "type": "region", "label": "Region", "in": "cloud"},
+                   {"id": "vpc", "type": "vpc", "label": "VPC", "in": "region"},
+                   {"id": "az", "type": "az", "in": "vpc", "per": ["az1", "az2"]},
+                   {"id": "pubsn", "type": "public", "label": "Public subnet", "in": "az"},
+                   {"id": "appsn", "type": "private", "label": "App subnet", "in": "az"}],
+        "nodes": [svc("users", "resource/Users", "Users", at=["users", "main"]),
+                  svc("igw", "resource/Amazon-VPC_Internet-Gateway", "IGW", at=["igw", "main"], on="vpc"),
+                  svc("alb", "resource/Elastic-Load-Balancing_Application-Load-Balancer", "ALB", **{"in": "vpc"},
+                      at=["pub", "main"]),
+                  svc("nat", "resource/Amazon-VPC_NAT-Gateway", "NAT", **{"in": "pubsn"}, col="pub"),
+                  svc("ec2", "service/Amazon-EC2", "EC2", **{"in": "appsn"}, col="app"),
+                  svc("cw", "service/Amazon-CloudWatch", "CloudWatch", **{"in": "region"}, col="svc")],
+        "edges": [{"e": "users -> igw"}, {"e": "igw -> alb"}, {"e": "alb -> ec2.*"}, line],
+    }
+
+
+def edge_points(data, n):
+    root = ET.fromstring(data)
+    g = next(e for e in root.iter(NS + "g") if e.get("id") == f"edge:{n}")
+    v = [float(x) for x in next(g.iter(NS + "polyline")).get("points").replace(",", " ").split()]
+    return list(zip(v[0::2], v[1::2]))
+
+
+class Lanes(unittest.TestCase):
+    """The instances of `ec2.* ..> cw` with CloudWatch past both EC2s on one side used to
+    share one leg (x=462 for 16 / 272 / 336px, two arrowheads 16px apart, Layout OK): each
+    now runs in its own lane, 12px apart and crossing nothing, with the gutter grown for it."""
+
+    def test_own_lanes_above_and_below(self):
+        for align in ("bottom", "top"):
+            with self.subTest(align=align):
+                rc, text, data = run_main(lanes_spec(align))
+                self.assertEqual(rc, 0, text)
+                self.assertEqual(text.strip().splitlines()[-1], "Layout OK")
+                a, b = edge_points(data, 4), edge_points(data, 5)
+                self.assertEqual((len(a), len(b)), (4, 4), (a, b))
+                self.assertEqual(abs(a[1][0] - b[1][0]), 12, (a, b))
+                self.assertEqual(a[-1][0], b[-1][0])                    # both into CloudWatch's left side
+                root = ET.fromstring(data)
+                self.assertEqual([i.msg for i in CL.run_checks(root) if i.kind == "LINE ON LINE"], [])
+
+    def test_trunk_merges_on_purpose(self):
+        rc, text, data = run_main(lanes_spec(trunk=True))
+        self.assertEqual(rc, 0, text)
+        a, b = edge_points(data, 4), edge_points(data, 5)
+        self.assertEqual(a[1][0], b[1][0])                              # one leg, the follower stops on it
+        self.assertEqual([i for i in CL.run_checks(ET.fromstring(data)) if i.kind == "LINE ON LINE"], [])
+
+    def test_line_on_line_widens_the_gap_it_runs_in(self):
+        """layout.py feedback for LINE ON LINE: the tracks across the run, current + 16."""
+        spec, b = built(lanes_spec())
+        x = (b.geom.cols["app"] + b.geom.cols["svc"]) / 2
+        seg = {"p": (x, 100.0), "q": (x, 300.0)}
+        iss = CL.Issue("LINE ON LINE", "LINE ON LINE", [], {"s": seg, "o": dict(seg), "d": 200})
+        self.assertEqual(layout.where_to_widen(layout.Problem(iss, ["edge:4", "edge:5"], [seg, seg])), ("x", x))
+
 class ShortOverlayTitle(unittest.TestCase):
     def test_member_below_a_non_member_or_in_no_box(self):
         """An ASG titled "ASG" over a member below another node of its subnet, or over a

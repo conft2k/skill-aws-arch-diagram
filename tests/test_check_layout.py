@@ -278,6 +278,162 @@ class OffCanvasOutOfBox(unittest.TestCase):
 
 
 NS_LINE = "{http://www.w3.org/2000/svg}line"
+DASHED = ('<polyline points="{pts}" fill="none" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" '
+          'marker-end="url(#arrow)"/>')
+
+
+def kinds(root, kind):
+    return [i for i in CL.run_checks(root) if i.kind == kind]
+
+
+def polylines(root):
+    return [e.get("points") for e in root.iter() if e.tag.endswith("polyline")]
+
+
+class LineOnLine(unittest.TestCase):
+    """Two different flows on one run read as one line that splits unannounced; lines
+    joined at a point (a trunk, a stem out of one port) are one net and share on purpose."""
+
+    def test_two_flows_on_one_run(self):
+        """a → b and c → d both on (300,104)→(300,204): flagged, once."""
+        iss = kinds(svg(*CLOUD, ICON.format(x=380, y=80), ICON.format(x=380, y=180),
+                        POLY.format(pts="232,104 300,104 300,204 232,204"),
+                        POLY.format(pts="376,104 300,104 300,204 376,204")), "LINE ON LINE")
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+        self.assertIn("runs on top of connector", iss[0].msg)
+        self.assertEqual(iss[0].ctx["d"], 100)
+
+    def test_engine_instances_sharing_a_leg(self):
+        """The pre-fix draft of `ec2.* ..> cw` into a bottom-aligned flow column: two dashed
+        lines on x=462 for 272px, ending 16px apart on CloudWatch."""
+        head = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900">'
+        root = ET.fromstring(head + DASHED.format(pts="398,180 462,180 462,730 482,730")
+                             + DASHED.format(pts="398,458 462,458 462,746 482,746") + "</svg>")
+        iss = kinds(root, "LINE ON LINE")
+        self.assertEqual([(CL.fmt(i.ctx["s"]), CL.fmt(i.ctx["o"]), i.ctx["d"]) for i in iss],
+                         [("(462,180)→(462,730)", "(462,458)→(462,746)", 272)])
+        # their own lanes, 12px apart: clean
+        root = ET.fromstring(head + DASHED.format(pts="398,180 474,180 474,730 494,730")
+                             + DASHED.format(pts="398,458 462,458 462,746 494,746") + "</svg>")
+        self.assertEqual(kinds(root, "LINE ON LINE"), [])
+
+    def test_two_px_apart_reads_as_one(self):
+        for dx, n in ((2, 1), (3, 0), (12, 0)):
+            with self.subTest(dx=dx):
+                root = svg(POLY.format(pts="100,50 300,50 300,250 400,250"),
+                           POLY.format(pts=f"100,80 {300 + dx},80 {300 + dx},270 400,270"))
+                self.assertEqual(len(kinds(root, "LINE ON LINE")), n)
+
+    def test_short_touch_is_not_a_run(self):
+        """8px or less in common: not flagged."""
+        root = svg(POLY.format(pts="100,50 300,50 300,250"), POLY.format(pts="100,242 300,242 300,300"))
+        self.assertEqual(kinds(root, "LINE ON LINE"), [])
+
+    def test_trunk_merge_is_one_net(self):
+        """A merge: the second instance stops on the first one's leg (a `trunk: true` line)."""
+        root = svg(*CLOUD, ICON.format(x=380, y=130), POLY.format(pts="232,104 300,104 300,154 376,154"),
+                   '<polyline points="232,204 300,204 300,154" fill="none" stroke="#232F3E" stroke-width="1.5"/>')
+        self.assertEqual(kinds(root, "LINE ON LINE"), [])
+
+    def test_stem_out_of_one_port(self):
+        """A fork from one shared port: both lines start at one point and share their stem."""
+        root = svg(*CLOUD, ICON.format(x=380, y=80), ICON.format(x=380, y=180),
+                   POLY.format(pts="232,154 300,154 300,104 376,104"),
+                   POLY.format(pts="232,154 300,154 300,204 376,204"))
+        self.assertEqual(kinds(root, "LINE ON LINE"), [])
+
+    def test_hint_gives_one_its_own_lane(self):
+        root = svg(*CLOUD, ICON.format(x=380, y=80), ICON.format(x=380, y=180),
+                   POLY.format(pts="232,104 300,104 300,204 232,204"),
+                   POLY.format(pts="376,104 300,104 300,204 376,204"))
+        _, _, h = hint_of(root, kind="LINE ON LINE")
+        self.assertIn("its own lane, 12px off the other line", h.text)
+        CL.apply_tree(root, h.edits)
+        self.assertEqual(kinds(root, "LINE ON LINE"), [])
+
+
+class DetourHintsKeepTheRoute(unittest.TestCase):
+    """A detour's fix never lands on another flow's run (nor on one an earlier hint took),
+    never squeezes a U flat, takes the trunk's junction dot along; a bus's own label at its
+    open end does not close the bus."""
+
+    def test_fix_keeps_off_another_flows_run(self):
+        """A → B out past the right border; C → D already runs at x=488 inside: the run comes
+        in at 476 (HUG_CLEAR off C → D), not onto 488."""
+        root = svg(*CLOUD, ICON.format(x=440, y=10), ICON.format(x=440, y=262),
+                   POLY.format(pts="232,104 540,104 540,204 232,204"),
+                   POLY.format(pts="464,62 464,70 488,70 488,250 464,250 464,258"))
+        _, _, h = hint_of(root, seg="(540,104)→(540,204)")
+        self.assertIn("to (476,104)→(476,204)", h.text)
+        CL.apply_tree(root, h.edits)
+        self.assertEqual(kinds(root, "LINE ON LINE"), [])
+
+    def test_two_hints_take_two_lanes(self):
+        """Two detours out past one border, hinted independently: the second keeps off the
+        lane the first takes (both went to x=488 before)."""
+        root = svg(BOX.format(x=100, y=40, w=400, h=220), TITLE.format(x=112, y=58, s="AWS Cloud"),
+                   ICON.format(x=180, y=80), ICON.format(x=180, y=140), ICON.format(x=400, y=50),
+                   ICON.format(x=400, y=200), POLY.format(pts="232,104 540,104 540,164 232,164"),
+                   POLY.format(pts="452,74 548,74 548,224 452,224"))
+        adv = CL.Advisor(root)
+        hints = [adv.hint(i) for i in adv.issues]
+        for h in hints:
+            CL.apply_tree(root, h.edits)
+        self.assertEqual(polylines(root), ["232,104 488,104 488,164 232,164", "452,74 476,74 476,224 452,224"])
+        self.assertEqual(CL.run_checks(root), [])
+
+    def test_no_target_squeezes_the_u_flat(self):
+        """C → D's ends at x=472: every target inside the border leaves an end piece under
+        MIN_ARROW (472 itself: zero-length, points 472,74 472,74 …): no move, the
+        route-inside fallback instead."""
+        root = svg(BOX.format(x=100, y=40, w=400, h=220), TITLE.format(x=112, y=58, s="AWS Cloud"),
+                   ICON.format(x=420, y=50), ICON.format(x=420, y=200), POLY.format(pts="472,74 548,74 548,224 472,224"))
+        _, _, h = hint_of(root)
+        self.assertFalse(h.edits, h.text)
+        self.assertIn("a bend between them instead of a detour around the outside", h.text)
+
+    def test_zero_length_pieces_are_flagged(self):
+        root = svg(POLY.format(pts="472,74 472,74 472,224 472,224"))
+        msgs = [i.msg for i in CL.run_checks(root)]
+        self.assertTrue(any(m.startswith("SHORT ARROW") and "has no length" in m for m in msgs), msgs)
+        self.assertTrue(any(m.startswith("REPEATED POINT") and "(472,74)" in m for m in msgs), msgs)
+        adv = CL.Advisor(root)
+        rp, = [i for i in adv.issues if i.kind == "REPEATED POINT"]
+        self.assertEqual(adv.hint(rp).edits[0][3], "472,74 472,224 472,224")
+
+    def test_junction_dot_moves_with_the_trunk(self):
+        dot = '<circle cx="300" cy="20" r="4" fill="#232F3E"/>'
+        root = svg(*CLOUD, ICON.format(x=380, y=180), POLY.format(pts="206,76 206,20 404,20 404,176"),
+                   POLY.format(pts="300,20 300,150 228,150 228,204"), dot)
+        adv, iss, h = hint_of(root, seg="(206,20)→(404,20)")
+        self.assertNotIn("but then", h.text)
+        circle = next(e for e in root.iter() if e.tag.endswith("circle"))
+        # a move that leaves the dot behind is a dirty one
+        trunk = next(e for e in root.iter() if e.get("points", "").startswith("206,76"))
+        branch = next(e for e in root.iter() if e.get("points", "").startswith("300,20"))
+        ok, new = adv.trial([("attr", trunk, "points", "206,76 206,52 404,52 404,176"),
+                             ("attr", branch, "points", "300,52 300,150 228,150 228,204")], iss[0].key)
+        self.assertTrue(ok)
+        self.assertIn("LOOSE DOT", [i.kind for i in new])
+        CL.apply_tree(root, h.edits)
+        self.assertEqual((circle.get("cx"), circle.get("cy")), ("300", "52"))
+        self.assertEqual(CL.run_checks(root), [])
+
+    def test_bus_label_does_not_close_the_bus(self):
+        """The bus's name at its open end is its label, not something the end attaches to:
+        the bus out under the Cloud is still a detour."""
+        parts = (ICON.format(x=300, y=180), ICON.format(x=400, y=180), LINE.format(x1=150, y1=280, x2=450, y2=280),
+                 LINE.format(x1=204, y1=280, x2=204, y2=232), LINE.format(x1=424, y1=280, x2=424, y2=232),
+                 POLY.format(pts="232,104 520,104 520,280"), '<text x="456" y="284" font-size="12">bus</text>')
+        iss = detours(svg(*CLOUD, *parts))
+        self.assertIn("(150,280)→(450,280)", [CL.fmt(i.ctx["s"]) for i in iss])
+
+    def test_arrow_into_a_label_attaches_to_it(self):
+        """An arrowhead pointing into a label (a text-only end): the line ends there, so a
+        line from a in the Cloud to a label outside it crosses on purpose."""
+        root = svg(*CLOUD, POLY.format(pts="232,104 300,104 300,284 540,284"),
+                   '<text x="546" y="288" font-size="12">On-premises</text>')
+        self.assertEqual(detours(root), [])
 
 
 if __name__ == "__main__":

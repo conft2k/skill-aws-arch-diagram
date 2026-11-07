@@ -315,6 +315,12 @@ def where_to_widen(p: Problem) -> Optional[Tuple[str, float]]:
     if k == "SHORT ARROW":
         s = c["s"]
         return ("y" if _vertical(s) else "x"), _centre(s)[1 if _vertical(s) else 0]
+    if k == "LINE ON LINE":
+        # two flows on one run: the gap the run lies in grows, so the router has room for a
+        # lane each (layout_route lane_counts / _lanes)
+        s = c["s"]
+        ax = "x" if _vertical(s) else "y"
+        return ax, _centre(s)[0 if ax == "x" else 1]
     if k == "LINE HUGS BORDER":
         s, b = c["s"], c["b"]
         ax = "x" if _vertical(s) else "y"

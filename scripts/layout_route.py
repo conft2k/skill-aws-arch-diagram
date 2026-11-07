@@ -53,6 +53,13 @@ middle of the free stretch nearest the target. Every candidate is tested with
 check_layout's own seg_hits_box against icons, labels and borders (LINE OVER ICON/TEXT,
 LINE NEAR TEXT, LINE HUGS BORDER, SHORT ARROW); edges that share a spec line or a node
 side try to share one bend. skip={n: k} takes edge n's k-th clean candidate instead.
+Lanes: members of such a group whose legs would run over each other at the shared bend
+(their spans along the leg overlap by more than CL.ON_LINE_RUN; the instances of one
+`trunk` line merge on purpose) each take a lane LANE_PITCH (12) apart round the bend
+value, lines whose spans don't overlap sharing one, in the assignment with the fewest
+lanes and then crossings (EC2 ×2 → a bottom-aligned flow-column CloudWatch: legs 462 and
+474, not both 462); plan() reserves the extra lanes in the gutter (lane_counts). Only when
+no lane set is clean do they share the bend, which check_layout reports as LINE ON LINE.
 
 Labels and badges (DESIGN 4.6): the line is cut at container borders; the piece is the
 longest horizontal one (only vertical pieces → the longest vertical). A line crossing the
@@ -70,6 +77,7 @@ the next piece.
 """
 from __future__ import annotations
 
+import itertools
 import math
 import re
 import sys
@@ -97,6 +105,7 @@ OVERLAY_EXIT = 16     # overlay side a line leaves through ↔ its member subnet
 OBST_CLEAR = 4        # a bend keeps this from icons and labels (LINE_CLEAR)
 BADGE_CLEAR = 4       # badge circle ↔ icon / text / other badge
 HUG_OVERLAP = 20      # check_layout: a parallel run longer than this next to a border is a hug
+LANE_PITCH = 12       # legs of one line's instances that would overlap: lanes this far apart (CL HUG_CLEAR)
 
 
 # =======================================================================================
@@ -402,6 +411,84 @@ def _is_span(spec: Spec, eid: str, kind: str) -> bool:
     return kind == "node" and spec.nodes[eid].col2 is not None
 
 
+def _clusters(keys: Sequence, meet) -> List[List]:
+    """The keys joined (transitively) by meet(a, b), clusters of two or more, in key order."""
+    parent = {k: k for k in keys}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for i, a in enumerate(keys):
+        for b in keys[i + 1:]:
+            if find(a) != find(b) and meet(a, b):
+                parent[find(b)] = find(a)
+    out: Dict = {}
+    for k in keys:
+        out.setdefault(find(k), []).append(k)
+    return [c for c in out.values() if len(c) >= 2]
+
+
+def _lane_free(e: Edge) -> bool:
+    """A line whose instances may share a leg on purpose: `trunk` (merge / fork / one stem)."""
+    return bool(e.trunk or e.fork)
+
+
+def _depth(spans: Sequence[Tuple[float, float]]) -> int:
+    """How many of the spans overlap at one point at most (their interiors)."""
+    cuts = sorted({v for sp in spans for v in sp})
+    mids = [(a + b) / 2 for a, b in zip(cuts, cuts[1:])]
+    return max((sum(1 for lo, hi in spans if lo < m < hi) for m in mids), default=1)
+
+
+def lane_counts(spec: Spec, topo: Optional[Dict[int, _Topo]] = None) -> Dict[int, int]:
+    """HVH / VHV lines that draw() bends at one shared value (_bend_groups: the instances of
+    one spec line, or lines on one node side) whose legs would run over each other there —
+    the target past every source on one side (EC2 ×2 → a flow-column CloudWatch below
+    both), or one source to targets all on one side: {edge n: lanes its cluster takes}. A
+    leg spans from the source's row (a HVH; column for a VHV) to the target's; two lines
+    need their own lanes when the spans overlap in more than a point (a fan to both sides
+    shares its bend), except the instances of one `trunk` line (they merge on purpose).
+    plan() reserves LANE_PITCH per extra lane in the bend's gutter; draw() spreads the
+    legs that far apart (_lanes)."""
+    topo = topo or _topology(spec)
+    ci, ri = _indices(spec)
+    span: Dict[int, Tuple[float, float]] = {}
+    keys: Dict[tuple, List[int]] = {}
+    by_n = {e.n: e for e in spec.edges}
+    for e in spec.edges:
+        t = topo[e.n]
+        if t.shape not in (HVH, VHV) or t.trunk or e.bend_x is not None or e.bend_y is not None \
+                or t.dx not in (1, -1) or t.dy not in (1, -1) \
+                or _same_side(t.shape, t.side_a, t.side_b, t.dy if t.shape == HVH else t.dx):
+            continue
+        A, B = _end(spec, e.a, e.a_kind, ci, ri), _end(spec, e.b, e.b_kind, ci, ri)
+        ea, eb = (A.rext, B.rext) if t.shape == HVH else (A.cext, B.cext)
+        if ea is None or eb is None:
+            continue
+        a, b = sum(ea) / 2, sum(eb) / 2
+        span[e.n] = (min(a, b), max(a, b))
+        for key in (("line", e.line, t.shape, t.dx, t.dy), ("end", e.a, t.side_a, t.shape),
+                    ("end", e.b, t.side_b, t.shape)):
+            keys.setdefault(key, []).append(e.n)
+    groups = _clusters(sorted(span), lambda p, q: any(p in ns and q in ns for ns in keys.values()))
+
+    def meet(p, q):
+        if by_n[p].line == by_n[q].line and _lane_free(by_n[p]):
+            return False
+        return min(span[p][1], span[q][1]) - max(span[p][0], span[q][0]) > 1e-6
+
+    out: Dict[int, int] = {}
+    for g in groups:
+        for c in _clusters(g, meet):
+            d = _depth([span[n] for n in c])
+            for n in c:
+                out[n] = max(out.get(n, 1), d)
+    return out
+
+
 def plan(spec: Spec) -> List[Requirement]:
     """The space every route needs (DESIGN 4.3 #10) as Requirements, from the Spec alone:
     a straight line's arrow segment (soft arrow_target, hard arrow_min) and label run, a
@@ -410,6 +497,7 @@ def plan(spec: Spec) -> List[Requirement]:
     puts their trunk beside the targets."""
     m = spec.const
     topo = _topology(spec)
+    lanes = lane_counts(spec, topo)
     ci, ri = _indices(spec)
     reqs: List[Requirement] = []
     seen = set()
@@ -512,6 +600,8 @@ def plan(spec: Spec) -> List[Requirement]:
                 xa = f"group:{ga}.{ea}" if ga else va
                 xb = f"group:{gb}.{eb}" if gb else vb
                 extra = MIN_SEG if (not hor and (e.label or e.verb or e.step)) else 0
+                # instances of one line that would share this leg take a lane each
+                extra += (lanes.get(e.n, 1) - 1) * LANE_PITCH
                 hard = None
                 for soft in (False, True):
                     clear = m.trunk_clear if soft else K.HUG_CLEAR
@@ -1832,6 +1922,65 @@ def _assign_ports(ctx: _Ctx, xs: Dict[int, _Edge]) -> Dict[Tuple[int, str], floa
     return out
 
 
+def _crossings(paths: Sequence[Sequence[Pt]]) -> int:
+    """How often the polylines cross one another (orthogonal pieces, strictly inside both)."""
+    segs = [(k, p, q) for k, pts in enumerate(paths) for p, q in zip(pts, pts[1:])]
+    n = 0
+    for i, (k, p, q) in enumerate(segs):
+        for l, u, w in segs[i + 1:]:
+            if l == k:
+                continue
+            for (a, b), (c, d) in (((p, q), (u, w)), ((u, w), (p, q))):
+                if abs(a[0] - b[0]) < 0.5 and abs(c[1] - d[1]) < 0.5:      # a vertical, c horizontal
+                    if min(c[0], d[0]) + 0.5 < a[0] < max(c[0], d[0]) - 0.5 \
+                            and min(a[1], b[1]) + 0.5 < c[1] < max(a[1], b[1]) - 0.5:
+                        n += 1
+    return n
+
+
+def _lanes(todo: Sequence[_Edge], per, v0: float) -> Dict[int, Tuple[int, int]]:
+    """Members of one bend group whose legs would run over each other at a shared bend
+    (spans overlapping by more than CL.ON_LINE_RUN; the instances of one `trunk` line merge
+    on purpose): {edge n: (lane, lanes)}, lane 0 at the lowest bend coordinate. Lines whose
+    spans don't overlap may share a lane; of the assignments tried (first fit in every
+    order of a cluster up to 6 lines, both directions) the one with the fewest lanes, then
+    the fewest crossings among the cluster's lines wins (plan: lane_counts)."""
+    if not todo or todo[0].t.shape not in (HVH, VHV, H, V):
+        return {}
+    i = 0 if todo[0].t.shape in (HVH, H) else 1            # the bend's axis: x of a vertical leg
+    ends = {x.e.n: per[x.e.n][0] for x in todo}
+    span = {n: tuple(sorted((c[1][1 - i], c[2][1 - i]))) for n, c in ends.items()}
+    by_n = {x.e.n: x for x in todo}
+
+    def meet(a, b):
+        ea, eb = by_n[a].e, by_n[b].e
+        if ea.line == eb.line and _lane_free(ea):
+            return False
+        return min(span[a][1], span[b][1]) - max(span[a][0], span[b][0]) > CL.ON_LINE_RUN
+
+    out: Dict[int, Tuple[int, int]] = {}
+    for c in _clusters([x.e.n for x in todo], meet):
+        orders = itertools.permutations(c) if len(c) <= 6 else [tuple(sorted(c, key=lambda n: span[n]))]
+        best = None
+        for k, order in enumerate(orders):
+            lane: Dict[int, int] = {}
+            for n in order:
+                used = {lane[o] for o in lane if meet(n, o)}
+                lane[n] = next(j for j in range(len(c)) if j not in used)
+            m = max(lane.values()) + 1
+            for flip in (False, True):
+                slot = {n: (m - 1 - j if flip else j) for n, j in lane.items()}
+                paths = [_path(ends[n][0], ends[n][1], ends[n][2], v0 + slot[n] * LANE_PITCH) for n in c]
+                key = (m, _crossings(paths), k, flip)
+                if best is None or key < best[0]:
+                    best = (key, slot)
+            if best[0][1] == 0 and best[0][0] == _depth([span[n] for n in c]):
+                break
+        for n, j in best[1].items():
+            out[n] = (j, best[0][0])
+    return out
+
+
 def _bend_groups(xs: Dict[int, _Edge]) -> List[List[int]]:
     """Edges that should share a bend: one spec line, or one node side with one shape."""
     parent = {n: n for n in xs}
@@ -1926,27 +2075,36 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         return clean[min(k, len(clean) - 1)] if clean else ranked[0][2]
 
     def shared(todo: List[_Edge]) -> Optional[Dict[int, _Route]]:
-        """One bend for every member: the best value by the worst member's quality."""
+        """One bend for every member: the best value by the worst member's quality. Members
+        whose legs would run over each other there (_lanes) get a lane each, LANE_PITCH
+        apart round that value; only when no such set is clean do they share it."""
         per = {x.e.n: [c for c in _candidates(ctx, x, ports) if c[0] == x.t.shape] for x in todo}
         values: List[float] = []
         for x in todo:
             for c in per[x.e.n]:
                 if c[3] is not None and all(abs(c[3] - v) > 0.25 for v in values):
                     values.append(c[3])
+        if any(not per[x.e.n] for x in todo):
+            return None
+        slots = _lanes(todo, per, values[0]) if values else {}
         best, best_q = None, 3
-        for v in values:
-            rs = {}
-            for x in todo:
-                if not per[x.e.n]:
-                    break
-                c = per[x.e.n][0]
-                rs[x.e.n] = build(x, (c[0], c[1], c[2], v))
-            else:
+        offsets = [{}]
+        if slots:
+            offsets = [{n: (k - anchor(m)) * LANE_PITCH for n, (k, m) in slots.items()}
+                       for anchor in (lambda m: (m - 1) / 2, lambda m: 0, lambda m: m - 1)] + [{}]
+        for offs in offsets:
+            for v in values:
+                rs = {}
+                for x in todo:
+                    c = per[x.e.n][0]
+                    rs[x.e.n] = build(x, (c[0], c[1], c[2], v + offs.get(x.e.n, 0.0)))
                 q = max(r.quality for r in rs.values())
                 if q < best_q:
                     best, best_q = rs, q
                     if q == 0:
                         break
+            if best is not None:
+                break
         return best
 
     for group in _bend_groups(xs):

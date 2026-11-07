@@ -26,12 +26,18 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
     plan(spec) -> list[Requirement]
         Picks every edge's shape (pure function of the spec) and returns the space the
         routes need as difference constraints: gutters, label runs, arrow segments,
-        trunk corridors. Reads Spec only.
+        trunk corridors. Reads Spec only. Lines that draw() bends at one shared value
+        whose legs would overlap (lane_counts: `.*` instances that are no trunk, or
+        lines on one node side) get LANE_PITCH (12) more gutter per extra lane.
     draw(spec, geom, skip=None) -> (list[Element], list[str])
         Routes every edge on the solved Geometry and returns its Elements (z Z_EDGE,
         Z_EDGE_LABEL, Z_BADGE) and warnings. skip: {edge n: k} skips the first k
         candidates of edge n (the W5 feedback loop's "use the next candidate"). Must make
-        the same shape choices as plan() (recompute them; no module state).
+        the same shape choices as plan() (recompute them; no module state). Lines that
+        share a bend never share a leg unless they are one `trunk` line's instances: an
+        overlapping leg gets its own lane (LANE_PITCH apart, the order with the fewest
+        crossings); only when no clean set of lanes exists do they share the bend (and
+        check_layout reports LINE ON LINE).
     same_side_problems(spec) -> list[(where, message)]
         Lines whose two ends leave one side (from_side / to_side, given or implied) while
         sharing the row (left / right) or column (top / bottom) the out-and-back's leg
@@ -80,6 +86,8 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
             around the spot, on the axis that separates the two things, get
             "track b − track a ≥ current + 16" (owner the element's id, why "feedback: …").
           LINE OVER TEXT / ICON, LINE NEAR TEXT on a connector: skip[n] += 1 (≤ 3), then widen.
+          LINE ON LINE (two flows on one run): the tracks around the run, across it, get
+            current + 16 (room for the router's lanes).
           LINE LEAVES BOX / LINE OFF CANVAS on a connector: the box's border on that side
             (group:<gid>.L/R/T/B) or the canvas ("drawing" / "origin") ≥ current + the
             overshoot + 12 from the edge's end; when that room is already there, skip[n] += 1.
