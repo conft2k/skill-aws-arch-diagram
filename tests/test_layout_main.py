@@ -890,6 +890,118 @@ class FlowColumnFixes(unittest.TestCase):
                         self.assertAlmostEqual(f[lo].y0 - f[up].y1, sp + max(spec.const.sibling_gap, sp), delta=1)
 
 
+CORPUS = ROOT / "tests" / "corpus"
+XY_MODES = (("document", []), ("slide", []), ("slide", ["--no-title"]))
+
+
+def main_file(path, mode, *more):
+    """layout.main in process on a spec file: (exit status, output, check kinds of the draft)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "t.draft.svg"
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = layout.main([str(path), "-o", str(out), "--mode", mode, *more])
+        kinds = [i.kind for i in CL.run_checks(ET.fromstring(out.read_bytes()))] if out.exists() else None
+        return rc, buf.getvalue(), kinds
+
+
+def warns(b):
+    return b.geom.warnings + b.warnings
+
+
+def xy_built(d, mode):
+    spec = layout_spec.load(copy.deepcopy(d), mode=mode)
+    return spec, layout.build(spec, [], {}, None, "x.layout.yaml")
+
+
+class XyMoved(unittest.TestCase):
+    """An `xy` center the drawing cannot meet (inside its box's pad, below its label room,
+    past the canvas margin) is moved to the nearest center that meets it, with a warning
+    saying from where to where and why; a sibling it then lands on is kept apart from it;
+    a column only an xy names gets a node's room. The three corpus specs the solve used to
+    refuse as contradictory draw clean in every mode."""
+
+    def test_corpus_cases_draw_clean(self):
+        for case in ("xy/t-grp", "xy/xy-grp", "flowcol/r3-xy-30"):
+            for mode, more in XY_MODES:
+                with self.subTest(case=case, mode=mode, more=more):
+                    rc, text, kinds = main_file(CORPUS / f"{case}.layout.yaml", mode, *more)
+                    self.assertEqual(rc, 0, text)
+                    self.assertEqual(kinds, [], text)
+                    self.assertNotIn("contradictory", text)
+
+    def test_label_room_moves_it_up_and_its_column_gets_room(self):
+        d = layout_spec._read(CORPUS / "xy/t-grp.layout.yaml")[0]
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode):
+                spec, b = xy_built(d, mode)
+                g = b.geom
+                for n in (1, 2):
+                    sn, e1, e2 = g.groups[f"sn.{n}"].rect, g.nodes[f"e1.{n}"], g.nodes[f"e2.{n}"]
+                    self.assertEqual(e2.cy, sn.y1 - 54)          # label baseline + label_bottom 12
+                    self.assertLessEqual(e2.footprint().y1, sn.y1)
+                    self.assertGreaterEqual(e2.footprint().x0 - e1.footprint().x1, spec.const.sibling_gap)
+                    self.assertGreaterEqual(e2.cx - e1.cx, spec.const.node_pitch)
+                self.assertTrue(any("e2.1: xy y sn.y1-40 moved 14 px up to sn.y1-54" in w
+                                    and "write sn.y1-54 in xy[1]" in w for w in warns(b)), warns(b))
+
+    def test_box_edge_means_inner_edge_and_the_neighbour_yields(self):
+        d = layout_spec._read(CORPUS / "xy/xy-grp.layout.yaml")[0]
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode):
+                spec, b = xy_built(d, mode)
+                g = b.geom
+                cloud, p, q = g.groups["cloud"].rect, g.nodes["p"], g.nodes["q"]
+                inset = spec.const.pad_node + spec.S / 2
+                self.assertEqual(q.cx, cloud.x0 + inset)
+                self.assertGreaterEqual(p.footprint().x0 - q.footprint().x1, spec.const.sibling_gap)
+                self.assertTrue(any(f"xy x cloud.x0 moved {inset:g} px right to cloud.x0+{inset:g}" in w
+                                    for w in warns(b)), warns(b))
+                self.assertTrue(any("landed on node p, so node p goes right of it" in w for w in warns(b)),
+                                warns(b))
+
+    def test_right_edge_moves_left_and_the_neighbour_goes_left(self):
+        d = layout_spec._read(CORPUS / "xy/xy-grp.layout.yaml")[0]
+        d["nodes"][1]["xy"] = ["cloud.x1", "row.r"]
+        spec, b = xy_built(d, "document")
+        g = b.geom
+        cloud, p, q = g.groups["cloud"].rect, g.nodes["p"], g.nodes["q"]
+        self.assertEqual(q.cx, cloud.x1 - spec.const.pad_node - spec.S / 2)
+        self.assertGreaterEqual(q.footprint().x0 - p.footprint().x1, spec.const.sibling_gap)
+        self.assertTrue(any("xy x cloud.x1 moved 40 px left to cloud.x1-40" in w for w in warns(b)), warns(b))
+
+    def test_canvas_margin_moves_it_down_and_the_cloud_below_it(self):
+        path = CORPUS / "flowcol/r3-xy-30.layout.yaml"
+        spec, b = xy_built(layout_spec._read(path)[0], "document")
+        g = b.geom
+        kms = g.nodes["kms"]
+        self.assertEqual((kms.cx, kms.cy), (600, 40))
+        self.assertGreaterEqual(g.groups["cloud"].rect.y0 - kms.footprint().y1, K.LABEL_CLEAR)
+        self.assertTrue(any("kms: xy y 30 moved 10 px down to 40 to keep canvas margin 16" in w
+                            for w in warns(b)), warns(b))
+        spec, b = xy_built(layout_spec._read(path)[0], "slide")      # the slide's margin takes 30
+        self.assertEqual(b.geom.nodes["kms"].cy, 30)
+        self.assertFalse([w for w in warns(b) if "moved" in w], warns(b))
+
+    def test_a_row_only_an_xy_names_gets_room(self):
+        d = {"name": "bare_row", "mode": "document", "cols": ["a"], "rows": ["r", "s"],
+             "groups": [{"id": "cloud", "type": "cloud"}],
+             "nodes": [{"id": "p", "icon": "service/Amazon-EC2", "label": "P", "in": "cloud", "at": ["a", "r"]},
+                       {"id": "z", "icon": "service/Amazon-EC2", "label": "Z", "in": "cloud",
+                        "xy": ["col.a", "row.s"]}]}
+        spec, b = xy_built(d, "document")
+        p, z = b.geom.nodes["p"], b.geom.nodes["z"]
+        self.assertEqual(p.cx, z.cx)
+        self.assertGreaterEqual(z.footprint().y0 - p.footprint().y1, spec.const.stack_gap)
+
+    def test_a_pin_that_holds_is_not_moved(self):
+        d = layout_spec._read(CORPUS / "xy/xy-grp.layout.yaml")[0]
+        d["nodes"][1]["xy"] = ["cloud.x0+40", "row.r"]
+        spec, b = xy_built(d, "document")
+        self.assertEqual(b.geom.nodes["q"].cx, b.geom.groups["cloud"].rect.x0 + 40)
+        self.assertFalse([w for w in warns(b) if "moved" in w or "landed" in w], warns(b))
+
+
 def lanes_spec(align="bottom", trunk=False):
     """Review repro t4_one_bottom: EC2 in two AZs, CloudWatch alone in a flow column aligned
     below (or above) both, `ec2.* ..> cw`."""

@@ -999,6 +999,7 @@ class _Loader:
                     # solve (layout_solve) once exprs() has checked its reference
                     r["xy"] = tuple(float(x) if _num(x) else self.expr(loc, f"xy[{i}]", x)
                                     for i, x in enumerate(v))
+                    r["xy_src"] = tuple(fmt_num(float(x)) if _num(x) else x.strip() for x in v)
             r["for"] = self.field(r, "for", self.c_ids)
             r["via"] = self.field(r, "via", self.c_id)
             if "via" in d and "for" not in d:
@@ -1195,7 +1196,7 @@ class _Loader:
                 sub = [self.subst(r, "sub", s, n) for s in (_pick(r["sub"], n) or [])]
                 node = Node(id=iid, icon=res[0] if res else "", label=self.subst(r, "label", _pick(r["label"], n), n)
                             or "", sub=sub, parent=parent, col=r["col"], col2=r["col2"], row=row, on=r["on"],
-                            dx=_pick(r["dx"], n), dy=_pick(r["dy"], n), xy=r["xy"],
+                            dx=_pick(r["dx"], n), dy=_pick(r["dy"], n), xy=r["xy"], xy_src=r.get("xy_src"),
                             icon_query=res[1] if res else None, template=r["tmpl"], instance=n, src=r["loc"])
                 if r["xy"] is not None:        # the absolute center overrides the grid position
                     node.col = node.col2 = node.row = None

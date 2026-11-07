@@ -601,6 +601,7 @@ class Node:
     xy: Optional[Tuple[Union[float, "Expr"], Union[float, "Expr"]]] = None   # icon center (escape hatch); overrides
                                     # col/row: a number is absolute, an Expr (col/row, a node's icon attr, a group's
                                     # edge, ±n) ties the center to the solve (W2 equalities)
+    xy_src: Optional[Tuple[str, str]] = None   # the xy as written (a template item's own text), for warnings
     flow_index: Optional[int] = None   # flow-row / flow-column node: 0-based order among the track's nodes in the same parent
     icon_query: Optional[str] = None   # the spec's alias when the icon was given as one (for the summary)
     template: Optional[str] = None
@@ -985,6 +986,9 @@ class Requirement:
     why: str                        # short reason for --explain / errors ("arrow 48 + end 4 into igw")
     owner: str                      # element id of the requirer ("edge:3", "note", "node:igw")
     soft: bool = False              # a preference W2 may drop to break a positive cycle
+    pin: str = ""                   # one half of an `xy` tie of a node center to its reference: "lo"
+                                    # (center − ref ≥ offset) or "hi" (ref − center ≥ −offset); W2 moves
+                                    # the offset of a pin that closes a positive cycle (layout_solve)
 
 
 # =======================================================================================

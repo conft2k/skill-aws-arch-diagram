@@ -35,7 +35,11 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                icon clearance, track order / min_gap_before, min_w / min_h.
   solve        Bellman-Ford longest path from "origin" per axis = the minimal solution. A
                positive cycle drops the soft requirements in it and retries; a cycle of hard
-               constraints raises SolveError naming each constraint's spec location and why.
+               ones through an `xy` tie moves that xy center by the cycle's excess (the
+               nearest center its boxes, label room and the canvas margin allow; warned),
+               and a sibling the moved node lands on is then kept apart from it (solve()
+               again); any other cycle raises SolveError naming each constraint's spec
+               location and why.
   hug          group left / top edges are pulled toward their content (inner groups
                first) as far as every constraint allows; right / bottom edges are already
                tight in the minimal solution.
@@ -48,8 +52,10 @@ from __future__ import annotations
 
 import bisect
 import math
+import re
 import sys
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -147,7 +153,7 @@ def _span_gap(a, b) -> int:
 
 
 class _Model:
-    def __init__(self, spec: Spec):
+    def __init__(self, spec: Spec, avoid: Sequence[Tuple[str, str, str, str]] = ()):
         self.spec = spec
         self.mc = spec.const
         self.S = spec.S
@@ -193,16 +199,27 @@ class _Model:
         self.diag_boxes: List[Tuple[_Item, _Item]] = []   # every diagonal node-box pair build("y") met
         self._past: Dict[Tuple[str, str, bool], bool] = {}   # lines_past() cache
         self._twins: Optional[List[list]] = None   # twin_sets() cache
+        # (axis, first key, second key, owner): a node whose xy the solve moved and a sibling
+        # it landed on, kept apart like grid siblings (solve() finds them: _xy_clashes)
+        self.avoid = list(avoid)
+        # tracks no grid node sits on: an xy node naming one (`col.c`) takes it as its own
+        # track on that axis, so the track gets a node's room instead of folding onto the next
+        used = {"x": set(), "y": set()}
+        for n in spec.nodes.values():
+            if n.xy is None:
+                used["x"].update(t for t in (n.col, n.col2) if t)
+                used["y"].update(t for t in (n.row,) if t)
+        self.bare = {"x": {t.id for t in spec.cols} - used["x"], "y": {t.id for t in spec.rows} - used["y"]}
 
     # ---- helpers --------------------------------------------------------------------
 
-    def add(self, axis, a: Ref, b: Ref, d: float, why: str, owner: str, soft=False):
+    def add(self, axis, a: Ref, b: Ref, d: float, why: str, owner: str, soft=False, pin=""):
         """(b) − (a) ≥ d, with a/b given as (variable, offset)."""
         (va, oa), (vb, ob) = a, b
         dd = d + oa - ob
         if va == vb and dd <= _EPS:
             return
-        self.cons[axis].append(Requirement(axis, va, vb, dd, why, owner, soft))
+        self.cons[axis].append(Requirement(axis, va, vb, dd, why, owner, soft, pin))
 
     def pad(self, gid):
         g = self.spec.groups[gid]
@@ -246,6 +263,12 @@ class _Model:
     def node_rng(self, nid, axis):
         n = self.spec.nodes[nid]
         if n.xy is not None:
+            # an xy node is no grid sibling, except on a bare track its xy names (col.c)
+            c = n.xy[0 if axis == "x" else 1]
+            kind = "col" if axis == "x" else "row"
+            if isinstance(c, Expr) and c.kind == kind and c.ref in self.bare[axis]:
+                i = (self.ci if axis == "x" else self.ri)[c.ref]
+                return (i, i)
             return None
         if axis == "x":
             return None if nid in self.flow else self.rng("x", n.col, n.col2 or n.col)
@@ -260,6 +283,11 @@ class _Model:
         g = self.spec.groups[gid]
         return _Item(f"group:{gid}", gid=gid, xr=self.group_rng(gid, "x"), yr=self.group_rng(gid, "y"),
                      gtype=g.type)
+
+    def item(self, key):
+        """The sibling item of an element id (node:… or group:…)."""
+        kind, ident, _ = split_eid(key)
+        return self.item_group(ident) if kind == "group" else self.item_node(ident)
 
     def item_node(self, nid):
         return _Item(f"node:{nid}", nid=nid, border=bool(self.spec.nodes[nid].on),
@@ -318,6 +346,9 @@ class _Model:
             self._siblings(axis, parent)
             if axis == "y":
                 self._float_siblings(parent)
+        for ax, k1, k2, owner in self.avoid:
+            if ax == axis:
+                self._sep(axis, self.item(k1), self.item(k2), owner)
         for nid, n in spec.nodes.items():
             if n.on:
                 self._border(axis, nid)
@@ -325,8 +356,8 @@ class _Model:
                 v = (f"node:{nid}", 0.0)
                 c = n.xy[0] if axis == "x" else n.xy[1]
                 ref, txt = self.xy_ref(c, axis)
-                self.add(axis, ref, v, 0, f"xy {txt}", f"node:{nid}")
-                self.add(axis, v, ref, 0, f"xy {txt}", f"node:{nid}")
+                self.add(axis, ref, v, 0, f"xy {txt}", f"node:{nid}", pin="lo")
+                self.add(axis, v, ref, 0, f"xy {txt}", f"node:{nid}", pin="hi")
         if axis == "x":
             for nid, sp in sorted(self.span.items()) if self.hold_span else ():
                 n = spec.nodes[nid]
@@ -1510,13 +1541,25 @@ def _loc(spec: Spec, owner: str) -> str:
 
 
 def _solve_axis(m: _Model, axis: str, cons: List[Requirement]):
+    """Longest path over cons. A positive cycle drops its soft requirements (a twin's
+    spacing first) and retries; a cycle of hard ones that holds an `xy` pin moves that pin
+    (_move_pin) and retries; any other raises SolveError naming each constraint. Returns
+    (dist, pred, the constraints solved: pins at their moved offsets)."""
     cons = list(cons)
+    moved: Dict[str, list] = {}          # node id → [shift, whys]
+    rounds = 0
     while True:
         dist, pred, cycle = _bellman_ford(cons)
         if cycle is None:
+            m.warnings.extend(_pin_warnings(m, axis, moved))
             return dist, pred, cons
         soft = [c for c in cycle if c.soft]
         if not soft:
+            pins = [c for c in cycle if c.pin]
+            if pins and rounds < PIN_ROUNDS:
+                rounds += 1
+                cons = _move_pin(m, cons, cycle, pins, moved)
+                continue
             excess = sum(c.d for c in cycle)
             probs = [f"{_loc(m.spec, c.owner)}: contradictory {axis} constraint {c.why!r} "
                      f"({c.a} → {c.b} ≥ {fmt_num(c.d)}) in a cycle that needs {fmt_num(excess)} px more than 0"
@@ -1530,6 +1573,58 @@ def _solve_axis(m: _Model, axis: str, cons: List[Requirement]):
             m.warnings.append(f"{_loc(m.spec, c.owner)}: dropped soft requirement {c.why!r} ({axis}) "
                               f"to resolve contradictory constraints")
         cons = [c for c in cons if id(c) not in drop]
+
+
+def _move_pin(m: _Model, cons: List[Requirement], cycle, pins, moved) -> List[Requirement]:
+    """An `xy` center the rest of the drawing cannot meet (a positive cycle through one half
+    of its tie: inside its boxes' pad or below its label room, past the canvas margin, …):
+    move its offset by the cycle's excess, rounded up to a whole px, the way the cycle
+    needs — the nearest center that cycle allows. Of several pins in one cycle the first
+    node in spec order moves. Both halves of the tie move, so it stays an equality."""
+    order = {f"node:{nid}": i for i, nid in enumerate(m.spec.nodes)}
+    c = min(pins, key=lambda r: (order.get(r.owner, len(order)), r.pin))
+    excess = _up(sum(r.d for r in cycle))
+    delta = -excess if c.pin == "lo" else excess    # lo in the cycle: the center must come down
+    var = c.b if c.pin == "lo" else c.a
+    out = []
+    for r in cons:
+        if r.pin and r.owner == c.owner and (r.b if r.pin == "lo" else r.a) == var:
+            r = replace(r, d=r.d + delta if r.pin == "lo" else r.d - delta)
+        out.append(r)
+    rec = moved.setdefault(var[5:], [0.0, []])
+    rec[0] += delta
+    for r in cycle:
+        if not r.pin and r.why != "coordinate ≥ 0" and r.why not in rec[1]:
+            rec[1].append(r.why)
+    return out
+
+
+def _xy_text(src: str, c, shift: float) -> str:
+    """An xy component as the spec would write it after a shift: a number moved, or the
+    expression with its ±n moved (`sn.y1-40` up 14 → `sn.y1-54`)."""
+    if not isinstance(c, Expr):
+        return fmt_num(c + shift)
+    off = c.offset + shift
+    base = re.sub(r"\s*[+-]\s*\d+(?:\.\d+)?\s*$", "", src) if c.offset else src
+    return base + (f"{'+' if off > 0 else '-'}{fmt_num(abs(off))}" if off else "")
+
+
+def _pin_warnings(m: _Model, axis: str, moved) -> List[str]:
+    """What _move_pin did, per node: from where to where, why, and what to write instead."""
+    out = []
+    i = 0 if axis == "x" else 1
+    for nid, (shift, whys) in moved.items():
+        if abs(shift) <= _EPS:
+            continue
+        n = m.spec.nodes[nid]
+        c = n.xy[i]
+        src = n.xy_src[i] if n.xy_src else m.xy_ref(c, axis)[1]
+        way = ("right" if shift > 0 else "left") if axis == "x" else ("down" if shift > 0 else "up")
+        new = _xy_text(src, c, shift)
+        out.append(f"{_loc(m.spec, 'node:' + nid)}: xy {axis} {src} moved {fmt_num(abs(shift))} px {way} "
+                   f"to {new} to keep {'; '.join(whys)}; write {new} in xy[{i}] (or make room there) "
+                   f"to place it without this warning")
+    return out
 
 
 def _hug(m: _Model, axis: str, cons: List[Requirement], val: Dict[str, float]):
@@ -1626,6 +1721,8 @@ def _explain_stacks(m: _Model, val, pred, final) -> List[str]:
 
 SPAN_TOL = 0.01         # px: a colspan's span has settled when its solve gives it back this close
 SPAN_ROUNDS = 12        # x solves spent looking for the spans (then the closest, with a warning)
+PIN_ROUNDS = 64         # xy pins moved per axis solve before a cycle still left is reported as a contradiction
+AVOID_ROUNDS = 6        # solves spent keeping moved xy nodes off the siblings they land on
 TWIN_ROUNDS = 6         # solves per axis spent evening out twins (their measures at the class's largest)
 TWIN_WHY = "twins alike"
 TWIN_NAMED = ("vpc", "account", "region", "onprem", "cloud")   # a twin root's own title may differ
@@ -1708,8 +1805,25 @@ def _solve_x(m: _Model, extra: Sequence[Requirement]):
 
 def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool = False) -> Geometry:
     """diag_x: keep every diagonal pair build("y") leaves open apart on x, without weighing
-    x against y (layout.build's retry for a slide the weighing leaves too small)."""
-    m = _Model(spec)
+    x against y (layout.build's retry for a slide the weighing leaves too small).
+
+    An `xy` node the solve had to move (_move_pin) may land on a sibling it was never kept
+    apart from (xy nodes are no grid siblings): such a pair is kept apart like grid
+    siblings and the drawing solved again, until none is left (_xy_clashes, at most
+    AVOID_ROUNDS solves)."""
+    avoid: List[Tuple[str, str, str, str]] = []
+    for k in range(AVOID_ROUNDS):
+        m, geom, xv, yv = _solve_once(spec, reqs, note_block, diag_x, avoid)
+        new = _xy_clashes(m, geom, xv, yv) if k + 1 < AVOID_ROUNDS else []
+        if not new:
+            break
+        avoid = avoid + new
+    geom.warnings += [_avoid_warning(spec, a) for a in avoid]
+    return geom
+
+
+def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: bool, avoid):
+    m = _Model(spec, avoid)
     extra = list(reqs) + (list(note_block.requirements) if note_block is not None else [])
     mapped = {"x": [], "y": []}
     probs = []
@@ -1736,7 +1850,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
         # a pair x keeps apart for less than y would: solve again with it on x (the rows
         # it no longer pushes stay where the rest puts them); m2's build("y") puts every
         # other pair its x does not keep apart on y (m2.diag_y), the new ones included
-        m2 = _Model(spec)
+        m2 = _Model(spec, avoid)
         m2.diag_x = pick
         m = m2
         xbf, xpred, xcons, xv, nodes_x = _x_twins(m, extra)
@@ -1778,7 +1892,69 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
     geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)
     geom.warnings = list(m.warnings)
     geom.diag_y = len(m.diag_y)
-    return geom
+    return m, geom, xv, yv
+
+
+def _xy_shift(m: _Model, nid: str, axis: str, val: Dict[str, float]) -> float:
+    """How far the solve moved an xy node's center on one axis from what its xy asks."""
+    (v, o), _ = m.xy_ref(m.spec.nodes[nid].xy[0 if axis == "x" else 1], axis)
+    return val[f"node:{nid}"] - (val.get(v, 0.0) + o)
+
+
+def _xy_clashes(m: _Model, geom: Geometry, xv, yv) -> List[Tuple[str, str, str, str]]:
+    """The siblings a moved xy node lands on: its footprint and theirs (a box's rect, a
+    node's footprint) closer than the gap the grid keeps between them on both axes.
+    Each pair is kept apart on the axis the node moved along (the larger move), the one
+    whose center comes first on it first; a tie puts the node on the side it came from
+    (moved right: it stays left of the other)."""
+    out = []
+    have = {(a[1], a[2]) for a in m.avoid} | {(a[2], a[1]) for a in m.avoid}
+    for nid, n in m.spec.nodes.items():
+        if n.xy is None:
+            continue
+        sh = {ax: _xy_shift(m, nid, ax, xv if ax == "x" else yv) for ax in ("x", "y")}
+        if max(abs(v) for v in sh.values()) <= 0.5:
+            continue
+        axis = "x" if abs(sh["x"]) > abs(sh["y"]) else "y"
+        me = m.item_node(nid)
+        mine = geom.nodes[nid].footprint()
+        parent = n.parent
+        # its siblings as _siblings sees them (a border node: not its own VPC)
+        sibs = [f"group:{g}" for g in m.child_groups[parent] if g != n.on]
+        sibs += [f"node:{o}" for o in m.child_nodes[parent] if o != nid]
+        sibs += [f"node:{b}" for g in m.child_groups[parent] for b in m.border_of.get(g, []) if b != nid]
+        if parent is not None:
+            sibs += [f"node:{b}" for b in m.border_of.get(parent, []) if b != nid]
+        for key in sibs:
+            if (me.key, key) in have:
+                continue
+            kind, ident, _ = split_eid(key)
+            box = geom.groups[ident].rect if kind == "group" else geom.nodes[ident].footprint()
+            it = m.item(key)
+            near = []
+            for ax in ("x", "y"):
+                a0, a1, b0, b1 = (mine.x0, mine.x1, box.x0, box.x1) if ax == "x" else (mine.y0, mine.y1, box.y0, box.y1)
+                g = min(m._gap(ax, me, it)[0], m._gap(ax, it, me)[0])
+                near.append(b0 - a1 < g - _EPS and a0 - b1 < g - _EPS)
+            if not all(near):
+                continue
+            c0 = (mine.x0 + mine.x1) / 2 if axis == "x" else (mine.y0 + mine.y1) / 2
+            c1 = (box.x0 + box.x1) / 2 if axis == "x" else (box.y0 + box.y1) / 2
+            first = c0 < c1 - _EPS or (abs(c0 - c1) <= _EPS and sh[axis] > 0)
+            out.append((axis, me.key, key, me.key) if first else (axis, key, me.key, me.key))
+            have |= {(me.key, key), (key, me.key)}
+    return out
+
+
+def _avoid_warning(spec: Spec, a: Tuple[str, str, str, str]) -> str:
+    axis, k1, k2, owner = a
+    other = k2 if k1 == owner else k1
+    kind, ident, _ = split_eid(other)
+    way = {("x", True): "right of", ("x", False): "left of", ("y", True): "below", ("y", False): "above"}[
+        (axis, k1 == owner)]
+    what = f"box {ident}" if kind == "group" else f"node {ident}"
+    return (f"{_loc(spec, owner)}: its moved xy landed on {what}, so {what} goes {way} it; give the node an xy "
+            f"clear of {ident} to place them yourself")
 
 
 def _x_twins(m: _Model, extra: Sequence[Requirement]):
@@ -1879,7 +2055,7 @@ def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]
     x0 = _extent(_solve_axis(m, "x", m.cons["x"] + [_map_req(m, r) for r in extra if r.axis == "x"])[0])
     xcost = {}
     for first, second, _ in open_:
-        mp = _Model(m.spec)
+        mp = _Model(m.spec, m.avoid)
         mp.diag_x = {frozenset((first.key, second.key))}
         try:
             xcost[(first.key, second.key)] = _extent(_solve_x(mp, extra)[0]) - x0
