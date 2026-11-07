@@ -1204,7 +1204,7 @@ examples:
   - path: ../../docs/examples/specs/slides/bedrock-dx-reference-architecture-1.layout.yaml
     modes: [slide, slide-no-title]
     rules: [R-flow, R-label, R-border, R-fit]
-    what: "Bedrock/DX slide 1: Seoul global inference, two-AZ endpoint ENIs folded by type, private DX/VGW buses, separate Internet SSO path and destination Region"
+    what: "Bedrock/DX slide 1: Seoul global inference, AZ1 private subnet with Resolver and interface endpoints (AZ2 repeats), private DX/VGW buses, separate Internet SSO path and destination Region"
     good: [R-flow, R-label, R-border, R-fit]
   - path: ../../docs/examples/specs/slides/bedrock-dx-reference-architecture-2.layout.yaml
     modes: [slide, slide-no-title]
