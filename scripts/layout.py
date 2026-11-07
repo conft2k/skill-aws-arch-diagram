@@ -30,7 +30,7 @@ drawn in another shape, is written.
 The CLI keeps the existing complete default as an incumbent, reusing its solves to judge
 feedback rounds, fixed-answer repairs and text scale by the rule checker's Verdict from
 the first render. It then tries at most 12 document / 16 slide Candidates, generated from
-R-border, R-flow and R-fit violations. Skip-only Candidates share solved geometry. Only
+R-border, R-flow, R-rt and R-fit violations. Skip-only Candidates share solved geometry. Only
 a strictly better Verdict replaces the incumbent; ties retain the earlier Draft. Later
 stages preserve the winner's Verdict. Explicit Spec placements have no neighbouring move.
 The complete default also protects against higher check counts or a worse full Verdict
@@ -81,7 +81,7 @@ from layout_model import Element, Geometry, NoteBlock, Requirement, Spec  # noqa
 MAX_ROUNDS = 5          # feedback rounds after the first solve (DESIGN 4.10)
 WIDEN = 16              # px a feedback round adds to a gap
 MAX_SKIP = 3            # candidates an edge may skip before its gap is widened instead
-SELECTION_RULES = frozenset(("R-border", "R-flow"))
+SELECTION_RULES = frozenset(("R-border", "R-flow", "R-rt"))
 MAX_CANDIDATES = {"document": 12, "slide": 16}
 # The router's warning for an edge drawn in another shape than plan() reserved space for.
 SHAPE_MISS = re.compile(r"drew (\S+) instead of")
@@ -125,12 +125,14 @@ class Build:
 class RuleGuard:
     """Share rule information across later stages; a checker bug never costs a draft."""
 
-    def __init__(self, protect: bool = True, selection: bool = False, build_cache=None):
+    def __init__(self, protect: bool = True, selection: bool = False, build_cache=None,
+                 enabled_rules=None):
         self.protect = protect
         self.selection = selection
         self.error = None
         self._checked = {}
         self.build_cache = build_cache
+        self.enabled_rules = SELECTION_RULES if enabled_rules is None else frozenset(enabled_rules)
         self._problems = {}
 
     def problems(self, data):
@@ -206,7 +208,7 @@ class RuleGuard:
             if slide_problem(b.spec, data):
                 checks.append("SLIDE TOO SMALL")
             return rules.score(violations, checks, b.geom, b.spec, shape_misses(b),
-                               enabled_rules=SELECTION_RULES if enabled else None)
+                               enabled_rules=self.enabled_rules if enabled else None)
         except Exception as error:  # noqa: BLE001 — preserve the default drawing
             self.failed(error)
             return None
@@ -1437,15 +1439,31 @@ def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = Fal
     return result
 
 
-def neighbours(b: Build, violations):
+def neighbours(b: Build, violations, enabled_rules=None):
     """Violation-driven moves, in a stable order; pinned placements have no moves."""
     decisions = b.decisions
     skips = dict(decisions.skip)
     edges = {e.n: e for e in b.spec.edges}
     seen = set()
+    enabled_rules = SELECTION_RULES if enabled_rules is None else enabled_rules
     for v in sorted(violations, key=lambda v: (v.tier, v.rule, v.owners, v.code, v.message)):
         moves = []
-        if v.rule in SELECTION_RULES:
+        if v.rule == "R-rt" and v.rule in enabled_rules:
+            # Only the associated table owns these moves; the other node owner
+            # may be its hub. Keep every unrelated pair on its current axis.
+            on_x = (decisions.diag if decisions.diag is not None else
+                    frozenset(p.key for p in b.diag_pairs if p.default_axis == "x"))
+            for owner in v.owners:
+                node = b.spec.nodes.get(owner[5:]) if owner.startswith("node:") else None
+                if node is None or node.assoc is None or node.xy is not None:
+                    continue
+                pairs = sorted((p.key for p in b.diag_pairs if owner in p.key),
+                               key=lambda key: (key in on_x, tuple(sorted(key))))
+                for key in pairs:  # y → x first, then x → y
+                    moves.append(dataclasses.replace(decisions, diag=on_x ^ {key}))
+                if pairs:
+                    moves.append(dataclasses.replace(decisions, diag=on_x ^ set(pairs)))
+        elif v.rule in enabled_rules:
             for owner in v.owners:
                 edge = edge_of(owner)
                 if edge is None:
@@ -1527,7 +1545,8 @@ def hard_placement_warnings(b: Build, violations):
     return warnings
 
 
-def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, original_spec=None):
+def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, original_spec=None,
+                   _budget=None):
     """Bounded best-improvement hill-climb, retaining the complete default on failure."""
     b, data, _, probs, *_ = default
     first = rule_guard.check(b.spec, b.geom, data)
@@ -1536,13 +1555,30 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         return default, ["selection: default kept (rule checker unavailable)"]
     first_score = score
     base_decisions = b.decisions
-    best, index, count = default, 0, 0
+    shared = _budget if _budget is not None else {"count": 0, "index": 0}
+    best, index, count = default, shared["index"], shared["count"]
+    if "R-rt" in rule_guard.enabled_rules and any(v.rule == "R-rt" for v in first):
+        # A new group's greedy move can leave the previous group's better drawing
+        # unreachable. Keep that winner as the incumbent, sharing one fixed budget.
+        previous = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
+                             enabled_rules=rule_guard.enabled_rules - {"R-rt"})
+        previous._checked = rule_guard._checked
+        previous._problems = rule_guard._problems
+        best, _ = select_drawing(default, source, scratch, previous, original_spec, shared)
+        if previous.error is not None:
+            rule_guard.error = previous.error
+            return default, ["selection: default kept (rule checker unavailable)"]
+        score = rule_guard.verdict(best[0], best[1], best[3])
+        if score is None or rule_guard.error is not None:
+            return default, ["selection: default kept (rule checker unavailable)"]
+        index, count = shared["index"], shared["count"]
     if original_spec is not None and (probs or any(
-            v.rule in SELECTION_RULES or v.rule == "R-fit" for v in first)):
+            v.rule in rule_guard.enabled_rules or v.rule == "R-fit" for v in first)):
         # The original complete drawing remains the failure-safe incumbent. Reuse
         # its solves to compare feedback, fixed answers and font tries by Verdict
         # from the first render, without restoring an unfinished drawing.
-        guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache)
+        guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
+                            enabled_rules=rule_guard.enabled_rules)
         guarded._checked = rule_guard._checked
         guarded._problems = rule_guard._problems
         result = render_readable(original_spec, source, scratch, rule_guard=guarded)
@@ -1553,19 +1589,20 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         if candidate_score is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
         all_after = rule_guard.verdict(result[0], result[1], result[3], enabled=False)
-        all_before = rule_guard.verdict(b, data, probs, enabled=False)
+        all_before = rule_guard.verdict(best[0], best[1], best[3], enabled=False)
         if all_after is None or all_before is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
         if candidate_score < score and candidate_score.checks <= score.checks and all_after < all_before:
             best, score = result, candidate_score
     budget = MAX_CANDIDATES[b.spec.mode]
-    tried = {base_decisions}
+    tried = {base_decisions, best[0].decisions}
     drafts = {data}
     while count < budget:
         current = best[0]
         violations = rule_guard.check(current.spec, current.geom, best[1])
         movable = {e.n for e in current.spec.edges if layout_route.skippable(e)}
-        wanted = {edge_of(o)[0] for v in violations if v.rule in SELECTION_RULES
+        wanted = {edge_of(o)[0] for v in violations if v.rule in rule_guard.enabled_rules
+                  and v.rule != "R-rt"
                   for o in v.owners if edge_of(o) is not None and edge_of(o)[0] in movable}
         if wanted and getattr(current, "_alternative_edges", None) != wanted:
             # Collect only the implicated edges' distinct, later routing alternatives.
@@ -1578,7 +1615,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
             current.routing_alternatives = alternatives
             current._alternative_edges = wanted
         round_best, round_score, round_index = best, score, index
-        for decisions in neighbours(current, violations):
+        for decisions in neighbours(current, violations, rule_guard.enabled_rules):
             if decisions in tried:
                 continue
             tried.add(decisions)
@@ -1622,7 +1659,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         best, score, index = round_best, round_score, round_index
     if best[1] != default[1]:
         # Winner repairs start at its first render and preserve the complete Verdict.
-        guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache)
+        guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
+                            enabled_rules=rule_guard.enabled_rules)
         guarded._checked = rule_guard._checked
         guarded._problems = rule_guard._problems
         result = render_readable(best[0].spec, source, scratch, rule_guard=guarded, chosen=best)
@@ -1655,6 +1693,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
     else:
         after = first
         lines = [f"selection: default kept; evaluated {count}/{budget} candidates"]
+    shared.update(count=count, index=index)
     return best, lines + hard_placement_warnings(best[0], after)
 
 

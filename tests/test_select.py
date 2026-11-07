@@ -128,3 +128,64 @@ def test_checker_failure_keeps_default(tmp_path, capsys, monkeypatch, checker):
     assert draft == expected
     assert "selection: default kept" in text
     assert text.count("rule: checker error") == 1
+
+
+def test_route_table_counts_before_checks_and_fit(tmp_path):
+    source = ROOT / "tests/corpus/rt/nd-single.layout.yaml"
+    before = default(source, tmp_path, "document")
+    b, draft, _, problems, *_ = before
+    violations = rules.check(b.spec, b.geom, draft)
+    guard = layout.RuleGuard(selection=True)
+    verdict = guard.verdict(b, draft, problems)
+    enabled = [v for v in violations if v.rule in {"R-border", "R-flow", "R-rt"}]
+    assert any(v.rule == "R-rt" for v in enabled)
+    assert verdict.tier_0_count == len(enabled)
+    assert verdict.tier_0_cost == round(sum(v.cost for v in enabled), 3)
+
+
+def test_single_association_moves_near_its_line(tmp_path, capsys):
+    source = ROOT / "tests/corpus/rt/nd-single.layout.yaml"
+    status, draft, text = invoke(source, tmp_path, capsys, "--mode", "document")
+    assert status == 0
+    assert "rule: R-rt" not in text
+    assert "selection: candidate " in text
+    assert "removed R-rt RT2" in text
+    assert "diagonal pairs on x:" in text
+    assert not CL.run_checks(ET.fromstring(draft))
+    again = invoke(source, tmp_path, capsys, "--mode", "document")
+    assert again[1] == draft
+
+
+def test_pinned_route_table_keeps_its_position(tmp_path, capsys):
+    source = ROOT / "tests/corpus/rt/nd-single.layout.yaml"
+    document = layout_spec._read(source)[0]
+    document["text_scale"] = "off"
+    table = next(n for n in document["nodes"] if n["id"] == "rtsp")
+    table.pop("at")
+    table["xy"] = [350, 650]
+    pinned = tmp_path / "pinned.json"
+    pinned.write_text(json.dumps(document))
+    expected = default(pinned, tmp_path, "document")[1]
+    _, draft, text = invoke(pinned, tmp_path, capsys, "--mode", "document")
+
+    def icon(data):
+        root = ET.fromstring(data)
+        return ET.tostring(root.find(f"{{{layout.SVG_NS}}}g[@id='node:rtsp']"))
+
+    assert icon(draft) == icon(expected)
+    assert "rule: R-rt" in text
+    assert "hard placement node:rtsp (xy)" in text
+
+
+def test_enabling_route_tables_keeps_the_previous_group_winner(tmp_path, capsys, monkeypatch):
+    source = ROOT / "tests/corpus/ports/xnt.layout.yaml"
+    with monkeypatch.context() as prior:
+        prior.setattr(layout, "SELECTION_RULES", frozenset(("R-border", "R-flow")))
+        _, before, old_text = invoke(source, tmp_path, capsys, "--mode", "slide")
+    _, after, text = invoke(source, tmp_path, capsys, "--mode", "slide")
+    assert "rule: R-rt" not in old_text and "rule: R-rt" not in text
+    spec = layout_spec.load(source, mode="slide")
+    assert layout.drawn_text(spec, after)[0][0] >= layout.drawn_text(spec, before)[0][0]
+    assert len(CL.run_checks(ET.fromstring(after))) <= len(CL.run_checks(ET.fromstring(before)))
+    evaluated, budget = map(int, re.search(r"evaluated (\d+)/(\d+) candidates", text).groups())
+    assert evaluated <= budget == 16

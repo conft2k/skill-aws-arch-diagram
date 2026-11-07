@@ -4,9 +4,11 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** implemented and validated
 
-- [ ] The tier-0 part of the verdict now counts R-rt as well.
-- [ ] Corpus (ticket 01 report): 0 cases worse, R-border and R-flow not higher, and check problems not higher. Each R-rt bad-tagged case is listed with its before and after counts, the group's bad-tagged cases have fewer violations in total, and tags the evidence fixes move from bad to good with the reason.
-- [ ] rt/three-b and the rt/single cases are reported with their before and after verdicts; any that stay bad keep a reason.
-- [ ] Runtime stays within the ticket 04 limits.
+Evidence: [ticket 06 validation](../results/06-enable-route-table-rules.md).
+
+- [x] The tier-0 part of the verdict now counts R-rt as well.
+- [x] Corpus (ticket 01 report): 0 cases worse, R-border and R-flow not higher, and check problems not higher. Each R-rt bad-tagged case is listed with its before and after counts, the group's bad-tagged cases have fewer violations in total, and tags the evidence fixes move from bad to good with the reason.
+- [x] rt/three-b and the rt/single cases are reported with their before and after verdicts; any that stay bad keep a reason.
+- [x] Runtime stays within the ticket 04 limits.
