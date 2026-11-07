@@ -11,8 +11,10 @@ Sources, cited per value:
   ex <name> measured in docs/examples/<name>-reference-architecture.svg after
             `embed.py --unembed` (doc = the document example, slide = docs/examples/slides/);
             "skeleton" is docs/example.svg
-  CL NAME   scripts/check_layout.py constant NAME (mirrored here; tests/test_layout_model.py
-            asserts they stay equal)
+  CL        what scripts/check_layout.py enforces: the checker imports every number it shares
+            with the engine from here (it needs nothing but this module and find_icon), so
+            the two cannot drift; tests/test_layout_model.py asserts the couplings between
+            the engine's offsets and the checker's reaches (ConstTest.test_couplings)
   DESIGN    the layout-engine design (4.4 mode table, 2.2 group table)
 Where the design and the examples disagree the measured example value wins and the comment
 says so ("examples win").
@@ -30,9 +32,9 @@ MODES_ORDER = ("document", "slide")
 # Icon and node label stack (mode-independent)
 
 S_DEFAULT = 48            # QR 84: every node icon 48x48
-NODE_LABEL_DY = 18        # QR 91: label baseline = icon.y + S + 18 (= icon.y + 66, every example); CL NODE_LABEL_DY
-SUB_PITCH = 16            # QR 92: each sub-caption line 16 below the previous line (every example); CL SUB_PITCH
-LINE_PITCH = 16           # QR 110: +16 mask height per extra label line; pane description pitch
+NODE_LABEL_DY = 18        # QR 91: label baseline = icon.y + S + 18 (= icon.y + 66, every example); CL
+SUB_PITCH = 16            # QR 92 / 110: each sub-caption line 16 below the previous line (every example),
+                          # and +16 mask height per extra label line; CL
 END_GAP = 4               # QR 142: a connector stops 4px from an icon (cx ± (S/2 + 4)) or a box border
 EMPHASIS = 64             # QR 87: E = 64, phase 2
 
@@ -61,13 +63,13 @@ TEXT_SUB = TextStyle(12, "", GRAY)          # QR 126 (examples: every sub-captio
 TEXT_TITLE_SIZE = 14                        # QR 123: container title 14 / 600 / the border color
 TEXT_TITLE_WEIGHT = "600"
 TEXT_CLOUD_TITLE = TextStyle(15, "600", INK)  # QR 124
-TEXT_CIDR = TextStyle(12, "", INK)          # QR 44: CIDR line 12px regular #232F3E (CL CIDR_COLOR)
+TEXT_CIDR = TextStyle(12, "", INK)          # QR 44: CIDR line 12px regular #232F3E (CL CIDR COLOR)
 TEXT_PROTO = TextStyle(12, "", INK)         # QR 125: protocol/port connector label
 TEXT_VERB = TextStyle(12, "", GRAY)         # QR 126: verb / attachment-type label
 TEXT_HOP = TextStyle(12, "600", INK)        # QR 127: legend hop, note row label
 TEXT_NOTE = TextStyle(12, "", GRAY)         # QR 126: note description, summary, slide note line
 TEXT_BADGE = TextStyle(12, "700", WHITE)    # QR 128: step badge digit
-MIN_FONT = 12                               # QR 130; CL MIN_FONT
+MIN_FONT = 12                               # QR 130; CL SMALL TEXT
 
 # Root font-family (every example's root <svg>). W1 picks the first installed of
 # FONT_CANDIDATES (fc-list) and lists the others after it; with Noto installed (this
@@ -78,8 +80,8 @@ FONT_FAMILY_DEFAULT = "'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif"   # 
 # Text width estimate (layout_model.text_width / layout_text_width use these).
 CHECK_LATIN_EM = 0.55     # CL text_width: the checker's Latin estimate; also what the examples' computed x's use
 LAYOUT_LATIN_EM = 0.60    # QR 111 / DESIGN 4.2: conservative estimate for reserving space
-WIDE_EM = 1.0             # QR 111: Hangul / CJK / arrows U+2190-U+2BFF
-GLYPH_ASCENT = 0.75       # QR 79: glyph box = baseline − 0.75 × size …
+WIDE_EM = 1.0             # QR 111: Hangul / CJK / arrows U+2190-U+2BFF; CL text_width
+GLYPH_ASCENT = 0.75       # QR 79: glyph box = baseline − 0.75 × size …  (CL collect)
 GLYPH_DESCENT = 0.25      # … to baseline + 0.25 × size
 
 # --------------------------------------------------------------------------------------
@@ -89,7 +91,7 @@ LINE_COLOR = INK          # QR 136
 LINE_WIDTH = 1.5          # QR 136 (ex all: 126 connectors, all 1.5 #232F3E)
 DASH_DASHED = "5,4"       # QR 140: dashed connectors (return/outbound/DNS/management), every example
 TGW_RT_LINK = ("#8C4FFF", 1.5, "4 3")   # QR 152: TGW ↔ its route-table table; phase 2 (no example)
-JUNCTION_DOT_R = 6        # CL collect: a circle r ≤ 6 on its own line is a junction dot; phase 2
+JUNCTION_DOT_R = 6        # CL collect: a circle r ≤ 6 on its own line is a junction dot (< BADGE_R); phase 2
 
 # One marker each, exactly as in every example's <defs> (W5 indents them). arrowStart only
 # when some element has marker-start (QR 137).
@@ -123,16 +125,31 @@ BREAK_APART = 40          # QR 149: where a path leaves and rejoins the main lin
 GROUP_END_GAP = 4         # QR 143 / DESIGN 2.4: an edge ending on a group stops 4 from its border
 
 # --------------------------------------------------------------------------------------
-# Clearances check_layout enforces (mirrored; the layout keeps them with margin)
+# Clearances and reaches check_layout enforces (it imports them from here; the layout keeps
+# the clearances with margin and its offsets inside the reaches, ConstTest.test_couplings)
 
-LABEL_CLEAR = 8           # CL LABEL_CLEAR: label ↔ container border (QR 71)
-ICON_CLEAR = 8            # CL ICON_CLEAR: label / group badge ↔ an icon it doesn't label (QR 72-73)
-HEADER_ICON_CLEAR = 6     # CL HEADER_ICON_CLEAR: header label ↔ icon (QR 72)
-LINE_CLEAR = 4            # CL LINE_CLEAR: connector ↔ node or header label (QR 74)
-TEXT_GAP = 4              # CL TEXT_GAP: label ↔ label side by side (QR 75)
-HEADER_CLEAR = 8          # CL HEADER_CLEAR: header label ↔ nested box top
-MIN_ARROW = 20            # CL MIN_ARROW: arrowhead segment ≥ 20 (QR 144)
-HUG_CLEAR = 12            # CL HUG_CLEAR: connector alongside a border ≥ 12 (QR 145, slide trunk 12)
+LABEL_CLEAR = 8           # CL TEXT AT BORDER: label ↔ container border (QR 71)
+BORDER_CLEAR = 4          # CL TEXT AT BORDER: a container title ↔ a border (it sits at a fixed offset)
+ICON_CLEAR = 8            # CL TEXT / BADGE NEAR ICON: label / group badge ↔ an icon it doesn't label (QR 72-73)
+HEADER_ICON_CLEAR = 6     # CL TEXT NEAR ICON: header label ↔ icon (QR 72)
+LINE_CLEAR = 4            # CL LINE NEAR TEXT: connector ↔ node or header label, and ↔ a connector
+                          # label's top or sides (QR 74)
+TEXT_GAP = 4              # CL TEXT TOO CLOSE: label ↔ label side by side (QR 75)
+HEADER_CLEAR = 8          # CL HEADER CLEARANCE: header label ↔ nested box top
+MIN_ARROW = 20            # CL SHORT ARROW: arrowhead segment ≥ 20 (QR 144)
+HUG_CLEAR = 12            # CL LINE HUGS BORDER: connector alongside a border ≥ 12 (QR 145, slide trunk 12) …
+HUG_OVERLAP = 20          # … for more than this along it
+LABEL_REACH = 14          # CL: a text whose box comes within this of a connector is a connector label
+END_REACH = 6             # CL: a connector end this close to a node (icon and label lines) or a border ends on it
+JOIN_REACH = 3            # CL: a line end this close to another line joins it (a stem a px or two off its bar)
+BOTTOM_PORT_GAP = 8       # a line out of a node's bottom starts this far below its last label baseline
+                          # (the glyph bottom is GLYPH_DESCENT × size above it: within END_REACH)
+ON_LINE_GAP = 2           # CL LINE ON LINE: two connectors this close side by side read as one line …
+ON_LINE_RUN = 8           # … when they share more than this along it
+IN_LINE_GAP = 2 * PORT_SIDE        # CL LINE ON LINE: two flows' pieces on one line with facing ends closer
+                                   # than this read as one line through the gap (16: two lines into one
+                                   # side ±8 apart read as two; 12 = PORT_PITCH, two fallbacks, as one) …
+IN_LINE_CROSS_GAP = 2 * PORT_PITCH  # … and up to this (24) with a third line crossing the gap (a "+")
 LB_CLEAR = 8              # QR 76: load balancer node ↔ AZ and subnet borders
 MASK_CLEAR = 8            # QR 77: IGW/VGW mask ↔ next container border and canvas edge
 MASK_TEXT_PAD = 8         # QR 110: mask width = max(S, label width + 8)
@@ -412,7 +429,7 @@ LINES_END = 4             # canvas ends last baseline + 4 (ex gwlb 540 + 4 = 544
 # --------------------------------------------------------------------------------------
 # Canvas and slide fit (QR 185-192; svg2pptx MARGIN 0.25 in, TITLE_H 0.75 in, 13.333 × 7.5 in)
 
-SLIDE_MAX_W = 1108                     # QR 190: ≤ 1108 × 540 titled for text ≥ 10pt
+SLIDE_MAX_W = 1108                     # QR 190: ≤ 1108 × 540 titled for text ≥ 10pt (slide_pt rounded down)
 SLIDE_MAX_H = {True: 540, False: 600}  # titled / untitled (QR 190-191)
 SLIDE_AVAIL_W_PT = 924                 # (13.333 in − 2 × 0.25 in) × 72
 SLIDE_AVAIL_H_PT = {True: 450, False: 504}   # 7.5 in − 2 × 0.25 in (− 0.75 in title) in pt

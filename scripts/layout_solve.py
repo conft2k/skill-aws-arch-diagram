@@ -102,7 +102,7 @@ def _footprint(spec: Spec, n) -> _Foot:
     w = max(S, tw)
     if n.on:
         mask_w = _up(max(S, tw + K.MASK_TEXT_PAD))
-        mask_h = S + mc.mask_extra + K.LINE_PITCH * max(0, len(lines) - 1)
+        mask_h = S + mc.mask_extra + K.SUB_PITCH * max(0, len(lines) - 1)
         w = mask_w
         bot = max(bot, -S / 2 + mask_h)
     h = _up(w / 2)

@@ -337,7 +337,7 @@ def where_to_widen(p: Problem) -> Optional[Tuple[str, float]]:
         return ("y" if _vertical(s) else "x"), _centre(s)[1 if _vertical(s) else 0]
     if k == "LINE ON LINE":
         s = c["s"]
-        if CL.collinear_run(s, c["o"]) <= CL.ON_LINE_RUN:
+        if CL.collinear_run(s, c["o"]) <= K.ON_LINE_RUN:
             # two flows on one line with a gap between them (lines_in_line): the gap along
             # the line grows where they part, so the one drawn in a fallback out of the
             # port beside the other's has room for its own shape (ce-tgw: tgw -> seni.2's

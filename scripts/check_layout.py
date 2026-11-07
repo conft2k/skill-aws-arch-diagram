@@ -135,10 +135,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import find_icon  # noqa: E402  (same directory; reuses the icon search and aliases)
+import layout_const as K  # noqa: E402  (same directory, stdlib only: every number shared with layout.py)
+from layout_const import (  # noqa: E402
+    BORDER_CLEAR, END_REACH, HEADER_CLEAR, HEADER_ICON_CLEAR, HUG_CLEAR, HUG_OVERLAP, ICON_CLEAR,
+    IN_LINE_CROSS_GAP, IN_LINE_GAP, JOIN_REACH, LABEL_CLEAR, LABEL_REACH, LINE_CLEAR, MIN_ARROW, MIN_FONT,
+    NODE_LABEL_DY, ON_LINE_GAP, ON_LINE_RUN, SUB_PITCH, TEXT_GAP,
+)
 
 NS = "{http://www.w3.org/2000/svg}"
-MIN_FONT = 12
-WHITE = {"#fff", "#ffffff", "white"}
+# A white rect with no border is a mask (the IGW/VGW on the VPC border, a label's background on its line).
+WHITE = {"#fff", "white", K.WHITE.lower(), K.LABEL_BG.lower()}
 
 
 def num(v, default=0.0):
@@ -160,7 +166,7 @@ def text_width(s, fs):
         # fonts draw full-width ("→", "①").
         wide = ("ᄀ" <= c <= "ᇿ" or "\u2190" <= c <= "\u2bff" or "　" <= c <= "鿿"
                 or "가" <= c <= "힣")
-        w += fs * (1.0 if wide else 0.55)
+        w += fs * (K.WIDE_EM if wide else K.CHECK_LATIN_EM)
     return w
 
 
@@ -220,12 +226,12 @@ def collect(svg_root):
                 w = text_width(s, fs)
                 anchor = el.get("text-anchor", "start")
                 x0 = x - w / 2 if anchor == "middle" else x - w if anchor == "end" else x
-                texts.append({"s": s, "fs": fs, "box": (x0, y - 0.75 * fs, x0 + w, y + 0.25 * fs), "o": order,
+                texts.append({"s": s, "fs": fs, "box": (x0, y - K.GLYPH_ASCENT * fs, x0 + w, y + K.GLYPH_DESCENT * fs), "o": order,
                               "fill": el.get("fill", "").lower(),
                               "cx": x0 + w / 2, "y": y,
                               "header": el.get("font-weight", "") in ("600", "700", "bold"),
                               "el": el, "off": (ox, oy)})
-                texts[-1]["title"] = texts[-1]["header"] and fs >= 14
+                texts[-1]["title"] = texts[-1]["header"] and fs >= K.TEXT_TITLE_SIZE
         elif tag in ("line", "polyline"):
             if tag == "line":
                 pts = [(num(el.get("x1")) + ox, num(el.get("y1")) + oy),
@@ -264,9 +270,9 @@ def collect(svg_root):
                           "el": el, "off": (ox, oy)})
         elif tag == "circle":
             cx, cy, r = num(el.get("cx")) + ox, num(el.get("cy")) + oy, num(el.get("r"))
-            # r <= 6: a junction dot drawn on a connector on purpose (e.g. segment membership)
+            # r <= JUNCTION_DOT_R: a junction dot drawn on a connector on purpose (e.g. segment membership)
             icons.append({"box": (cx - r, cy - r, cx + r, cy + r), "o": order, "badge": True,
-                          "dot": (cx, cy) if r <= 6 else None, "el": el, "off": (ox, oy)})
+                          "dot": (cx, cy) if r <= K.JUNCTION_DOT_R else None, "el": el, "off": (ox, oy)})
         for child in el:
             walk(child, ox, oy)
 
@@ -274,27 +280,53 @@ def collect(svg_root):
     return texts, segs, masks, icons, (cw, ch)
 
 
-# A connector label is any text whose box comes within this distance of a connector.
-LABEL_REACH = 14
-# A label closer than this to a container border reads as touching it.
-BORDER_CLEAR = 4
-# Node labels, captions and connector labels keep this much room from any border.
-LABEL_CLEAR = 8
-# A connector passing a node or header label keeps at least this much room.
-LINE_CLEAR = 4
-# Group badges and labels keep this much room from node icons that aren't theirs.
-ICON_CLEAR = 8
-HEADER_ICON_CLEAR = 6
-# Two labels keep at least this much room between them.
-TEXT_GAP = 4
-# A header label (bold) needs this much room above the next box below it.
-HEADER_CLEAR = 8
-# The segment carrying an arrowhead is at least this long (an 8px head plus a 12px shaft), so the arrow reads as a line
-# into the node, not a head stuck on a bend or junction.
-MIN_ARROW = 20
-# A connector running alongside a container border keeps at least this much room from it
-# (a trunk squeezed into a corridor reads as part of the border).
-HUG_CLEAR = 12
+# The thresholds (imported above from layout_const, which says what each one is):
+# LABEL_REACH  a connector label is any text whose box comes within this of a connector
+# BORDER_CLEAR a container title closer than this to a border reads as touching it
+# LABEL_CLEAR  node labels, captions and connector labels keep this much room from any border
+# LINE_CLEAR   a connector passing a node or header label keeps at least this much room
+# ICON_CLEAR   group badges and labels keep this from node icons that aren't theirs
+#              (HEADER_ICON_CLEAR for a header label)
+# TEXT_GAP     two labels keep at least this much room between them
+# HEADER_CLEAR a header label (bold) needs this much room above the next box below it
+# MIN_ARROW    the segment carrying an arrowhead is at least this long (an 8px head plus a 12px
+#              shaft), so the arrow reads as a line into the node, not a head stuck on a bend
+# HUG_CLEAR    a connector running alongside a container border keeps at least this much room
+#              from it for more than HUG_OVERLAP (a trunk squeezed into a corridor reads as part
+#              of the border)
+#
+# A container's header row (layout_const group styles): its title at x = box.x + one of
+# TITLE_DXS (beside the Cloud's 32px badge, a 24px badge, none), baseline box.y + TITLE_DY
+# (CLOUD_TITLE_DY for the Cloud's larger title, which runs to TITLE_ROW at the most), and its
+# CIDR line CIDR_PITCH under the title; nested boxes start at box.y + NESTED_TOP (NESTED_TOP_CIDR
+# under a CIDR line). A badge at least CLOUD_BADGE_MIN wide is the Cloud's, one wider than
+# GROUP_BADGE_MIN a group's (a step badge is 2 × BADGE_R).
+TITLE_DXS = (K.CLOUD_TITLE_DX, K.TITLE_DX_BADGE, K.TITLE_DX_PLAIN)
+TITLE_SIZES = (K.TEXT_TITLE_SIZE, K.TEXT_CLOUD_TITLE.size)
+TITLE_ROW = K.CLOUD_TITLE_DY + 4
+CIDR_PITCH = K.CIDR_DY - K.TITLE_DY
+NESTED_TOP = min(st.top_box[i] for st in K.GROUP_STYLES.values() for i in (0, 1))
+NESTED_TOP_CIDR = max(K.CIDR_TOP_BOX)
+CLOUD_BADGE_MIN = K.CLOUD_BADGE_SIZE - 2
+GROUP_BADGE_MIN = 2 * K.BADGE_R + 1
+
+
+def title_dy(fs):
+    """A container title's baseline offset below its box top, by its font size."""
+    return K.CLOUD_TITLE_DY if fs == K.TEXT_CLOUD_TITLE.size else K.TITLE_DY
+
+
+def cidr_below(dy, slack=2):
+    """Is a CIDR line dy below a title where its header row puts it (within slack)?"""
+    return CIDR_PITCH - slack <= dy <= CIDR_PITCH + slack
+
+
+def title_at(t, r):
+    """Is bold text t on rect r's header row (one of TITLE_DXS, baseline within TITLE_ROW)?"""
+    return t["header"] and any(abs(t["box"][0] - (r[0] + off)) <= 1 for off in TITLE_DXS) \
+        and r[1] < t["y"] <= r[1] + TITLE_ROW
+
+
 # Circled digits (①–⑳, ❶–➓): a step legend repeats the diagram's badges instead.
 CIRCLED = re.compile("[\u2460-\u2473\u2776-\u2793]")
 # A label that is nothing but a CIDR. A container's CIDR is its own line right under the
@@ -302,17 +334,14 @@ CIRCLED = re.compile("[\u2460-\u2473\u2776-\u2793]")
 # sub-caption of a node (single-icon VPC, customer gateway).
 BARE_CIDR = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
 CIDR_IN = re.compile(r"\d{1,3}(\.\d{1,3}){3}/\d{1,2}")
-CIDR_COLOR = "#232f3e"
+CIDR_COLOR = K.TEXT_CIDR.fill.lower()
 # Things that are not in AWS: they sit between the on-premises group and the AWS Cloud box,
 # never inside it (a Direct Connect location is a colocation facility, the Internet is the
 # Internet, and a Site-to-Site VPN's IPsec runs over it). Checked on drafts (bundle: refs).
 OUTSIDE_CLOUD = ("service/AWS-Direct-Connect", "resource/Internet", "service/AWS-Site-to-Site-VPN")
 ICON_SETS = ("service", "resource")
-# A node label's baseline sits this far below its icon's bottom (the guide's skeleton), and
-# each sub line this far below the line before it.
-NODE_LABEL_DY = 18
-SUB_PITCH = 16
-# A node's own label lines (label_stack): the centered lines with a baseline within
+# A node label's baseline sits NODE_LABEL_DY below its icon's bottom (the guide's skeleton), and
+# each sub line SUB_PITCH below the line before it. A node's own label lines (label_stack): the centered lines with a baseline within
 # STACK_REACH of its icon's bottom (the label and its first sub line, with 10px to spare
 # for hand drafts), then each next centered line at most STACK_STEP under the one before.
 STACK_REACH = NODE_LABEL_DY + SUB_PITCH + 10
@@ -380,8 +409,7 @@ def container_rects(root):
     return out
 
 
-# A connector end this close to an icon's box is that icon's end.
-END_REACH = 6
+# A connector end within END_REACH of an icon's box (or its label lines) is that icon's end.
 SIDES = ("left", "top", "right", "bottom")
 
 
@@ -492,8 +520,7 @@ def shared_box(ends, rects, feet):
     return best
 
 
-# A line end this close to another line joins it (a hand-drawn stem a px or two off its bar).
-JOIN_REACH = 3
+# A line end within JOIN_REACH of another line joins it (a hand-drawn stem a px or two off its bar).
 
 
 def on_seg(pt, s, tol=JOIN_REACH):
@@ -581,10 +608,8 @@ def nets(paths, feet, rects=(), texts=()):
     return [(rs, ends if len(ends) >= 2 else ends + loose) for rs, ends, loose in out.values()]
 
 
-# Two connectors this close (or closer) side by side read as one line ...
-ON_LINE_GAP = 2
-# ... and a shared run longer than this reads as one flow (a merge nobody drew).
-ON_LINE_RUN = 8
+# Two connectors ON_LINE_GAP close (or closer) side by side read as one line, and a shared run
+# longer than ON_LINE_RUN reads as one flow (a merge nobody drew).
 
 
 def _head_at(run, k):
@@ -701,13 +726,11 @@ def lines_on_lines(paths):
     return out
 
 
-# Two flows' parallel pieces on one line (2px or less across) with their facing ends closer
-# than this read as one straight line through the gap (12px: the port pitch, two fallbacks
-# out of one side); the 16 / 20px two lines into one side are split by read as two ...
-IN_LINE_GAP = 16
-# ... unless a third line crosses the gap, which then reads as two lines crossing (a "+")
-# up to two port pitches.
-IN_LINE_CROSS_GAP = 24
+# Two flows' parallel pieces on one line (ON_LINE_GAP or less across) with their facing ends
+# closer than IN_LINE_GAP read as one straight line through the gap (12px: the port pitch, two
+# fallbacks out of one side); the 16 / 20px two lines into one side are split by read as two,
+# unless a third line crosses the gap, which then reads as two lines crossing (a "+") up to
+# IN_LINE_CROSS_GAP (two port pitches).
 
 
 def in_line_gap(s, o, gap=ON_LINE_GAP):
@@ -805,8 +828,7 @@ def stray_dots(root):
 
 def box_name(r, texts):
     """A container rect named by its title (when it has one) and its coordinates."""
-    t = next((t for t in texts if t["header"] and any(abs(t["box"][0] - (r[0] + off)) <= 1 for off in (42, 32, 12))
-              and r[1] < t["y"] <= r[1] + 26), None)
+    t = next((t for t in texts if title_at(t, r)), None)
     where = f"({r[0]:g},{r[1]:g} {r[2]:g}×{r[3]:g})"
     return f"{t['s']!r} {where}" if t else f"the box {where}"
 
@@ -862,10 +884,10 @@ def run_checks(root):
                         "it isn't in AWS; place it between the on-premises group and the Cloud", [i], i=i, r=r)
                     break
     for t in texts:
-        if not (t["title"] and t["fs"] in (14, 15)):
+        if not (t["title"] and t["fs"] in TITLE_SIZES):
             continue
-        base = 22 if t["fs"] == 15 else 18
-        owners = [r for r in rects if any(abs(t["box"][0] - (r[0] + off)) <= 1 for off in (42, 32, 12))
+        base = title_dy(t["fs"])
+        owners = [r for r in rects if any(abs(t["box"][0] - (r[0] + off)) <= 1 for off in TITLE_DXS)
                   and r[1] < t["y"] < r[1] + r[3]]
         if owners:
             r = max(owners, key=lambda r: r[1])
@@ -900,7 +922,7 @@ def run_checks(root):
                 d, lo, hi = abs(y1 - by1), max(min(x1, x2), min(bx1, bx2)), min(max(x1, x2), max(bx1, bx2))
             else:
                 continue
-            if d < HUG_CLEAR and hi - lo > 20 and not masked((min(x1, bx1), lo, max(x1, bx1) + 0.1, hi), s["o"], masks):
+            if d < HUG_CLEAR and hi - lo > HUG_OVERLAP and not masked((min(x1, bx1), lo, max(x1, bx1) + 0.1, hi), s["o"], masks):
                 where = "on top of" if d == 0 else f"{d:g}px from"
                 add("LINE HUGS BORDER", f"LINE HUGS BORDER {fmt(s)} runs {where} the border {fmt(b)} — "
                     f"keep {HUG_CLEAR}px or more", [s, b], s=s, b=b, d=d)
@@ -991,11 +1013,11 @@ def run_checks(root):
                 "under the title (same x, baseline 16px lower)", [t], t=t)
         if BARE_CIDR.match(t["s"]) and id(t) not in node_labels:
             titles = [h for h in texts if h["title"] and h is not t]
-            under = any(abs(h["box"][0] - t["box"][0]) <= 1 and 14 <= t["y"] - h["y"] <= 18 for h in titles)
+            under = any(abs(h["box"][0] - t["box"][0]) <= 1 and cidr_below(t["y"] - h["y"]) for h in titles)
             if not under:
-                near = min(titles, key=lambda h: abs(h["box"][0] - t["box"][0]) + abs(t["y"] - h["y"] - 16),
+                near = min(titles, key=lambda h: abs(h["box"][0] - t["box"][0]) + abs(t["y"] - h["y"] - CIDR_PITCH),
                            default=None)
-                if near and abs(near["box"][0] - t["box"][0]) <= 8 and 8 <= t["y"] - near["y"] <= 24:
+                if near and abs(near["box"][0] - t["box"][0]) <= 8 and cidr_below(t["y"] - near["y"], 8):
                     add("CIDR OFF HEADER", f"CIDR OFF HEADER {t['s']!r} is {t['box'][0] - near['box'][0]:+g}px off "
                         f"the x of {near['s']!r} and {t['y'] - near['y']:g}px below it — "
                         "same x as the title, baseline 16px lower", [t], t=t, title=near)
@@ -1024,14 +1046,14 @@ def run_checks(root):
             if t["title"]:
                 x0, _, x1, y1 = t["box"]
                 cidr = next((c for c in texts if BARE_CIDR.match(c["s"]) and abs(c["box"][0] - x0) <= 1
-                             and 14 <= c["y"] - t["y"] <= 18), None)
+                             and cidr_below(c["y"] - t["y"])), None)
                 if cidr:
                     y1 = cidr["box"][3]
                 below = (x0, y1, x1, y1 + HEADER_CLEAR)
                 hit = next((s for s in segs if s["kind"] == "border" and s["p"][1] == s["q"][1]
                             and seg_hits_box(s["p"], s["q"], below)), None)
                 if hit:
-                    start = 46 if cidr else 30
+                    start = NESTED_TOP_CIDR if cidr else NESTED_TOP
                     add("HEADER CLEARANCE", f"HEADER CLEARANCE {t['s']!r} has a box border {fmt(hit)} less than "
                         f"{HEADER_CLEAR}px below it{' (under its CIDR line)' if cidr else ''} — "
                         f"start nested boxes at container.y + {start}", [t, hit], t=t, s=hit, cidr=cidr,
@@ -1080,7 +1102,7 @@ def run_checks(root):
                     f"({i['box'][0]:g},{i['box'][1]:g})", [i, s], i=i, s=s)
                 break
     nodes = [i for i in icons if not i["badge"]]
-    for g in (i for i in icons if i["badge"] and not i.get("dot") and i["box"][2] - i["box"][0] > 21):
+    for g in (i for i in icons if i["badge"] and not i.get("dot") and i["box"][2] - i["box"][0] > GROUP_BADGE_MIN):
         for n in nodes:
             if boxes_overlap(expand(g["box"], ICON_CLEAR), n["box"]) and not boxes_overlap(g["box"], n["box"]):
                 add("BADGE NEAR ICON", f"BADGE NEAR ICON group badge at ({g['box'][0]:g},{g['box'][1]:g}) is within "
@@ -1281,13 +1303,13 @@ def union(a, b):
 # A connector's detour problems (a move must clear them, not cut the line off its net).
 DETOURS = {"LINE OFF CANVAS", "LINE LEAVES BOX"}
 # Largest canvas a 16:9 slide fits with 12px text at 10pt or more (layout_const SLIDE_MAX_*).
-SLIDE_MAX_W, SLIDE_MAX_H = 1108, (540, 600)
-SLIDE_FIT = f"≤ {SLIDE_MAX_W} × {SLIDE_MAX_H[0]} with a title band, × {SLIDE_MAX_H[1]} without"
+SLIDE_FIT = f"≤ {K.SLIDE_MAX_W} × {K.SLIDE_MAX_H[True]} with a title band, × {K.SLIDE_MAX_H[False]} without"
 
 
 def slide_fits(w, h, title):
-    """Does a w × h canvas fit a 16:9 slide (title: with a title band) at ≥ 10pt?"""
-    return w <= SLIDE_MAX_W and h <= SLIDE_MAX_H[0 if title else 1]
+    """Does a w × h canvas fit a 16:9 slide (title: with a title band) with 12px text at
+    ≥ 10pt (layout_const.slide_pt, what svg2pptx scales it to)?"""
+    return K.slide_pt(w, h, title) >= K.SLIDE_MIN_PT
 
 
 # Problems no move can clear (a move that leaves them is still a clean move).
@@ -1324,8 +1346,7 @@ class Advisor:
         self.titles = {}                        # id(rect el) -> its title text item
         for r in self.rects:
             for t in self.texts:
-                if t["header"] and any(abs(t["box"][0] - (r[0] + off)) <= 1 for off in (42, 32, 12)) \
-                        and r[1] < t["y"] <= r[1] + 26:
+                if title_at(t, r):
                     self.titles[id(r[4])] = t
                     break
 
@@ -1524,12 +1545,13 @@ class Advisor:
         that is no box's title."""
         if not t["title"]:
             return None
-        base = 22 if t["fs"] == 15 else 18
+        base = title_dy(t["fs"])
         best = None
         for r in self.rects:
             badge = next((i for i in self.icons if i["badge"] and abs(i["box"][0] - r[0]) <= 1
                           and abs(i["box"][1] - r[1]) <= 1), None)
-            off = 12 if badge is None else 42 if badge["box"][2] - badge["box"][0] >= 30 else 32
+            off = (K.TITLE_DX_PLAIN if badge is None else K.CLOUD_TITLE_DX
+                   if badge["box"][2] - badge["box"][0] >= CLOUD_BADGE_MIN else K.TITLE_DX_BADGE)
             dx, dy = r[0] + off - t["box"][0], r[1] + base - t["y"]
             if abs(dx) <= 12 and abs(dy) <= 12 and (best is None or abs(dx) + abs(dy) < best[0]):
                 best = (abs(dx) + abs(dy), r, dx, dy)
@@ -1544,12 +1566,12 @@ class Advisor:
         if not home or not (home[1] or home[2]):
             return []
         r, dx, dy = home
-        cidr = next((c for c in self.texts if BARE_CIDR.match(c["s"]) and 10 <= c["y"] - t["y"] <= 22
+        cidr = next((c for c in self.texts if BARE_CIDR.match(c["s"]) and cidr_below(c["y"] - t["y"], 6)
                      and abs(c["box"][0] - t["box"][0]) <= 12), None)
         edits, text = self.move_text(t, dx, dy)
         if cidr:
             cdx = t["box"][0] + dx - cidr["box"][0]
-            cdy = t["y"] + dy + 16 - cidr["y"]
+            cdy = t["y"] + dy + CIDR_PITCH - cidr["y"]
             for a, d in (("x", cdx), ("y", cdy)):
                 if abs(d) > 1e-6:
                     edits.append(("attr", cidr["el"], a, fnum(num(cidr["el"].get(a)) + d)))
@@ -1756,7 +1778,7 @@ class Advisor:
 
     def cidr_under(self, t):
         return next((c for c in self.texts if BARE_CIDR.match(c["s"]) and abs(c["box"][0] - t["box"][0]) <= 1
-                     and 14 <= c["y"] - t["y"] <= 18), None)
+                     and cidr_below(c["y"] - t["y"])), None)
 
     def h_title_offset(self, iss, t, r, base):
         dy = r[1] + base - t["y"]
@@ -2041,13 +2063,13 @@ class Advisor:
         rest = (t["s"][:m.start()] + " " + t["s"][m.end():])
         rest = re.sub(r"[(\[]\s*[)\]]", " ", rest)
         rest = re.sub(r"\s+", " ", rest).strip(" -–—·:,|/()[]")
-        y = fnum(num(el.get("y")) + 16)
+        y = fnum(num(el.get("y")) + CIDR_PITCH)
         attrs = [("x", el.get("x") or "0"), ("y", y), ("font-size", "12"), ("fill", CIDR_COLOR.upper())]
         if el.get("text-anchor"):
             attrs.insert(2, ("text-anchor", el.get("text-anchor")))
         new = "<text " + " ".join(f'{k}="{v}"' for k, v in attrs) + f">{cidr}</text>"
         text = (f"set the title {self.tdesc(t)} to {rest!r} and add {new} right after it "
-                f"(nested boxes then start at container.y + 46){self.local(t)}")
+                f"(nested boxes then start at container.y + {NESTED_TOP_CIDR}){self.local(t)}")
         if not rest:
             return Hint(f"{self.tdesc(t)} is only a CIDR: title the box with its name and put {cidr!r} on its "
                         f'own line under it (same x, baseline 16px lower, font-size="12" fill="{CIDR_COLOR.upper()}", '
@@ -2062,7 +2084,7 @@ class Advisor:
         if title is None:
             # Its own title right above it, drifted sideways: put whichever of the two is off its
             # box's header x back in line.
-            above = [h for h in self.texts if h["title"] and 14 <= t["y"] - h["y"] <= 18
+            above = [h for h in self.texts if h["title"] and cidr_below(t["y"] - h["y"])
                      and abs(h["box"][0] - t["box"][0]) <= 80]
             for h in above:
                 home = self.home_cand(h)
@@ -2079,9 +2101,9 @@ class Advisor:
             r = min(inside, key=lambda r: r[2] * r[3])
             title = self.titles[id(r[4])]
             # Only a CIDR still in its box's header row is surely that box's CIDR.
-            if self.cidr_under(title) or t["y"] - r[1] > 46:
+            if self.cidr_under(title) or t["y"] - r[1] > NESTED_TOP_CIDR:
                 auto = False
-        dx, dy = title["box"][0] - t["box"][0], title["y"] + 16 - t["y"]
+        dx, dy = title["box"][0] - t["box"][0], title["y"] + CIDR_PITCH - t["y"]
         home = None if route else self.home_cand(title)
         if home:
             # The title drifted from its header slot: put it (and this CIDR under it) back.
@@ -2149,7 +2171,7 @@ class Advisor:
         title = t
         if BARE_CIDR.match(t["s"]):
             title = next((h for h in self.texts if h["title"] and abs(h["box"][0] - t["box"][0]) <= 1
-                          and 14 <= t["y"] - h["y"] <= 18), None)
+                          and cidr_below(t["y"] - h["y"])), None)
         if not title or not title["title"]:
             return None
         owner = next((r for r in self.rects if self.titles.get(id(r[4]), {}).get("el") is title["el"]), None)
@@ -2166,7 +2188,7 @@ class Advisor:
         goal = ""
         if head:
             title, owner, cidr = head
-            start = start or (46 if cidr else 30)
+            start = start or (NESTED_TOP_CIDR if cidr else NESTED_TOP)
             need = max(need, math.ceil(owner[1] + start - hy))
             goal = f" (nested boxes start at the y of the box titled {title['s']!r} + {start} = {fnum(owner[1] + start - s['off'][1])})"
         return (f"move {self.rdesc(el)} down {need}px to y={fnum(num(el.get('y')) + need)} with everything inside it"
@@ -2206,7 +2228,7 @@ class Advisor:
     def gateway_mask(self, i, s):
         """An icon centered on a container border sits there on purpose (IGW/VGW on the VPC
         edge): the fix is the white mask of the guide, mask_w = max(S, label width + 8),
-        mask_h = S + 24 (+ 16 per extra label line)."""
+        mask_h = S + 24 (+ 16 per extra label line: the document mask_extra and SUB_PITCH)."""
         (x1, y1), (x2, y2) = s["p"], s["q"]
         x0, y0, xe, ye = i["box"]
         cx, cy = (x0 + xe) / 2, (y0 + ye) / 2
@@ -2215,8 +2237,8 @@ class Advisor:
         labels = self.own_labels(i)
         size = xe - x0
         tw = max((t["box"][2] - t["box"][0] for t in labels), default=0)
-        mw = max(size, math.ceil(tw + 8))
-        mh = size + 24 + 16 * max(0, len(labels) - 1)
+        mw = max(size, math.ceil(tw + K.MASK_TEXT_PAD))
+        mh = size + K.DOCUMENT.mask_extra + SUB_PITCH * max(0, len(labels) - 1)
         ox, oy = i["off"]
         mask = (f'<rect x="{fnum(cx - mw / 2 - ox)}" y="{fnum(y0 - oy)}" width="{fnum(mw)}" '
                 f'height="{fnum(mh)}" fill="#FFFFFF"/>')

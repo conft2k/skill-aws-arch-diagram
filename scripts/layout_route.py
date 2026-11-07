@@ -62,7 +62,7 @@ check_layout's own seg_hits_box against icons, labels and borders (LINE OVER ICO
 LINE NEAR TEXT, LINE HUGS BORDER, SHORT ARROW); edges that share a spec line or a node
 side try to share one bend. skip={n: k} takes edge n's k-th clean candidate instead.
 Lanes: members of such a group whose legs would run over each other at the shared bend
-(their spans along the leg overlap by more than CL.ON_LINE_RUN; the instances of one
+(their spans along the leg overlap by more than K.ON_LINE_RUN; the instances of one
 `trunk` line merge on purpose) each take a lane LANE_PITCH (12) apart round the bend
 value, lines whose spans don't overlap sharing one, in the assignment with the fewest
 lanes and then crossings (EC2 ×2 → a bottom-aligned flow-column CloudWatch: legs 462 and
@@ -112,7 +112,6 @@ NUDGE = 8             # bend / label / badge step (DESIGN 4.5-4.6)
 OVERLAY_EXIT = 16     # overlay side a line leaves through ↔ its member subnet's border
 OBST_CLEAR = 4        # a bend keeps this from icons and labels (LINE_CLEAR)
 BADGE_CLEAR = 4       # badge circle ↔ icon / text / other badge
-HUG_OVERLAP = 20      # check_layout: a parallel run longer than this next to a border is a hug
 LANE_PITCH = 12       # legs of one line's instances that would overlap: lanes this far apart (CL HUG_CLEAR)
 
 
@@ -407,7 +406,7 @@ def _off(spec: Spec, eid: str, kind: str, side: str) -> float:
     S = spec.S
     if side == "bottom":
         k = _lines_count(spec, eid)
-        return S / 2 + (K.NODE_LABEL_DY + K.SUB_PITCH * (k - 1) + 8 if k else K.END_GAP)
+        return S / 2 + (K.NODE_LABEL_DY + K.SUB_PITCH * (k - 1) + K.BOTTOM_PORT_GAP if k else K.END_GAP)
     return S / 2 + K.END_GAP
 
 
@@ -992,7 +991,7 @@ def _eg(spec: Spec, geom: Geometry, eid: str, kind: str) -> _EG:
             colc = r.cx
         return _EG(eid, kind, r, r.cx, r.cy, r.y1 + K.GROUP_END_GAP, rowc, colc)
     n = geom.nodes[eid]
-    bottom = (n.last_baseline + 8) if n.lines else n.icon.y1 + K.END_GAP
+    bottom = (n.last_baseline + K.BOTTOM_PORT_GAP) if n.lines else n.icon.y1 + K.END_GAP
     return _EG(eid, kind, n.icon, n.cx, n.cy, bottom, n.cy, n.cx)
 
 
@@ -1065,7 +1064,7 @@ def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool) -> List[str
                 d, s0, s1 = abs(p[0] - pos), max(min(p[1], q[1]), lo), min(max(p[1], q[1]), hi)
             else:
                 continue
-            if d < K.HUG_CLEAR and s1 - s0 > HUG_OVERLAP:
+            if d < K.HUG_CLEAR and s1 - s0 > K.HUG_OVERLAP:
                 probs.append(f"LINE HUGS BORDER {gid}")
                 break
         if i and not (horiz or vert):
@@ -1138,7 +1137,7 @@ def _free(ctx: _Ctx, leg_x: bool, lo: float, hi: float, s0: float, s1: float, cl
         if o1 + OBST_CLEAR > s0 and o0 - OBST_CLEAR < s1:
             blocks.append((a0 - OBST_CLEAR, a1 + OBST_CLEAR))
     for ax, pos, l0, l1, _ in ctx.borders:
-        if (ax == "v") == leg_x and min(l1, s1) - max(l0, s0) > HUG_OVERLAP:
+        if (ax == "v") == leg_x and min(l1, s1) - max(l0, s0) > K.HUG_OVERLAP:
             blocks.append((pos - clear, pos + clear))
     return _subtract(lo, hi, blocks)
 
@@ -1471,7 +1470,7 @@ def _conflicts(x: "_Edge", pts: Sequence[Pt], drawn) -> int:
         if f == flow:
             continue
         other = [{"p": p, "q": q} for p, q in zip(dpts, dpts[1:])]
-        hit = any((d := CL.in_line_gap(s, o)) is not None and d <= 2 * K.PORT_PITCH + 0.5 for s in segs for o in other)
+        hit = any((d := CL.in_line_gap(s, o)) is not None and d <= K.IN_LINE_CROSS_GAP + 0.5 for s in segs for o in other)
         if not hit and mine & set(ends):
             hit = _crossings([pts, dpts]) > 0
         n += hit
@@ -2260,7 +2259,7 @@ def _crossings(paths: Sequence[Sequence[Pt]]) -> int:
 
 def _lanes(todo: Sequence[_Edge], per, v0: float) -> Dict[int, Tuple[int, int]]:
     """Members of one bend group whose legs would run over each other at a shared bend
-    (spans overlapping by more than CL.ON_LINE_RUN; the instances of one `trunk` line merge
+    (spans overlapping by more than K.ON_LINE_RUN; the instances of one `trunk` line merge
     on purpose): {edge n: (lane, lanes)}, lane 0 at the lowest bend coordinate. Lines whose
     spans don't overlap may share a lane; of the assignments tried (first fit in every
     order of a cluster up to 6 lines, both directions) the one with the fewest lanes, then
@@ -2276,7 +2275,7 @@ def _lanes(todo: Sequence[_Edge], per, v0: float) -> Dict[int, Tuple[int, int]]:
         ea, eb = by_n[a].e, by_n[b].e
         if ea.line == eb.line and _lane_free(ea):
             return False
-        return min(span[a][1], span[b][1]) - max(span[a][0], span[b][0]) > CL.ON_LINE_RUN
+        return min(span[a][1], span[b][1]) - max(span[a][0], span[b][0]) > K.ON_LINE_RUN
 
     out: Dict[int, Tuple[int, int]] = {}
     for c in _clusters([x.e.n for x in todo], meet):

@@ -433,14 +433,44 @@ class ConstTest(unittest.TestCase):
                     want = K.MARKER_ARROW if m.get("id") == "arrow" else K.MARKER_ARROW_START
                     self.assertEqual(got, want)
 
-    def test_mirrors_check_layout(self):
-        for name in ("LABEL_CLEAR", "ICON_CLEAR", "HEADER_ICON_CLEAR", "LINE_CLEAR", "TEXT_GAP",
-                     "HEADER_CLEAR", "MIN_ARROW", "HUG_CLEAR", "MIN_FONT", "NODE_LABEL_DY",
-                     "SUB_PITCH"):
-            self.assertEqual(getattr(K, name), getattr(CL, name), name)
-        self.assertEqual(K.TEXT_CIDR.fill.lower(), CL.CIDR_COLOR)
-        self.assertEqual(K.DOCUMENT.arrow_min, CL.MIN_ARROW)
-        self.assertEqual(K.SLIDE.trunk_clear, CL.HUG_CLEAR)
+    def test_couplings(self):
+        """The engine's offsets stay inside the checker's reaches (check_layout imports the
+        numbers themselves from layout_const, so only how they relate is tested here)."""
+        sizes = (K.MIN_FONT, K.TEXT_SUB.size, K.TEXT_NODE.size, K.label_size())
+        # a line out of a node's bottom starts BOTTOM_PORT_GAP under the last baseline: its
+        # glyph bottom (GLYPH_DESCENT × size above that) is within END_REACH, so it ends on the node
+        for fs in sizes:
+            self.assertLessEqual(K.BOTTOM_PORT_GAP - K.GLYPH_DESCENT * fs, K.END_REACH, fs)
+            self.assertGreater(K.BOTTOM_PORT_GAP - K.GLYPH_DESCENT * fs, 0, fs)
+        self.assertLessEqual(K.END_GAP, K.END_REACH)           # a line 4 short of an icon ends on it
+        self.assertLessEqual(K.GROUP_END_GAP, K.END_REACH)     # and 4 short of a border
+        for m in K.MODES.values():
+            for fs in sizes:
+                above = m.label_above - K.GLYPH_DESCENT * fs        # label box bottom ↔ its line
+                below = m.label_below - K.GLYPH_ASCENT * fs         # its line ↔ label box top
+                with self.subTest(mode=m.name, fs=fs):
+                    # near enough to read as that line's label (LABEL_REACH), far enough not to skim it
+                    for gap in (above, below, m.vlabel_dx):
+                        self.assertLessEqual(gap, K.LABEL_REACH)
+                        self.assertGreaterEqual(gap, K.LINE_CLEAR)
+            self.assertEqual(m.arrow_min, K.MIN_ARROW)
+        self.assertEqual(K.SLIDE.trunk_clear, K.HUG_CLEAR)
+        self.assertLess(K.JUNCTION_DOT_R, K.BADGE_R)           # a step badge is never read as a junction dot
+        self.assertLess(K.JOIN_REACH, K.END_REACH)
+        self.assertLess(K.ON_LINE_GAP, K.IN_LINE_GAP)
+        self.assertLess(K.IN_LINE_GAP, K.IN_LINE_CROSS_GAP)
+        self.assertGreater(K.IN_LINE_GAP, K.PORT_PITCH)        # two fallbacks one pitch apart read as one line
+        # check_layout's own derived header thresholds come from the group styles
+        self.assertEqual(CL.CIDR_PITCH, K.SUB_PITCH)
+        self.assertEqual(CL.NESTED_TOP_CIDR, K.CIDR_TOP_BOX[0])
+        self.assertLess(K.BADGE_SIZE, CL.CLOUD_BADGE_MIN)
+        self.assertLessEqual(CL.CLOUD_BADGE_MIN, K.CLOUD_BADGE_SIZE)
+        self.assertLess(2 * K.BADGE_R, CL.GROUP_BADGE_MIN)
+        self.assertLess(CL.GROUP_BADGE_MIN, K.BADGE_SIZE)
+        self.assertTrue(CL.slide_fits(K.SLIDE_MAX_W, K.SLIDE_MAX_H[True], True))
+        self.assertTrue(CL.slide_fits(K.SLIDE_MAX_W, K.SLIDE_MAX_H[False], False))
+        self.assertFalse(CL.slide_fits(K.SLIDE_MAX_W + 4, K.SLIDE_MAX_H[True], True))
+        self.assertFalse(CL.slide_fits(K.SLIDE_MAX_W, K.SLIDE_MAX_H[True] + 4, True))
 
     def test_slide_fit(self):
         src = (ROOT / "scripts/svg2pptx.py").read_text(encoding="utf-8")
