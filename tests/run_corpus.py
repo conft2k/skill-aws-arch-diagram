@@ -2,7 +2,8 @@
 """Run the layout regression corpus (tests/corpus/MANIFEST.yaml) in every mode, in process.
 
     python3 tests/run_corpus.py [filter ...] [--topic T ...] [--mode M ...] [-j N] [--timeout S]
-                                [--out REPORT.json] [--keep DIR] [--rule-checker MOD:FUNC] [-q]
+                                [--out REPORT.json] [--keep DIR] [--rule-checker MOD:FUNC]
+                                [--baseline REPORT.json --baseline-drafts DIR] [-q]
 
 Every manifest entry (a corpus case, or a docs/examples spec by reference) is run in each
 of its modes — `document` (--mode document), `slide` (--mode slide) and `slide-no-title`
@@ -15,6 +16,14 @@ draft (plus SLIDE TOO SMALL), the engine's warnings, the canvas size, the size t
 text gets on a 16:9 slide, the feedback rounds and the wall time. It prints one row per
 entry, then the counts per problem code, the slowest runs and the total time, and writes the
 full JSON report to --out (default <system temp dir>/corpus-report.json).
+
+With --baseline and --baseline-drafts, also print and save `comparison`: each matching
+case and mode's verdict (better / same / worse), byte-changed drafts, check problem code
+and per-rule violation deltas (current minus baseline), and wall / summed runtime ratios.
+Verdicts reuse scripts/rules.py's score order. Added runs and checker failures are
+explicitly un-compared. Filters compare only the selected runs; the summed ratio uses
+matching runs, and the wall ratio is unavailable when the run sets differ. No baseline
+leaves the existing report and exit status unchanged.
 
 An entry's `expect` (one value, or a map mode → value) says what each run must end in:
 `load` — the spec loads and a draft is drawn; `reject` — layout_spec refuses the spec at load;
@@ -59,6 +68,7 @@ import traceback
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional
 from unittest import mock
 
@@ -409,6 +419,152 @@ def cell(r: Dict[str, Any]) -> str:
     return s
 
 
+def _run_index(report: Dict[str, Any]) -> Dict[tuple, Dict[str, Any]]:
+    out = {}
+    for r in report["runs"]:
+        key = (r["path"], r["mode"])
+        if key in out:
+            raise ValueError(f"duplicate case and mode: {key}")
+        out[key] = r
+    return out
+
+
+def _verdict(run: Dict[str, Any]) -> Optional[list]:
+    """Reuse the checker's ordering, including for reports written before comparison."""
+    import rules
+    if run["result"] != "drawn" or any(v["rule"] == "checker-error" for v in run["violations"]):
+        return None
+    viol = [
+        rules.Violation(v["rule"], (), v.get("msg", ""), v.get("cost", 1),
+                        v.get("tier", rules.TIER_FIT if v["rule"] == "R-fit" else rules.TIER_HARD))
+        for v in run["violations"]
+    ]
+    # A run without a rule hook still records effective text size. With a hook, keep
+    # the recorded R-fit cost so rounding matches the historical baseline.
+    text = run.get("text") or {}
+    if not any(v.rule == "R-fit" for v in viol) and text.get("actual") is not None:
+        short = max(0, text["target"] - text["actual"])
+        viol.append(rules.Violation("R-fit", (), "", short, rules.TIER_FIT))
+    w, h = run["canvas"]
+    geom = SimpleNamespace(canvas_w=w, canvas_h=h)
+    misses = run.get("shape_misses")
+    if misses is None:
+        misses = layout.shape_misses(SimpleNamespace(warnings=run["warnings"]))
+    return list(rules.score(viol, run["codes"], geom, None, misses))
+
+
+def _deltas(current: Counter, baseline: Counter) -> dict:
+    # Counter subtraction drops negative and zero entries; keep both for self-comparison.
+    return {key: current[key] - baseline[key] for key in sorted(current.keys() | baseline.keys())}
+
+
+def _draft_bytes(directory: Path, run: Dict[str, Any]) -> Optional[bytes]:
+    if run["result"] != "drawn":
+        return None
+    stem = run["path"].replace("/", "__").replace("..", "up")
+    path = Path(directory) / f"{stem}.{run['mode']}.draft.svg"
+    try:
+        return path.read_bytes()
+    except OSError as e:
+        raise ValueError(f"cannot read draft for {run['path']} [{run['mode']}]: {path}: {e}") from e
+
+
+def compare_reports(current: Dict[str, Any], baseline: Dict[str, Any],
+                    current_drafts: Path, baseline_drafts: Path) -> Dict[str, Any]:
+    """Compare saved results and drafts without drawing again; inputs stay unchanged."""
+    now, before = _run_index(current), _run_index(baseline)
+    matched = now.keys() & before.keys()
+    counts = dict.fromkeys(("better", "same", "worse", "uncompared"), 0)
+    rows, changed, added = [], [], []
+    current_codes, baseline_codes = Counter(), Counter()
+    current_rules, baseline_rules = Counter(dict.fromkeys(CHECKED, 0)), Counter(dict.fromkeys(CHECKED, 0))
+    for key, r in now.items():
+        identity = {"path": key[0], "mode": key[1]}
+        b = before.get(key)
+        if b is None:
+            counts["uncompared"] += 1
+            added.append(identity)
+            rows.append({**identity, "verdict": "uncompared", "reason": "no baseline run",
+                         "baseline_verdict": None, "current_verdict": _verdict(r),
+                         "draft_changed": None})
+            continue
+        old_score, new_score = _verdict(b), _verdict(r)
+        reason = None
+        if b["result"] == "drawn" and r["result"] != "drawn":
+            verdict = "worse"
+        elif b["result"] != "drawn" and r["result"] == "drawn":
+            verdict = "better"
+        elif old_score is not None and new_score is not None:
+            verdict = "better" if new_score < old_score else "worse" if new_score > old_score else "same"
+        elif b["result"] == r["result"] and r["result"] != "drawn":
+            verdict = "same"
+        else:
+            verdict = "uncompared"
+            reason = "checker failed" if r["result"] == b["result"] == "drawn" else "different undrawn results"
+        counts[verdict] += 1
+        draft_changed = _draft_bytes(current_drafts, r) != _draft_bytes(baseline_drafts, b)
+        if draft_changed:
+            changed.append(identity)
+        codes, old_codes = Counter(r["codes"]), Counter(b["codes"])
+        violations = Counter(v["rule"] for v in r["violations"])
+        old_violations = Counter(v["rule"] for v in b["violations"])
+        current_codes.update(codes)
+        baseline_codes.update(old_codes)
+        current_rules.update(violations)
+        baseline_rules.update(old_violations)
+        row = {**identity, "verdict": verdict, "baseline_verdict": old_score,
+               "current_verdict": new_score, "baseline_result": b["result"], "current_result": r["result"],
+               "draft_changed": draft_changed, "check_problem_delta": len(r["codes"]) - len(b["codes"]),
+               "code_deltas": _deltas(codes, old_codes),
+               "violation_deltas": _deltas(violations, old_violations)}
+        if reason:
+            row["reason"] = reason
+        rows.append(row)
+
+    summed = sum(now[k]["time"] for k in matched)
+    old_summed = sum(before[k]["time"] for k in matched)
+    same_runs = now.keys() == before.keys()
+    wall, old_wall = current["wall_s"], baseline["wall_s"]
+    return {
+        "counts": counts, "runs": rows, "changed_drafts": changed, "added": added,
+        "not_run": [{"path": p, "mode": m} for p, m in sorted(before.keys() - now.keys())],
+        "check_problem_delta": sum(current_codes.values()) - sum(baseline_codes.values()),
+        "code_deltas": _deltas(current_codes, baseline_codes),
+        "violation_deltas": _deltas(current_rules, baseline_rules),
+        "runtime": {
+            "wall_ratio": round(wall / old_wall, 3) if same_runs and old_wall else None,
+            "summed_ratio": round(summed / old_summed, 3) if old_summed else None,
+            "wall_delta_s": round(wall - old_wall, 3) if same_runs else None,
+            "summed_delta_s": round(summed - old_summed, 3),
+        },
+    }
+
+
+def print_comparison(comparison: Dict[str, Any]) -> None:
+    counts = comparison["counts"]
+    print("baseline comparison: " + ", ".join(f"{counts[k]} {k}" for k in counts)
+          + f"; {len(comparison['changed_drafts'])} changed drafts")
+    for r in comparison["runs"]:
+        scores = f"{r['baseline_verdict']} -> {r['current_verdict']}"
+        reason = f"; {r['reason']}" if r.get("reason") else ""
+        print(f"  {r['path']} [{r['mode']}]: {r['verdict']} {scores}{reason}")
+    for r in comparison["changed_drafts"]:
+        print(f"  changed draft: {r['path']} [{r['mode']}]")
+    print(f"check problem delta: {comparison['check_problem_delta']:+d}")
+    for code, delta in comparison["code_deltas"].items():
+        print(f"  {code}: {delta:+d}")
+    print("violation deltas: " + ", ".join(f"{rule} {delta:+d}"
+                                           for rule, delta in comparison["violation_deltas"].items()))
+    runtime = comparison["runtime"]
+    ratios = []
+    for kind in ("wall", "summed"):
+        value = runtime[f"{kind}_ratio"]
+        ratios.append(f"{kind} {value:.3f}x" if value is not None else f"{kind} n/a")
+    print("runtime ratio: " + ", ".join(ratios) + " (summed: matching runs)")
+    if comparison["not_run"]:
+        print(f"baseline runs not selected: {len(comparison['not_run'])}; wall ratio requires the same run set")
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("filters", nargs="*", help="keep entries whose path contains one of these")
@@ -423,8 +579,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--timeout", type=float, default=300,
                     help="seconds one run may take before it ends as `timeout` (0: no limit; default 300)")
     ap.add_argument("--manifest", type=Path, default=MANIFEST)
+    ap.add_argument("--baseline", type=Path, help="baseline JSON result to compare against")
+    ap.add_argument("--baseline-drafts", type=Path, help="directory holding that baseline's drafts")
     ap.add_argument("-q", "--quiet", action="store_true", help="print only failing entries and the summary")
     a = ap.parse_args(argv)
+    if (a.baseline is None) != (a.baseline_drafts is None):
+        ap.error("--baseline and --baseline-drafts must be given together")
+    baseline = None
+    if a.baseline is not None:
+        try:
+            baseline = json.loads(a.baseline.read_text(encoding="utf-8"))
+            _run_index(baseline)
+            if not a.baseline_drafts.is_dir():
+                raise ValueError(f"not a drafts directory: {a.baseline_drafts}")
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            ap.error(f"invalid baseline: {e}")
 
     entries = load_manifest(a.manifest)
     if a.filters:
@@ -447,6 +616,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     jobs = [(e, m, out_dir, a.timeout) for e, m in picked]
     t0 = time.perf_counter()
+    comparison = None
     try:
         if a.jobs > 1:
             with ProcessPoolExecutor(a.jobs, initializer=_init_worker, initargs=(a.rule_checker,)) as ex:
@@ -454,11 +624,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             RULE_CHECKERS[:] = saved + checkers
             results = [_run_job(j) for j in jobs]
+        if baseline is not None:
+            # Compare before a temporary drafts directory is removed; comparison I/O
+            # is excluded from the measured engine runtime.
+            run_wall = time.perf_counter() - t0
+            try:
+                comparison = compare_reports({"runs": results, "wall_s": round(run_wall, 2)},
+                                             baseline, Path(out_dir), a.baseline_drafts)
+            except (ValueError, KeyError, TypeError) as e:
+                ap.error(f"baseline comparison: {e}")
     finally:
         RULE_CHECKERS[:] = saved
         if not a.keep:
             shutil.rmtree(out_dir, ignore_errors=True)
-    total = time.perf_counter() - t0
+    total = run_wall if baseline is not None else time.perf_counter() - t0
 
     by_entry: Dict[str, List[Dict[str, Any]]] = {}
     for r in results:
@@ -519,6 +698,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     report = {"root": str(ROOT), "jobs": a.jobs, "wall_s": round(total, 2), "summed_s": round(cpu, 2),
               "entries": len(entries), "runs": results, "codes": dict(codes), "failures": fails,
               "known_failures": known, "known_fail_fixed": fixed, "tag_misses": misses}
+    if comparison is not None:
+        comparison["baseline"] = str(a.baseline)
+        comparison["baseline_drafts"] = str(a.baseline_drafts)
+        report["comparison"] = comparison
+        print_comparison(comparison)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(report, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"report: {a.out}")
