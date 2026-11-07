@@ -802,7 +802,7 @@ class _Loader:
                 else:
                     dv = d["dash"]
                     r["dash"] = None if dv in (None, "none", "") else self.field(r, "dash", self.c_dash)
-            r["header"] = "right"
+            r["header"] = None
             if "header" in d:
                 if not r["over"]:
                     self.err(loc, "header: only overlay groups (over:) have a header placement")
@@ -1193,9 +1193,17 @@ class _Loader:
     def overlay_strays(self) -> None:
         """An overlay is one box around its members: a node on a track cell inside the rows ×
         columns it covers but not in `over:` would be drawn inside it (an ASG over the EC2s
-        of two AZ columns on different rows also holds the other two EC2s of that grid)."""
+        of two AZ columns on different rows also holds the other two EC2s of that grid). A
+        colspan node (`at: [b1..b2, r]`) counts when its span meets those columns."""
         sp = self.spec
         idx = {t.id: t.index for t in sp.cols + sp.rows}
+
+        def meets(lo, hi, rng):
+            return lo <= idx[rng[1]] and idx[rng[0]] <= hi
+
+        def tracks(kind, a, b):
+            return f"{kind} {a}" if a == b else f"{kind}s {a}–{b}"
+
         for gid in self.gorder:
             g = sp.groups.get(gid)
             if g is None or not g.overlay or not g.cols or not g.rows:
@@ -1203,10 +1211,10 @@ class _Loader:
             (c0, c1), (r0, r1) = [(idx[a], idx[b]) for a, b in (g.cols, g.rows)]
             stray = [n.id for n in sp.nodes.values()
                      if n.id not in g.over and n.xy is None and n.col is not None and n.row is not None
-                     and c0 <= idx[n.col] <= c1 and r0 <= idx[n.row] <= r1]
+                     and meets(c0, c1, (n.col, n.col2 or n.col)) and meets(r0, r1, (n.row, n.row))]
             if stray:
                 self.err(self.graw[gid]["loc"],
-                         f"over: its box covers columns {g.cols[0]}–{g.cols[1]} and rows {g.rows[0]}–{g.rows[1]}, "
+                         f"over: its box covers {tracks('column', *g.cols)} and {tracks('row', *g.rows)}, "
                          f"so it would also hold {', '.join(stray)} (not members); list them in `over:`, move them "
                          f"off those tracks, or split the overlay")
 

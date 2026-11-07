@@ -304,6 +304,13 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     less the overlay's own top inset in it (doc 32 − 8, slide 28 − 8), so the hugged top
     lands 8 under the subnet top and follows a row that sits lower. A member in no box or
     below something else of its box gets the title above it (no subnet header to sit by).
+    On x its left edge stays inside its leftmost member subnets and its right edge inside
+    its rightmost (layout_solve _overlay_sides): a subnet is not leftmost when another
+    member subnet lies wholly left of it on the columns and the boxes just below their
+    lowest common ancestor share a row (AZ a and AZ b), so the solve keeps them apart on x
+    — a Worker subnet on AZ a's second row stays left of AZ b's subnets (an L-shaped ASG).
+    `header: right` given over a non-leftmost first-row subnet with a header is drawn
+    `below`, with a warning.
  g. Default font-family is the examples' fixed string (layout_const.FONT_FAMILY_DEFAULT);
     W1 reorders only when Noto Sans CJK KR is not installed, so output stays stable.
  h. edge.label_at None = auto (above a horizontal piece, right of a vertical one; a badge on
@@ -414,11 +421,15 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     signature — group types, titles (a vpc / account / region / onprem / cloud root's own
     excluded), CIDR or not, per box its nodes' icons, caption line counts (1 + sub) and
     border sides, every range as ranks among the tracks the subtree covers, each overlay
-    with a member in the subtree (type, title, header given and beside or not, its end
+    with a member in the subtree (type, title, the header it is drawn with — layout_solve
+    _overlay_header: `below` when given, or when a first-row member subnet that is not
+    leftmost has a header its top would cross, else `right` — and beside or not, its end
     tracks as ranks — between two covered tracks a half rank, past the subtree's tracks
     none: that edge lies outside the box — and its members in the subtree by index, each
-    with whether it is on the overlay's first / last member row; members outside count
-    only through those flags, so the AZ an ASG across a VPC's AZs reaches into twins with
+    with whether it is on the overlay's first / last member row and whether its subnet is
+    a leftmost / a rightmost one (_overlay_sides: no member subnet beside it on that side,
+    judged by the boxes just below the two subnets' lowest common ancestor); members
+    outside count only through those flags, so the AZ an ASG across a VPC's AZs reaches into twins with
     the AZ holding the same part of an equal ASG, and a box with an overlay part twins
     with no box without it) — plus, for a template instance, its instance number
     (instances of one template keep DESIGN 2.2's rule). Per axis each twin's measures
@@ -541,7 +552,7 @@ class Group:
     children: List[str] = field(default_factory=list)   # child group ids, spec order
     nodes: List[str] = field(default_factory=list)      # ids of nodes directly inside (`in`, not `on`)
     over: List[str] = field(default_factory=list)       # overlay member node ids (expanded); non-empty = overlay
-    header: str = "right"           # overlay: header label placement vs the subnet header it crosses (right | below)
+    header: Optional[str] = None    # overlay: header label placement vs the subnet header it crosses (right | below; None = not given: right)
     cols: Optional[Tuple[str, str]] = None   # first / last col track its cells (descendants, over, span) cover; None = none
     rows: Optional[Tuple[str, str]] = None   # same for rows (a template instance always covers its `per` row)
     span_cols: Optional[Tuple[str, str]] = None   # spec `span` (already merged into cols/rows)

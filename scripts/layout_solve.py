@@ -1134,38 +1134,85 @@ class _Model:
 
     def _overlay_sides(self, g) -> Dict[str, Tuple[bool, bool]]:
         """Per member subnet (spec order): (leftmost, rightmost) — no other member subnet
-        sits beside it on its left (right): wholly left (right) of it on the columns and
-        sharing a row with it, so the two are kept apart on x. Subnets stacked on rows (on
-        one column or diagonal) are each both, and the overlay sits inside every one; side
-        by side (AZ columns) its left edge stays in the left ones, its right edge in the
-        right ones, and it spans the ones between. A subnet with no column range counts as
-        both; one with no row range shares every row."""
+        sits beside it on its left (right): wholly left (right) of it on the columns, with
+        the two boxes just below their lowest common ancestor (AZ a and AZ b, or the two
+        subnets of one AZ) sharing a row, so the solve keeps them apart on x. Judged by those
+        ancestors, not the subnets' own rows: under an ASG across AZ columns a lower subnet of
+        AZ a (Worker, row 2) with none beside it in AZ b is still left of AZ b's subnets, as
+        AZ a is left of AZ b (an L-shaped ASG). Subnets stacked on rows (on one column, or
+        AZs on a diagonal) are each both, and the overlay sits inside every one; side by side
+        (AZ columns) its left edge stays in the left ones, its right edge in the right ones,
+        and it spans the ones between. A subnet with no column range counts as both; a box
+        with no row range shares every row; one subnet inside another is not beside it."""
         subs = self._overlay_subnets(g)
-        rng = {s: (self.group_rng(s, "x"), self.group_rng(s, "y")) for s in subs}
+        groups = self.spec.groups
+
+        def chain(s):
+            out = []
+            while s is not None:
+                out.append(s)
+                s = groups[s].parent
+            return out
+
+        def below_lca(a, b):
+            """a's and b's ancestors (or selves) just below their lowest common ancestor;
+            None when one holds the other."""
+            ca, cb = chain(a), chain(b)
+            ia = next((k for k, x in enumerate(ca) if x in cb), len(ca))
+            ib = cb.index(ca[ia]) if ia < len(ca) else len(cb)
+            if ia == 0 or ib == 0:
+                return None
+            return ca[ia - 1], cb[ib - 1]
 
         def share_row(a, b):
             return a is None or b is None or (a[0] <= b[1] and b[0] <= a[1])
 
         out = {}
         for s in subs:
-            rx, ry = rng[s]
+            rx = self.group_rng(s, "x")
             if rx is None:
                 out[s] = (True, True)
                 continue
-            beside = [tx for tx, ty in (rng[u] for u in subs if u != s) if tx is not None and share_row(ry, ty)]
+            beside = []
+            for u in subs:
+                tx, pair = self.group_rng(u, "x"), below_lca(s, u) if u != s else None
+                if tx is not None and pair is not None \
+                        and share_row(self.group_rng(pair[0], "y"), self.group_rng(pair[1], "y")):
+                    beside.append(tx)
             out[s] = (not any(t[1] < rx[0] for t in beside), not any(t[0] > rx[1] for t in beside))
         return out
 
     def _overlay_header(self, g) -> str:
-        """The header placement the overlay is drawn with: its `header`, except `below` when
-        a first-row member subnet is not leftmost — the top edge, level with the subnet
-        titles under `right`, would cross that subnet's title (an ASG across AZ columns)."""
+        """The header placement the overlay is drawn with: its `header` (default right),
+        except `below` when a first-row member subnet that is not leftmost has a header (a
+        badge, title or CIDR line) — the top edge, level with the subnet titles under
+        `right`, would cross it (an ASG across AZ columns)."""
         if g.header == "below":
             return "below"
+        return "below" if self._overlay_crossed(g) else "right"
+
+    def _overlay_crossed(self, g) -> List[str]:
+        """First-row member subnets that are not leftmost and have a header (badge, title or
+        CIDR line) the overlay's top edge would cross level with the subnet titles."""
         sides = self._overlay_sides(g)
-        if any(not sides[s][0] for s in self._overlay_first(g) if s in sides):
-            return "below"
-        return g.header
+        out = []
+        for s in self._overlay_first(g):
+            sg = self.spec.groups[s]
+            if s in sides and not sides[s][0] and (sg.label or sg.cidr or K.style(sg.type).badge) and s not in out:
+                out.append(s)
+        return out
+
+    def overlay_header_warnings(self) -> List[str]:
+        """An overlay given `header: right` that _overlay_header draws `below`."""
+        out = []
+        for g in self.overlays:
+            if g.header == "right":
+                crossed = self._overlay_crossed(g)
+                if crossed:
+                    out.append(f"{g.src}: header: right drawn as below — level with the subnet titles its "
+                               f"top would cross the header of {', '.join(crossed)} (not leftmost); "
+                               f"drop `header:` or give `header: below`")
+        return out
 
     def _overlay_first(self, g, last=False, nodes=False):
         """Member subnets (or, nodes=True, the members) in the overlay's first (or last) member
@@ -1725,7 +1772,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
     _, ybf, ypred, ycons, yv, w = best
     m.warnings[w0:] = w
     m.align_stacks(ycons, yv)
-    m.warnings += m.twins_unlike("x", xv) + m.twins_unlike("y", yv)
+    m.warnings += m.twins_unlike("x", xv) + m.twins_unlike("y", yv) + m.overlay_header_warnings()
 
     geom = _geometry(m, xv, yv, note_block)
     geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)

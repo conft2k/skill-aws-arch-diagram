@@ -750,7 +750,14 @@ ERRORS = [
         d["groups"].append({"id": "asg", "type": "asg", "over": ["ec2.*"]}),
         d["nodes"].append({"id": "nlb", "icon": "resource/Elastic-Load-Balancing_Network-Load-Balancer",
                            "label": "NLB", "in": "vpc", "at": ["b", "main"]})),
-     ["groups[5] asg: over: its box covers columns b–b and rows az1–az2, so it would also hold nlb (not "
+     ["groups[5] asg: over: its box covers column b and rows az1–az2, so it would also hold nlb (not "
+      "members); list them in `over:`, move them off those tracks, or split the overlay"]),
+    ("overlay box meeting a colspan non-member", lambda d: (
+        d.update(cols=["a", "b", "b2", "c"]),
+        d["groups"].append({"id": "asg", "type": "asg", "over": ["ec2.*"]}),
+        d["nodes"].append({"id": "nlb", "icon": "resource/Elastic-Load-Balancing_Network-Load-Balancer",
+                           "label": "NLB", "in": "vpc", "at": ["b..b2", "main"]})),
+     ["groups[5] asg: over: its box covers column b and rows az1–az2, so it would also hold nlb (not "
       "members); list them in `over:`, move them off those tracks, or split the overlay"]),
 ]
 

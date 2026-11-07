@@ -1344,6 +1344,24 @@ def side_az_spec(mode="document", label="ASG", header=None, grid=False, long1=Tr
                     "groups": groups, "nodes": nodes})
 
 
+def ell_spec(mode="document"):
+    """An L-shaped ASG: AZ a (c1) with an App subnet on r1 and a Worker subnet on r2, AZ b
+    (c2) with an App subnet on r1 only, one EC2 in each subnet, the ASG over all three."""
+    groups = [{"id": "cloud", "type": "cloud"}, {"id": "region", "type": "region", "label": "Region", "in": "cloud"},
+              {"id": "vpc", "type": "vpc", "label": "VPC", "cidr": "10.0.0.0/16", "in": "region"},
+              {"id": "aza", "type": "az", "label": "AZ a", "in": "vpc"},
+              {"id": "azb", "type": "az", "label": "AZ b", "in": "vpc"},
+              {"id": "sna", "type": "private", "label": "App subnet", "in": "aza"},
+              {"id": "snb", "type": "private", "label": "App subnet", "in": "azb"},
+              {"id": "wka", "type": "private", "label": "Worker subnet", "in": "aza"},
+              {"id": "asg", "type": "asg", "label": "ASG", "over": ["ea", "eb", "wa"]}]
+    nodes = [{"id": "ea", "icon": "service/Amazon-EC2", "label": "EC2", "in": "sna", "at": ["c1", "r1"]},
+             {"id": "eb", "icon": "service/Amazon-EC2", "label": "EC2", "in": "snb", "at": ["c2", "r1"]},
+             {"id": "wa", "icon": "service/Amazon-EC2", "label": "Worker", "in": "wka", "at": ["c1", "r2"]}]
+    return LP.load({"name": "ell", "mode": mode, "cols": ["c1", "c2"], "rows": ["r1", "r2"],
+                    "groups": groups, "nodes": nodes})
+
+
 class OverlayColumnsTest(unittest.TestCase):
     """An overlay over subnets side by side (an ASG across AZ columns): its left edge in the
     leftmost member subnets, its right edge in the rightmost, spanning the AZ gap."""
@@ -1406,7 +1424,7 @@ class OverlayColumnsTest(unittest.TestCase):
             m = LS._Model(spec)
             for o in m.overlays:
                 self.assertTrue(all(v == (True, True) for v in m._overlay_sides(o).values()), o.id)
-                self.assertEqual(m._overlay_header(o), o.header)
+                self.assertEqual(m._overlay_header(o), o.header or "right")
         diag = LP.load({"name": "diag", "cols": ["c1", "c2"], "rows": ["r1", "r2"],
                         "groups": [{"id": "vpc", "type": "vpc", "label": "VPC"},
                                    {"id": "az1", "type": "az", "label": "AZ 1", "in": "vpc"},
@@ -1424,6 +1442,49 @@ class OverlayColumnsTest(unittest.TestCase):
         for s in ("s1", "s2"):
             r = g.groups[s].rect
             self.assertTrue(r.x0 + 8 <= a.x0 and a.x1 <= r.x1 - 8, s)      # on x inside each
+
+    def test_an_l_shaped_asg(self):
+        """AZ a (column c1) with an App subnet on r1 and a Worker subnet on r2, AZ b (c2) with
+        an App subnet on r1 only, an ASG over the three EC2s: the Worker subnet shares no row
+        with AZ b's but AZ a and AZ b do, so it is leftmost only — the right edge stays in AZ
+        b's subnet, not held inside AZ a. It solves in both modes with no warning, holds
+        exactly its members, clears every subnet title and passes the checks."""
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode):
+                spec = ell_spec(mode)
+                self.assertEqual(LS._Model(spec)._overlay_sides(spec.groups["asg"]),
+                                 {"sna": (True, False), "snb": (False, True), "wka": (True, False)})
+                g = LS.solve(spec, [])
+                self.assertEqual(g.warnings, [])
+                a = g.groups["asg"].rect
+                for m in spec.groups["asg"].over:
+                    self.assertTrue(contains(a, g.nodes[m].icon, 8), m)
+                    self.assertTrue(contains(a, g.nodes[m].stack(), 0), m)
+                for s in ("sna", "wka"):
+                    self.assertGreaterEqual(a.x0, g.groups[s].title.box().x1 + 8, s)
+                self.assertLessEqual(a.x1, g.groups["snb"].rect.x1 - 8)
+                self.assertGreater(a.x1, g.groups["azb"].rect.x0)
+                for s in ("sna", "snb"):
+                    self.assertGreaterEqual(a.y0, g.groups[s].title.box().y1, s)
+                self.assertLessEqual(a.y1, g.groups["wka"].rect.y1 - 8)
+                self.assertEqual(check(spec, g), [])
+
+    def test_header_right_forced_below_warns(self):
+        """`header: right` over AZ columns is drawn below the subnet titles, with a warning
+        naming the subnet whose header its top would cross; left out, it warns nothing; when
+        AZ b's box has no header (an untitled generic box: no badge, title or CIDR) nothing
+        is crossed and `right` stays."""
+        spec = side_az_spec(header="right")
+        self.assertEqual(LS._Model(spec)._overlay_header(spec.groups["asg"]), "below")
+        g = LS.solve(spec, [])
+        self.assertEqual(len(g.warnings), 1)
+        self.assertIn("asg: header: right drawn as below", g.warnings[0])
+        self.assertIn("header of snb0", g.warnings[0])
+        self.assertEqual(LS.solve(side_az_spec(), []).warnings, [])
+        bare = side_az_spec(header="right")
+        bare.groups["snb0"].type, bare.groups["snb0"].label = "generic", None
+        self.assertEqual(LS._Model(bare)._overlay_header(bare.groups["asg"]), "right")
+        self.assertEqual(LS.solve(bare, []).warnings, [])
 
 
 class TwinTest(unittest.TestCase):

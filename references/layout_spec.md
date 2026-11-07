@@ -180,10 +180,14 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   rows) it stays 8 inside each; over subnets side by side (an ASG across AZ columns `aza |
   azb`) its left edge stays in the leftmost ones and its right edge in the rightmost,
   crossing the AZ borders between, and its title goes below the subnet titles whatever
-  `header` says (level with them its top would cross the next AZ's subnet title). Its box
+  `header` says (level with them its top would cross the next AZ's subnet title; a given
+  `header: right` then warns). Side by side is judged by the AZs: a subnet on a lower row
+  of AZ a with nothing beside it in AZ b still keeps only the left edge (an L-shaped ASG
+  over AZ a's App and Worker subnets and AZ b's App subnet). Its box
   covers every row and column its members are on, so a node on those tracks that is not a
   member is rejected (an ASG over EC2s at `[c1, r1]` and `[c2, r2]` would also hold ones
-  at `[c1, r2]` / `[c2, r1]`): list it in `over:`, move it, or split the overlay.
+  at `[c1, r2]` / `[c2, r1]`; a colspan node counts when its span meets those columns):
+  list it in `over:`, move it, or split the overlay.
 - A group covers the tracks of what it contains. `span: {cols: [pub, pub], rows: [a, b]}`
   stretches it over tracks with no node of its own (an empty public subnet); the spanned
   track centers keep `pad` (or the node padding) from the border, `pad_left` / `pad_right` /
