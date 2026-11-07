@@ -26,7 +26,8 @@ up in assets/icons.json) or data: URIs. Nothing is written, and the script exits
 status 1, when an href doesn't resolve, points at an external file, names the
 logo-less AWS Cloud badge, when a group container is rounded, or when the SVG uses an
 element, transform, style/class or text stroke that this converter would otherwise
-drop silently (opacity on an <image> included).
+drop silently (opacity on an <image>, and fill/stroke/font attributes on a <g> or the
+root <svg> that SVG would pass down to the children, included).
 """
 import argparse
 import base64
@@ -51,14 +52,7 @@ from pptx.opc.package import Part
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
-from fetch_icons import load_sets  # noqa: E402
-
-
-@cache
-def icon_sets():
-    """The icon sets, loaded on the first icon lookup (downloading the official AWS icons if
-    the bundle isn't built yet), not at import: export.py's checks and --help stay offline."""
-    return load_sets()
+from embed import icon_sets  # noqa: E402,F401  (one cached load shared with embed.py)
 
 
 @cache
@@ -78,6 +72,10 @@ REPLACED = {"group/AWS-Cloud_32": "group/AWS-Cloud-logo_32",
             "group/AWS-Cloud_32_Dark": "group/AWS-Cloud-logo_32_Dark"}
 DRAWN = {"svg", "g", "rect", "image", "text", "line", "polyline", "circle"}
 SKIPPED = {"defs", "marker", "title", "desc"}  # markers are read through marker-start/-end
+# Paint / text attributes the converter reads per element; on the root <svg> SVG would pass
+# them down to every child, which the slide shapes don't do (font-family is --font's job).
+INHERITED = {"fill", "fill-opacity", "stroke", "stroke-opacity", "stroke-width", "stroke-dasharray",
+             "font-size", "font-weight", "text-anchor"}
 
 SLIDE_W, SLIDE_H = Emu(12192000), Emu(6858000)  # 13.333 x 7.5 in, 16:9
 MARGIN = Emu(228600)                              # 0.25 in
@@ -228,9 +226,17 @@ def collect(svg_root, drop_backdrop=True):
         if g("style") or g("class"):
             problems.append(f"<{tag}> uses style=/class= — write presentation attributes "
                             "(fill=, stroke=, font-size=, ...) instead")
-        if tag == "svg" and alpha(g("opacity")) < 1:
-            problems.append(f"<svg> has opacity={g('opacity')!r} — not applied; put the opacity on "
-                            "each element")
+        if tag == "svg":
+            try:
+                if alpha(g("opacity")) < 1:
+                    problems.append(f"<svg> has opacity={g('opacity')!r} — not applied; put the opacity "
+                                    "on each element")
+            except ValueError as e:
+                problems.append(f"<svg>: {e}")
+            inherited = sorted(k for k in el.keys() if k in INHERITED)
+            if inherited:
+                problems.append(f"<svg> carries {', '.join(inherited)} — inherited attributes are not "
+                                "applied; put fill/font-size/stroke on each element")
         if tag == "g":
             extra = sorted(k for k in el.keys() if k not in ("transform", "id"))
             if extra:

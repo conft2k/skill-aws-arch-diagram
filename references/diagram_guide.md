@@ -399,10 +399,12 @@ No `<path>` outside markers, no other transforms (scale, rotate), no CSS classes
 `stroke-opacity` (`0.08` or `8%`) on a rect, circle, line, polyline or text become the
 alpha of its fill / line color (fill = `opacity` × `fill-opacity`, line = `opacity` ×
 `stroke-opacity`; 0 is no fill / no line); on an `<image>`, `<g>` or `<svg>` an opacity
-below 1 is rejected. The full-canvas background rect is dropped (the slide is white) when it is
-the first thing drawn, unstroked, and its fill is `none`, fully transparent or opaque
-white; any other background — a colour, a tint at any opacity, translucent white, a rect
-with no `fill` (black) — and a canvas-sized rect drawn later or elsewhere stays a shape.
+below 1 is rejected, and so are fill, stroke, opacity and font attributes on a `<g>` or the
+root `<svg>`, which SVG would pass down to the children: set them on each element. The
+full-canvas background rect is dropped (the slide is white) when it is the first thing
+drawn, unstroked, and its fill is `none`, fully transparent or opaque white; any other
+background — a colour, a tint at any opacity, translucent white, a rect with no `fill`
+(black) — and a canvas-sized rect drawn later or elsewhere stays a shape.
 One draft is one slide; the export scales it to fit a
 16:9 slide, so the canvas size decides the slide's text size (see "Text size").
 

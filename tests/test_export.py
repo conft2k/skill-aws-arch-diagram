@@ -193,6 +193,27 @@ class OutputClash(unittest.TestCase):
         self.assertEqual(ET.parse(self.out / "b.svg").getroot()[0].get("fill"), "#0000FF")
 
 
+class DraftProblems(unittest.TestCase):
+    def test_bad_root_opacity_reported_with_the_other_drafts(self):
+        # used to escape collect() as a ValueError traceback before any draft was reported
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "bad.draft.svg"
+            bad.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" '
+                           'opacity="50 %"><rect width="9" height="9" fill="#FF0000"/></svg>',
+                           encoding="utf-8")
+            other = Path(tmp) / "other.draft.svg"
+            other.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+                             '<path d="M0,0 L9,9"/></svg>', encoding="utf-8")
+            out = Path(tmp) / "out"
+            r = export(bad, other, "--svg", "--out-dir", out)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertIn("unsupported opacity '50 %'", r.stdout)
+            self.assertIn(f"{other}:", r.stdout)
+            self.assertIn("<path> is not supported", r.stdout)
+            self.assertFalse(out.exists())
+
+
 class IconsLoadedLazily(unittest.TestCase):
     """The clash check and --help run before, and without, the icon bundle."""
 
