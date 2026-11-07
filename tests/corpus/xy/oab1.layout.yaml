@@ -1,0 +1,13 @@
+name: oab1
+mode: document
+cols: [a, b]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+nodes:
+  - {id: p, icon: service/Amazon-EC2, label: P with a long label line, in: vpc, at: [a, r1]}
+  - {id: q, icon: service/Amazon-RDS, label: Q, in: vpc, at: [a, r2]}
+  - {id: s, icon: service/Amazon-EC2, label: S, in: vpc, at: [b, r1]}
+edges:
+  - {e: "p -> q", from_side: left, to_side: left, label: replication traffic}

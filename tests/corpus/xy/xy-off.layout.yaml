@@ -1,0 +1,13 @@
+name: xy_off
+mode: document
+cols: [a1, a2, a3]
+rows: [top, bot]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: t, icon: service/Amazon-EC2, label: T, in: cloud, at: [a2, top]}
+  - {id: l, icon: service/Amazon-EC2, label: L, in: cloud, at: [a1, bot]}
+  - {id: r, icon: service/Amazon-EC2, label: R, in: cloud, at: [a3, bot]}
+  - {id: q, icon: service/Amazon-EC2, label: Q, in: cloud, xy: ["col.a2+70", "row.bot"]}
+edges:
+  - {e: "t -> q"}

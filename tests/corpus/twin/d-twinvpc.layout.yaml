@@ -1,0 +1,19 @@
+name: c-two
+mode: document
+cols: [c1, c2]
+rows: [r1, main, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc1, type: vpc, label: VPC 1, cidr: 10.1.0.0/16, in: region}
+  - {id: az1, type: az, label: AZ, in: vpc1, per: [r1, r2]}
+  - {id: sn1, type: private, label: App subnet, in: az1}
+  - {id: vpc2, type: vpc, label: VPC 2, cidr: 10.2.0.0/16, in: region}
+  - {id: az2, type: az, label: AZ, in: vpc2, per: [r1, r2]}
+  - {id: sn2, type: private, label: App subnet, in: az2}
+  - {id: asg1, type: asg, label: ASG, over: [e1.*]}
+  - {id: asg2, type: asg, label: ASG, over: [e2.*]}
+nodes:
+  - {id: e1, icon: service/Amazon-EC2, label: EC2 with a much longer label here, in: sn1, col: c1}
+  - {id: e2, icon: service/Amazon-EC2, label: EC2, in: sn2, col: c2}
+

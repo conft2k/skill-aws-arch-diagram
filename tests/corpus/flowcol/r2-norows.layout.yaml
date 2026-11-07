@@ -1,0 +1,26 @@
+name: nr
+mode: slide
+cols:
+- id: svc
+  flow: 100
+rows: []
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: Region
+  in: cloud
+nodes:
+- id: a
+  icon: service/AWS-Lambda
+  label: A
+  in: region
+  col: svc
+- id: b
+  icon: service/Amazon-Simple-Storage-Service
+  label: B
+  in: region
+  col: svc
+edges:
+- e: a -> b

@@ -1,0 +1,14 @@
+name: fp
+mode: document
+cols: [a, b]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+nodes:
+  - {id: q, icon: service/Amazon-Simple-Queue-Service, label: SQS, sub: orders queue, in: region, at: [a, r1]}
+  - {id: f, icon: service/AWS-Lambda, label: Lambda, in: region, at: [a, r2]}
+  - {id: g, icon: service/AWS-Lambda, label: Worker, in: region, at: [b, r2]}
+edges:
+  - {e: "q -> f"}
+  - {e: "q -- g"}

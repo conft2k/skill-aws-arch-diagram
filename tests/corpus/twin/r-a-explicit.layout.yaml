@@ -1,0 +1,16 @@
+name: a-explicit
+mode: document
+cols: [app]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: aza, type: az, label: AZ, in: vpc}
+  - {id: azb, type: az, label: AZ, in: vpc}
+  - {id: sna, type: private, label: App subnet, in: aza}
+  - {id: snb, type: private, label: App subnet, in: azb}
+  - {id: asg, type: asg, label: Auto Scaling group for the web tier, over: [ea, eb]}
+nodes:
+  - {id: ea, icon: service/Amazon-EC2, label: EC2, in: sna, at: [app, r1]}
+  - {id: eb, icon: service/Amazon-EC2, label: EC2, in: snb, at: [app, r2]}

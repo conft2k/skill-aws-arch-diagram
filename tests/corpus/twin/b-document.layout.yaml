@@ -1,0 +1,16 @@
+name: b-side
+mode: document
+cols: [c1, c2]
+rows: [r1]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: aza, type: az, label: AZ, in: vpc}
+  - {id: azb, type: az, label: AZ, in: vpc}
+  - {id: sna, type: private, label: App subnet, in: aza}
+  - {id: snb, type: private, label: App subnet, in: azb}
+  - {id: asg, type: asg, label: ASG, over: [ea, eb]}
+nodes:
+  - {id: ea, icon: service/Amazon-EC2, label: EC2 with a much longer label here, in: sna, at: [c1, r1]}
+  - {id: eb, icon: service/Amazon-EC2, label: EC2, in: snb, at: [c2, r1]}

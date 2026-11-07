@@ -1,0 +1,24 @@
+name: tw_stack
+mode: document
+cols: [a, b]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc1, type: vpc, label: VPC 1, cidr: 10.1.0.0/16, in: region}
+  - {id: aza1, type: az, label: AZ a, in: vpc1}
+  - {id: sna1, type: private, label: App subnet, in: aza1}
+  - {id: azb1, type: az, label: AZ b, in: vpc1}
+  - {id: snb1, type: private, label: App subnet, in: azb1}
+  - {id: asg1, type: asg, label: ASG, over: [ea1, eb1]}
+  - {id: vpc2, type: vpc, label: VPC 2, cidr: 10.2.0.0/16, in: region}
+  - {id: aza2, type: az, label: AZ a, in: vpc2}
+  - {id: sna2, type: private, label: App subnet, in: aza2}
+  - {id: azb2, type: az, label: AZ b, in: vpc2}
+  - {id: snb2, type: private, label: App subnet, in: azb2}
+  - {id: asg2, type: asg, label: ASG, over: [ea2, eb2]}
+nodes:
+  - {id: ea1, icon: service/Amazon-EC2, label: EC2, in: sna1, at: [a, r1]}
+  - {id: eb1, icon: service/Amazon-EC2, label: EC2, in: snb1, at: [b, r1]}
+  - {id: ea2, icon: service/Amazon-EC2, label: EC2, in: sna2, at: [a, r2]}
+  - {id: eb2, icon: service/Amazon-EC2, label: EC2, in: snb2, at: [b, r2]}

@@ -1,0 +1,13 @@
+name: xy_span
+mode: document
+cols: [a, b, c]
+rows: [r, s]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: p, icon: service/Amazon-EC2, label: P, in: cloud, at: [a, r]}
+  - {id: w, icon: service/Amazon-EC2, label: Wide long label here, in: cloud, at: [b..c, r]}
+  - {id: q, icon: service/Amazon-EC2, label: Q, in: cloud, xy: [p.cx, w.y1+40]}
+  - {id: z, icon: service/Amazon-EC2, label: Z, in: cloud, xy: [col.c, row.s]}
+edges:
+  - {e: "p -> z"}

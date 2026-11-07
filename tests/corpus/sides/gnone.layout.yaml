@@ -1,0 +1,12 @@
+name: gnone
+mode: document
+cols: [a, b]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud, pad_right: 80}
+nodes:
+  - {id: p, icon: service/Amazon-EC2, label: App, in: vpc, at: [a, r1]}
+  - {id: s, icon: service/Amazon-EC2, label: Cache, in: vpc, at: [b, r2]}
+edges:
+  - {e: "p -> s", label: "session sync", shape: HVH}

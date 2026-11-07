@@ -1,0 +1,85 @@
+name: threeaz
+mode: document
+cols:
+- a1
+- b1
+- a2
+- b2
+rows:
+- r1
+- r2
+- r3
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: Region
+  in: cloud
+- id: vpc1
+  type: vpc
+  label: VPC 1
+  cidr: 10.1.0.0/16
+  in: region
+- id: az1
+  type: az
+  label: AZ
+  per:
+  - r1
+  - r2
+  - r3
+  in: vpc1
+- id: sn1
+  type: private
+  label: App subnet
+  in: az1
+- id: asg1
+  type: asg
+  label: "ASG \xB7 target group"
+  over:
+  - e1a.*
+  - e1b.*
+- id: vpc2
+  type: vpc
+  label: VPC 2
+  cidr: 10.2.0.0/16
+  in: region
+- id: az2
+  type: az
+  label: AZ
+  per:
+  - r1
+  - r2
+  - r3
+  in: vpc2
+- id: sn2
+  type: private
+  label: App subnet
+  in: az2
+- id: asg2
+  type: asg
+  label: "ASG \xB7 target group"
+  over:
+  - e2a.*
+  - e2b.*
+nodes:
+- id: e1a
+  icon: service/Amazon-EC2
+  label: EC2 with a much longer label here
+  col: a1
+  in: sn1
+- id: e1b
+  icon: service/Amazon-EC2
+  label: EC2
+  col: b1
+  in: sn1
+- id: e2a
+  icon: service/Amazon-EC2
+  label: EC2
+  col: a2
+  in: sn2
+- id: e2b
+  icon: service/Amazon-EC2
+  label: EC2
+  col: b2
+  in: sn2

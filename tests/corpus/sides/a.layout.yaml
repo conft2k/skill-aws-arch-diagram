@@ -1,0 +1,13 @@
+name: a
+mode: document
+cols: [c]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: sn, type: private, label: App subnet, in: vpc}
+  - {id: asg, type: asg, label: ASG, over: [b], header: right}
+nodes:
+  - {id: a, icon: service/Amazon-EC2, label: Bastion, in: sn, at: [c, r1]}
+  - {id: b, icon: service/Amazon-EC2, label: Worker, in: sn, at: [c, r2]}

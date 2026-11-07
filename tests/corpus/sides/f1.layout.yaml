@@ -1,0 +1,13 @@
+name: f1
+mode: slide
+cols: [{id: c, flow: true}]
+rows: [r]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+  - {id: sn, type: private, label: App subnet, in: vpc}
+  - {id: asg, type: asg, label: ASG, over: [w1, w2]}
+nodes:
+  - {id: bastion, icon: service/Amazon-EC2, label: Bastion, in: sn, col: c}
+  - {id: w1, icon: service/Amazon-EC2, label: Worker 1, in: sn, col: c}
+  - {id: w2, icon: service/Amazon-EC2, label: Worker 2, in: sn, col: c}

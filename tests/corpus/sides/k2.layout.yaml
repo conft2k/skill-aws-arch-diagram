@@ -1,0 +1,11 @@
+name: k2
+mode: document
+cols: [a, b, c]
+rows: [r1, r2]
+nodes:
+  - {id: s, icon: service/AWS-Lambda, label: Src, at: [b, r1]}
+  - {id: w1, icon: service/AWS-Lambda, label: W1, at: [a, r2]}
+  - {id: w2, icon: service/AWS-Lambda, label: W2, at: [b, r2]}
+  - {id: w3, icon: service/AWS-Lambda, label: W3, at: [c, r2]}
+edges:
+  - {e: "s -> w1, w2, w3", trunk: true, label: "gRPC"}

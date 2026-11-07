@@ -1,0 +1,12 @@
+name: refuse
+mode: document
+cols: [c1, c2, c3]
+rows: [r1, r2, r3]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: a, icon: service/Amazon-EC2, label: A, in: cloud, at: [c1, r1]}
+  - {id: m, icon: service/Amazon-EC2, label: M, in: cloud, at: [c2, r2]}
+  - {id: b, icon: service/Amazon-EC2, label: B, in: cloud, at: [c3, r3]}
+edges:
+  - {e: "a -> b", shape: VHV, bend_y: m.cy}

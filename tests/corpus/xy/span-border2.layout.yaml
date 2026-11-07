@@ -1,0 +1,13 @@
+name: span_border2
+mode: document
+cols: [o, b1, b2, c]
+rows: [main, bot]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+nodes:
+  - {id: u, icon: resource/Users, label: Users, at: [o, main]}
+  - {id: igw, icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [b1..b2, main]}
+  - {id: p, icon: service/Amazon-EC2, label: P, in: vpc, at: [c, main]}
+  - {id: w, icon: resource/Users, label: An outside node with an extremely long label that pushes b2, at: [o, bot]}
+  - {id: z, icon: resource/Users, label: Z, at: [b2, bot]}

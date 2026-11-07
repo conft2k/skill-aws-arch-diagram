@@ -1,0 +1,35 @@
+name: three
+mode: document
+cols: [users, c1, c2, c3]
+rows: [top, r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: aza, type: az, label: Availability Zone A, in: vpc}
+  - {id: azb, type: az, label: Availability Zone B, in: vpc}
+  - {id: azc, type: az, label: Availability Zone C, in: vpc}
+  - {id: sna, type: private, label: Private application subnet A, in: aza}
+  - {id: snb, type: private, label: Private application subnet B, in: azb}
+  - {id: snc, type: private, label: Private application subnet C, in: azc}
+  - {id: dba, type: private, label: DB subnet, in: aza}
+  - {id: dbb, type: private, label: DB subnet, in: azb}
+  - {id: dbc, type: private, label: DB subnet, in: azc}
+  - {id: asg, type: asg, label: ASG · web tier target group, over: [ea, eb, ec]}
+nodes:
+  - {id: users, icon: resource/Users, label: Users, at: [users, top]}
+  - {id: alb, icon: resource/Elastic-Load-Balancing_Application-Load-Balancer, label: ALB, in: vpc, at: [c2, top]}
+  - {id: ea, icon: service/Amazon-EC2, label: EC2, in: sna, at: [c1, r1]}
+  - {id: eb, icon: service/Amazon-EC2, label: EC2, in: snb, at: [c2, r1]}
+  - {id: ec, icon: service/Amazon-EC2, label: EC2, in: snc, at: [c3, r1]}
+  - {id: ra, icon: service/Amazon-RDS, label: RDS primary, in: dba, at: [c1, r2]}
+  - {id: rb, icon: service/Amazon-RDS, label: RDS standby, in: dbb, at: [c2, r2]}
+  - {id: rc, icon: service/Amazon-RDS, label: RDS replica, in: dbc, at: [c3, r2]}
+edges:
+  - {e: "users -> alb"}
+  - {e: "alb -> ea"}
+  - {e: "alb -> eb"}
+  - {e: "alb -> ec"}
+  - {e: "ea -> ra"}
+  - {e: "eb -> rb"}
+  - {e: "ec -> rc"}

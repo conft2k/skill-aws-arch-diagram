@@ -1,0 +1,126 @@
+name: gwlb-reference-architecture
+mode: slide
+cols:
+- users
+- igw
+- gwlbe
+- ec2
+- gwlb
+- fw
+rows:
+- az1
+- main
+- az2
+groups:
+- id: cloud
+  type: cloud
+  pad_bottom: 6
+- id: region
+  type: region
+  label: Region
+  in: cloud
+  pad_bottom: 6
+- id: appvpc
+  type: vpc
+  label: Application VPC
+  cidr: 10.0.0.0/16
+  in: region
+  pad_bottom: 6
+- id: appaz
+  type: az
+  in: appvpc
+  per:
+  - az1
+  - az2
+- id: gwlbesn
+  type: public
+  label: GWLBe subnet
+  in: appaz
+- id: appsn
+  type: private
+  label: App subnet
+  in: appaz
+- id: secvpc
+  type: vpc
+  label: Security VPC
+  cidr: 10.1.0.0/16
+  in: region
+  pad_bottom: 6
+- id: secaz
+  type: az
+  in: secvpc
+  per:
+  - az1
+  - az2
+- id: applsn
+  type: private
+  label: Appliance subnet
+  in: secaz
+- id: asg
+  type: asg
+  label: ASG
+  over:
+  - fw.*
+  header: right
+nodes:
+- id: users
+  icon: resource/Users
+  label: Users
+  at:
+  - users
+  - main
+- id: igw
+  icon: resource/Amazon-VPC_Internet-Gateway
+  label: IGW
+  'on': appvpc
+  at:
+  - igw
+  - main
+- id: gwlbe
+  icon: resource/Amazon-VPC_Endpoints
+  label: GWLBe
+  in: gwlbesn
+  col: gwlbe
+- id: ec2
+  icon: service/Amazon-EC2
+  label: EC2
+  in: appsn
+  col: ec2
+- id: gwlb
+  icon: resource/Elastic-Load-Balancing_Gateway-Load-Balancer
+  label: GWLB
+  in: secvpc
+  at:
+  - gwlb
+  - main
+- id: fw
+  icon: service/Amazon-EC2
+  label: 방화벽
+  in: applsn
+  col: fw
+edges:
+- e: users -> igw
+  label: HTTPS :443
+- e: igw -> gwlbe.*
+  trunk: true
+  step: 1
+- e: gwlb <-> gwlbe.*
+  step: 2
+- e: gwlb <-> asg
+  label: GENEVE :6081
+  step: 3
+- e: gwlbe.* -> ec2.*
+  step: 4
+  step_each: true
+- e: ec2.* ..> users
+  verb: 응답
+note:
+  steps:
+  - - IGW → GWLBe
+    - (인그레스 라우팅)
+  - - GWLBe ⇄ GWLB
+    - ''
+  - - GWLB ⇄ 방화벽
+    - (검사 후 GWLB → GWLBe로 반환)
+  - - GWLBe → EC2
+    - ''

@@ -1,0 +1,14 @@
+name: oab3
+mode: document
+cols: [a, b, c]
+rows: [r1]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: p, icon: service/Amazon-EC2, label: P, in: cloud, at: [a, r1]}
+  - {id: m, icon: service/Amazon-EC2, label: M, in: cloud, at: [b, r1]}
+  - {id: q, icon: service/Amazon-EC2, label: Q, in: cloud, at: [c, r1]}
+edges:
+  - {e: "p -> q", from_side: top, to_side: top, label: skip M}
+  - {e: "p -> m"}
+  - {e: "m -> q"}

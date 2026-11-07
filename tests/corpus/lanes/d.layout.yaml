@@ -1,0 +1,85 @@
+# Serverless order pipeline folded into lanes: request lane (CloudFront → API Gateway → Lambda → DynamoDB → Streams → Pipes → event bus), fulfillment lane (rule → Step Functions → payment · VPC stock reservation on Aurora · SNS → SES) and analytics lane (SQS → Firehose → S3)
+name: serverless-order-pipeline
+mode: document
+# Lanes are rows, each read left → right; the columns are shared slots:
+#   request lane (sync):  api, create, ddb, stream, pipe, bus
+#   analytics lane (ana): rule, sqs, ingest, firehose, lake
+#   fulfillment (ful):    -, sfn, sns (pay above it, the VPC below), mail, ses
+cols: [users, edge, x0, x1, x2, x3, x4, x5]
+rows: [web, sync, auth, {id: ana, min_gap_before: 180}, pay, ful, az1, vmain, az2]   # ana 180: room under Cognito for the bus → rule wrap corridor and a ≥ 48px arrow into the rule
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+  - {id: vpc,    type: vpc, label: VPC, in: region}
+  - {id: az,     type: az, in: vpc, per: [az1, az2]}
+  - {id: appsn,  type: private, label: Private subnet, in: az}
+  - {id: dbsn,   type: private, label: DB subnet, in: az}
+  - {id: aurora, type: generic, label: Aurora PostgreSQL, dash: "6,4", over: [writer.*, reader.*]}
+
+nodes:
+  - {id: users,  icon: resource/Users, label: Users, at: [users, sync]}
+  - {id: cf,     icon: service/Amazon-CloudFront, label: CloudFront, in: cloud, at: [edge, sync]}
+  - {id: waf,    icon: service/AWS-WAF, label: AWS WAF, sub: CloudFront Web ACL, in: cloud, at: [edge, auth]}
+  - {id: cw,     icon: service/Amazon-CloudWatch, label: CloudWatch, sub: 로그 · 지표 · 경보, in: region, at: [x3, web]}
+  - {id: xray,   icon: service/AWS-X-Ray, label: AWS X-Ray, sub: 요청 · 워크플로 추적, in: region, at: [x4, web]}
+  - {id: sm,     icon: service/AWS-Secrets-Manager, label: Secrets Manager, sub: DB 자격 증명, in: region, at: [x5, web]}
+  - {id: web,    icon: service/Amazon-Simple-Storage-Service, label: S3 static web, sub: 버킷 정책 · OAC만 허용, in: region, at: [x0, web]}
+  - {id: api,    icon: service/Amazon-API-Gateway, label: API Gateway, sub: REST · /orders, in: region, at: [x0, sync]}
+  - {id: cog,    icon: service/Amazon-Cognito, label: Cognito, sub: user pool authorizer, in: region, at: [x0, auth]}
+  - {id: create, icon: service/AWS-Lambda, label: Create order, in: region, at: [x1, sync]}
+  - {id: ddb,    icon: service/Amazon-DynamoDB, label: DynamoDB, sub: Orders, in: region, at: [x2, sync]}
+  - {id: stream, icon: resource/Amazon-DynamoDB_Stream, label: DynamoDB Streams, in: region, at: [x3, sync]}
+  - {id: pipe,   icon: resource/Amazon-EventBridge_Pipes, label: EventBridge Pipes, in: region, at: [x4, sync]}
+  - {id: bus,    icon: resource/Amazon-EventBridge_Custom-Event-Bus, label: Event bus, sub: orders, in: region, at: [x5, sync]}
+  - {id: rule,   icon: resource/Amazon-EventBridge_Rule, label: EventBridge rule, sub: OrderCreated, in: region, at: [x0, ana]}
+  - {id: sqs,    icon: service/Amazon-Simple-Queue-Service, label: SQS, sub: analytics, in: region, at: [x1, ana]}
+  - {id: ingest, icon: service/AWS-Lambda, label: Ingest, in: region, at: [x2, ana]}
+  - {id: fh,     icon: service/Amazon-Data-Firehose, label: Data Firehose, in: region, at: [x3, ana]}
+  - {id: lake,   icon: service/Amazon-Simple-Storage-Service, label: S3 data lake, in: region, at: [x4, ana]}
+  - {id: sfn,    icon: service/AWS-Step-Functions, label: Step Functions, sub: Fulfillment, in: region, at: [x1, ful]}
+  - {id: pay,    icon: service/AWS-Lambda, label: Charge payment, in: region, at: [x2, pay]}
+  - {id: sns,    icon: service/Amazon-Simple-Notification-Service, label: SNS, sub: order-status, in: region, at: [x2, ful]}
+  - {id: mail,   icon: service/AWS-Lambda, label: Send email, sub: SNS 구독, in: region, at: [x3, ful]}
+  - {id: ses,    icon: service/Amazon-Simple-Email-Service, label: Amazon SES, in: region, at: [x4, ful]}
+  - {id: reserve, icon: service/AWS-Lambda, label: Reserve stock, in: appsn, col: x2}
+  - {id: proxy,  icon: resource/Amazon-RDS-Proxy-Instance, label: RDS Proxy, in: vpc, at: [x3, vmain]}
+  - {id: vpce,   icon: resource/Amazon-VPC_Endpoints, label: secretsmanager, sub: 인터페이스 엔드포인트, in: appsn, col: x3}
+  - {id: writer, icon: resource/Amazon-Aurora-PostgreSQL-Instance, label: Writer, in: dbsn, col: x4, only: [1]}
+  - {id: reader, icon: resource/Amazon-Aurora-PostgreSQL-Instance, label: Reader, in: dbsn, col: x5}
+
+edges:
+  - {e: "users -> cf", label: "HTTPS :443", step: 1}
+  - {e: "cf -> web"}
+  - {e: "cf -> api", label: "HTTPS :443"}
+  - {e: "api ..> cog", verb: 토큰 검증}
+  - {e: "api -> create", step: 2}
+  - {e: "create -> ddb", verb: PutItem, step: 3}
+  - {e: "ddb -> stream"}
+  - {e: "stream -> pipe", step: 4}
+  - {e: "pipe -> bus"}
+  - {e: "bus -> rule"}   # the lane wrap: down from the bus, back left in the corridor above the analytics lane (ana min_gap_before), down into the rule
+  - {e: "rule -> sfn", step: 5}
+  - {e: "rule -> sqs"}
+  - {e: "sqs -> ingest"}
+  - {e: "ingest -> fh"}
+  - {e: "fh -> lake"}
+  - {e: "sfn -> pay", step: 6}
+  - {e: "sfn -> sns", verb: Publish, step: 7}
+  - {e: "sfn -> reserve.*", trunk: true, from_offset: 0}   # from_offset 0: both branches leave from one port, so they read as one stem forking to each AZ
+  - {e: "sns -> mail", step: 8}
+  - {e: "mail -> ses", verb: SendEmail}
+  - {e: "reserve.* -> proxy", trunk: true, label: "PostgreSQL :5432"}
+  - {e: "proxy -> aurora", label: "PostgreSQL :5432"}
+  - {e: "proxy ..> vpce.*", verb: 자격 증명}
+
+note:
+  steps:
+    - ["Users → CloudFront", "AWS WAF 웹 ACL이 붙은 배포가 기본 동작(/*)은 S3 정적 웹으로(OAC 서명), /orders* 는 API Gateway 오리진으로 보냅니다."]
+    - ["API Gateway → Create order", "Cognito user pool authorizer가 ID 토큰을 검증한 요청만 Lambda 프록시 통합으로 넘깁니다."]
+    - ["Create order → DynamoDB", "주문을 Orders 테이블에 PENDING으로 쓰고 바로 응답합니다. 여기까지가 동기 구간입니다."]
+    - ["DynamoDB Streams → Pipes → event bus", "Pipes가 스트림의 INSERT만 걸러 OrderCreated 이벤트로 orders 버스에 넣습니다."]
+    - ["EventBridge rule → Step Functions", "OrderCreated 규칙이 Fulfillment 워크플로를 시작합니다. 같은 규칙의 두 번째 대상이 analytics 큐입니다."]
+    - ["Step Functions → Charge payment", "결제 뒤 VPC의 Reserve stock이 RDS Proxy → Aurora writer에 재고를 예약합니다. 프록시는 엔드포인트로 DB 자격 증명을 읽습니다(NAT 없음)."]
+    - ["Step Functions → SNS", "결과를 order-status 토픽에 게시합니다. SNS는 SES를 직접 호출하지 못해 구독 Lambda를 둡니다."]
+    - ["SNS → Send email", "구독 Lambda가 SES SendEmail로 주문 확인 메일을 보냅니다."]

@@ -1,0 +1,20 @@
+name: tw1
+mode: document
+cols: [a, b, gap, c, d]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: v1, type: vpc, label: VPC one, cidr: 10.1.0.0/16, in: region}
+  - {id: s1, type: private, label: Private subnet, in: v1}
+  - {id: v2, type: vpc, label: VPC two, cidr: 10.2.0.0/16, in: region}
+  - {id: s2, type: private, label: Private subnet, in: v2}
+  - {id: asg, type: asg, label: Auto Scaling group web tier, over: [e1a, e1b]}
+nodes:
+  - {id: e1a, icon: service/Amazon-EC2, label: EC2, in: s1, at: [a, r1]}
+  - {id: e1b, icon: service/Amazon-EC2, label: EC2, in: s1, at: [b, r1]}
+  - {id: e2a, icon: service/Amazon-EC2, label: EC2, in: s2, at: [c, r1]}
+  - {id: e2b, icon: service/Amazon-EC2, label: EC2, in: s2, at: [d, r1]}
+edges:
+  - {e: "e1a -> e1b"}
+  - {e: "e2a -> e2b"}

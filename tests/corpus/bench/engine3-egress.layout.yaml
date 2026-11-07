@@ -1,0 +1,58 @@
+# Centralized egress: App VPC A · B (2 AZs each, TGW subnets) → TGW (Spoke RT, Firewall RT) → Security VPC (TGW subnet → firewall subnet → public subnet with NAT per AZ) → IGW → Internet
+name: centralized-egress
+mode: document
+cols: [ec2, eni, tgw, {id: seni, min_gap_before: 290}, fw, nat, igw, inet]
+rows: [a1, a2, main, b1, b2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+  - {id: vpca,   type: vpc, label: App VPC A, cidr: 10.1.0.0/16, in: region}
+  - {id: aza,    type: az, in: vpca, per: [a1, a2]}
+  - {id: sna,    type: private, label: Private subnet, in: aza}
+  - {id: tsna,   type: private, label: TGW subnet, in: aza}
+  - {id: vpcb,   type: vpc, label: App VPC B, cidr: 10.2.0.0/16, in: region}
+  - {id: azb,    type: az, in: vpcb, per: [b1, b2]}
+  - {id: snb,    type: private, label: Private subnet, in: azb}
+  - {id: tsnb,   type: private, label: TGW subnet, in: azb}
+  - {id: sec,    type: vpc, label: Security VPC, cidr: 10.100.0.0/16, in: region}
+  - {id: azs,    type: az, in: sec, per: [a2, b1]}
+  - {id: tgwsn,  type: private, label: TGW subnet, in: azs}
+  - {id: fwsn,   type: private, label: Firewall subnet, in: azs}
+  - {id: pubsn,  type: public, label: Public subnet, in: azs}
+
+nodes:
+  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: sna, col: ec2}
+  - {id: enia, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tsna, col: eni}
+  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: snb, col: ec2}
+  - {id: enib, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tsnb, col: eni}
+  - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: ["App VPC A · B 연결", "0.0.0.0/0 → Security VPC"], in: region, at: [tgw, a2]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: ["Security VPC 연결", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"], in: region, at: [tgw, b1]}
+  - {id: seni, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, sub: "0.0.0.0/0 → 같은 AZ 방화벽", in: tgwsn, col: seni}
+  - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, sub: ["0.0.0.0/0 → 같은 AZ NAT", "10.0.0.0/8 → TGW"], in: fwsn, col: fw}
+  - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, sub: ["0.0.0.0/0 → IGW", "10.0.0.0/8 → 같은 AZ 방화벽"], in: pubsn, col: nat}
+  - {id: nfw,  icon: service/AWS-Network-Firewall, label: AWS Network Firewall, sub: "방화벽 1개 · AZ별 엔드포인트", in: sec, at: [fw, main]}
+  - {id: igw,  icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: sec, at: [igw, main]}
+  - {id: inet, icon: resource/Internet, label: Internet, at: [inet, main]}
+
+edges:
+  - {e: "ec2a.* -> enia.*", step: 1}
+  - {e: "ec2b.* -> enib.*"}
+  - {e: "enia.* <-> tgw", trunk: true, verb: VPC attachment, label_at: right, step: 2}
+  - {e: "enib.* <-> tgw", trunk: true}
+  - {e: "tgw <-> seni.*", step: 3, step_at: start, shape: HVH, bend_x: "sec.x0-28"}
+  - {e: "seni.* <-> fwe.*", step: 4}
+  - {e: "fwe.* -> nat.*", step: 5}
+  - {e: "nat.* -> igw", trunk: true, step: 6}
+  - {e: "igw -> inet"}
+
+note:
+  place: panel
+  steps:
+    - [EC2 → TGW ENI, "App VPC A Private subnet RT의 0.0.0.0/0 → TGW로, 인터넷행 트래픽이 같은 AZ의 TGW subnet에 있는 TGW ENI로 갑니다. App VPC B도 같습니다."]
+    - [TGW ENI → TGW, "App VPC A의 VPC attachment로 TGW에 들어옵니다. 이 attachment는 Spoke RT에 연결돼 있습니다."]
+    - [TGW → Security VPC, "Spoke RT의 0.0.0.0/0 → Security VPC attachment. appliance mode라 한 흐름의 양방향이 같은 AZ의 TGW ENI를 지납니다."]
+    - [TGW ENI → 방화벽, "Security VPC TGW subnet RT의 0.0.0.0/0 → 같은 AZ Firewall endpoint. AWS Network Firewall이 트래픽을 검사합니다."]
+    - [방화벽 → NAT, "Firewall subnet RT의 0.0.0.0/0 → 같은 AZ NAT gateway. NAT gateway가 출발지 주소를 퍼블릭 IP로 바꿉니다."]
+    - [NAT → IGW → Internet, "Public subnet RT의 0.0.0.0/0 → IGW로 인터넷에 나갑니다. 응답은 10.0.0.0/8 → 같은 AZ 방화벽에서 다시 검사되고, Firewall subnet RT 10.0.0.0/8 → TGW, Firewall RT(10.1.0.0/16 → App VPC A)로 돌아옵니다."]

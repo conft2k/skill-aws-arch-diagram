@@ -1,0 +1,9 @@
+name: t2
+mode: document
+cols: [c, d]
+rows: [r1]
+nodes:
+  - {id: p, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Primary, at: [c, r1]}
+  - {id: s, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Standby, at: [d, r1]}
+edges:
+  - {e: "p -> s", label: "sync", shape: VHV, from_side: bottom, to_side: bottom}

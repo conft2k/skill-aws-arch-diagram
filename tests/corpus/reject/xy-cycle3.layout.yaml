@@ -1,0 +1,11 @@
+name: xy_cycle3
+mode: document
+cols: [a, b]
+rows: [r]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: p, icon: service/Amazon-EC2, label: P, in: cloud, at: [a, r]}
+  - {id: q, icon: service/Amazon-EC2, label: Q, in: cloud, xy: [s.cx+10, row.r]}
+  - {id: s, icon: service/Amazon-EC2, label: S, in: cloud, xy: [t.cx+10, row.r]}
+  - {id: t, icon: service/Amazon-EC2, label: T, in: cloud, xy: [q.cx+10, row.r]}

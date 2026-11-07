@@ -1,0 +1,15 @@
+name: ov1
+mode: document
+cols: [lb, fw]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud, pad_right: 60}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: sn, type: private, label: App subnet, in: az}
+  - {id: asg, type: asg, label: ASG, over: [fw.*]}
+nodes:
+  - {id: fw, icon: service/Amazon-EC2, label: App, in: sn, col: fw}
+  - {id: mon, icon: service/Amazon-CloudWatch, label: Monitor, in: vpc, at: [lb, main]}
+edges:
+  - {e: "mon -> asg"}

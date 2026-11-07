@@ -1,0 +1,19 @@
+name: gap
+mode: document
+cols: [igw, pub, app]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: pubsn, type: public, label: Public subnet, in: az}
+  - {id: appsn, type: private, label: App subnet, in: az}
+  - {id: asg, type: asg, label: ASG, over: [ec2.*]}
+nodes:
+  - {id: nat, icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubsn, col: pub}
+  - {id: ec2, icon: service/Amazon-EC2, label: EC2, in: appsn, col: app}
+  - {id: alb, icon: resource/Elastic-Load-Balancing_Application-Load-Balancer, label: Internal ALB, in: vpc, at: [app, main]}
+  - {id: igw, icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
+edges:
+  - {e: "alb -> ec2.*"}

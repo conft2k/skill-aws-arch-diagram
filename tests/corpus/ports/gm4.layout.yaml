@@ -1,0 +1,16 @@
+name: gm4
+mode: document
+cols: [c1, c2, c3]
+rows: [r1, r2, r3]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+nodes:
+  - {id: a, icon: service/Amazon-EC2, label: A, in: cloud, at: [c1, r1]}
+  - {id: b, icon: service/Amazon-EC2, label: B, in: cloud, at: [c1, r3]}
+  - {id: m, icon: service/Amazon-Simple-Storage-Service, label: M, in: cloud, at: [c2, r1]}
+  - {id: n, icon: service/Amazon-Simple-Storage-Service, label: N, in: cloud, at: [c2, r3]}
+  - {id: z, icon: service/Amazon-EC2, label: Z, in: vpc, at: [c3, r2]}
+edges:
+  - {e: "a -> vpc"}
+  - {e: "b -> vpc"}

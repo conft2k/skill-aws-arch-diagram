@@ -1,0 +1,87 @@
+name: t
+mode: slide
+cols:
+- users
+- igw
+- pub
+- app
+- id: svc
+  flow: 100
+rows:
+- az1
+- main
+- az2
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: Region
+  in: cloud
+- id: vpc
+  type: vpc
+  label: VPC
+  in: region
+- id: az
+  type: az
+  in: vpc
+  per:
+  - az1
+  - az2
+- id: pubsn
+  type: public
+  label: Public subnet
+  in: az
+- id: appsn
+  type: private
+  label: App subnet
+  in: az
+nodes:
+- id: users
+  icon: resource/Users
+  label: Users
+  at:
+  - users
+  - main
+- id: igw
+  icon: resource/Amazon-VPC_Internet-Gateway
+  label: IGW
+  at:
+  - igw
+  - main
+  'on': vpc
+- id: alb
+  icon: resource/Elastic-Load-Balancing_Application-Load-Balancer
+  label: ALB
+  in: vpc
+  at:
+  - pub
+  - main
+- id: nat
+  icon: resource/Amazon-VPC_NAT-Gateway
+  label: NAT
+  in: pubsn
+  col: pub
+- id: ec2
+  icon: service/Amazon-EC2
+  label: EC2
+  in: appsn
+  col: app
+- id: acm
+  icon: service/AWS-Certificate-Manager
+  label: ACM
+  col: svc
+- id: cw
+  icon: service/Amazon-CloudWatch
+  label: CloudWatch
+  col: svc
+- id: s3
+  icon: service/Amazon-Simple-Storage-Service
+  label: S3
+  col: svc
+edges:
+- e: users -> igw
+- e: igw -> alb
+- e: alb -> ec2.*
+- e: ec2.* ..> cw
+- e: cw ..> s3

@@ -1,0 +1,14 @@
+name: u
+mode: document
+cols: [a, b, c]
+rows: [r1]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: na, icon: service/AWS-Lambda, label: A, in: cloud, at: [a, r1]}
+  - {id: nb, icon: service/AWS-Lambda, label: B, in: cloud, at: [b, r1]}
+  - {id: nc, icon: service/AWS-Lambda, label: C, in: cloud, at: [c, r1]}
+edges:
+  - {e: "na -> nb"}
+  - {e: "nb -> nc"}
+  - {e: "na -> nc"}

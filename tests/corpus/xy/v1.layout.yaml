@@ -1,0 +1,12 @@
+name: v1
+mode: slide
+cols: [a, b]
+rows: [top, bot]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: x, icon: resource/Amazon-Route-53_Route-Table, label: Left RT, sub: ["one", "a very long third line that goes far right"], in: cloud, at: [a, top]}
+  - {id: y, icon: service/Amazon-Virtual-Private-Cloud, label: Y VPC, in: cloud, at: [b, top]}
+  - {id: z, icon: service/Amazon-Virtual-Private-Cloud, label: Z VPC, in: cloud, at: [b, bot]}
+edges:
+  - {e: "y -> z"}

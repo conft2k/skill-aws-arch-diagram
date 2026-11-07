@@ -1,0 +1,13 @@
+name: io
+mode: document
+cols: [l, r]
+rows: [r1, r2, r3]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: x, icon: service/AWS-Lambda, label: X, in: cloud, at: [l, r1]}
+  - {id: t, icon: service/AWS-Lambda, label: T, in: cloud, at: [r, r2]}
+  - {id: y, icon: service/AWS-Lambda, label: Y, in: cloud, at: [l, r3]}
+edges:
+  - {e: "y -> t", shape: HVH}
+  - {e: "t -> x", shape: HVH}

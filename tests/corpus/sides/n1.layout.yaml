@@ -1,0 +1,14 @@
+name: n1
+mode: document
+cols: [db]
+rows: [az1, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region, pad_right: 60}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: sn, type: private, label: DB subnet, in: az}
+nodes:
+  - {id: db, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Aurora, in: sn, col: db}
+edges:
+  - {e: "db.1 -> db.2", label: "replication", shape: HVH, from_side: right, to_side: right}

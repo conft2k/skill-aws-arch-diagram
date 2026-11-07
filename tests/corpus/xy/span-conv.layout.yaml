@@ -1,0 +1,12 @@
+name: span_conv
+mode: document
+cols: [b0, b1, b2]
+rows: [main, bot]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+nodes:
+  - {id: l, icon: service/Amazon-EC2, label: L, in: vpc, at: [b0, main]}
+  - {id: t, icon: service/Amazon-EC2, label: A colspan node with a very long label line, in: vpc, at: [b1..b2, main]}
+  - {id: w, icon: service/Amazon-EC2, label: A bottom row node with an extremely long label that pushes, in: vpc, at: [b0, bot]}
+  - {id: z, icon: service/Amazon-EC2, label: Z, in: vpc, at: [b2, bot]}

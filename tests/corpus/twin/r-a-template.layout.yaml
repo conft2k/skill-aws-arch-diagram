@@ -1,0 +1,13 @@
+name: a-template
+mode: document
+cols: [app]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: az, type: az, label: AZ, in: vpc, per: [r1, r2]}
+  - {id: sn, type: private, label: App subnet, in: az}
+  - {id: asg, type: asg, label: Auto Scaling group for the web tier, over: [e.*]}
+nodes:
+  - {id: e, icon: service/Amazon-EC2, label: EC2, in: sn, col: app}

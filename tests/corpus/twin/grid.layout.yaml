@@ -1,0 +1,23 @@
+name: grid
+mode: slide
+cols: [c1, c2]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: aza, type: az, label: AZ a, in: vpc}
+  - {id: azb, type: az, label: AZ b, in: vpc}
+  - {id: sna, type: private, label: Web subnet, in: aza}
+  - {id: snb, type: private, label: Web subnet, in: azb}
+  - {id: wka, type: private, label: Worker subnet with long title, in: aza}
+  - {id: wkb, type: private, label: Worker subnet with long title, in: azb}
+  - {id: asg, type: asg, label: ASG, header: right, over: [ea, eb, wa, wb]}
+nodes:
+  - {id: ea, icon: service/Amazon-EC2, label: EC2, in: sna, at: [c1, r1]}
+  - {id: eb, icon: service/Amazon-EC2, label: EC2, in: snb, at: [c2, r1]}
+  - {id: wa, icon: service/Amazon-EC2, label: Worker, in: wka, at: [c1, r2]}
+  - {id: wb, icon: service/Amazon-EC2, label: Worker, in: wkb, at: [c2, r2]}
+edges:
+  - {e: "ea -> wa"}
+  - {e: "eb -> wb"}

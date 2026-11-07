@@ -1,0 +1,59 @@
+# Centralized egress: App VPC A · B (2 AZs each) → TGW (Spoke RT, Firewall RT) → Security VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet
+name: centralized-egress
+mode: document
+cols: [app, sptgw, tgw, eni, fw, nat, igw, inet]
+rows: [a1, a2, main, b1, b2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+  - {id: vpca,   type: vpc, label: App VPC A, cidr: 10.1.0.0/16, in: region}
+  - {id: aza,    type: az, in: vpca, per: [a1, a2]}
+  - {id: appa,   type: private, label: Private subnet, in: aza}
+  - {id: tgwa,   type: private, label: TGW subnet, in: aza}
+  - {id: vpcb,   type: vpc, label: App VPC B, cidr: 10.2.0.0/16, in: region}
+  - {id: azb,    type: az, in: vpcb, per: [b1, b2]}
+  - {id: appb,   type: private, label: Private subnet, in: azb}
+  - {id: tgwb,   type: private, label: TGW subnet, in: azb}
+  - {id: sec,    type: vpc, label: Security VPC, cidr: 10.100.0.0/16, in: region}
+  - {id: az,     type: az, in: sec, per: [a2, b1]}
+  - {id: tgwsn,  type: private, label: TGW subnet, in: az}
+  - {id: fwsn,   type: private, label: Firewall subnet, in: az}
+  - {id: pubsn,  type: public, label: Public subnet, in: az}
+
+nodes:
+  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: appa, col: app}
+  - {id: enia, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tgwa, col: sptgw}
+  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: appb, col: app}
+  - {id: enib, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tgwb, col: sptgw}
+  - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: ["연결: App VPC A · B", "0.0.0.0/0 → Security VPC"], in: region, at: [tgw, a2]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: ["연결: Security VPC", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"], in: region, at: [tgw, b1]}
+  - {id: eni,  icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, sub: "0.0.0.0/0 → 같은 AZ 방화벽", in: tgwsn, col: eni}
+  - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, sub: ["0.0.0.0/0 → 같은 AZ NAT", "10.0.0.0/8 → TGW"], in: fwsn, col: fw}
+  - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, sub: ["0.0.0.0/0 → IGW", "10.0.0.0/8 → 같은 AZ 방화벽"], in: pubsn, col: nat}
+  - {id: nfw,  icon: service/AWS-Network-Firewall, label: AWS Network Firewall, in: sec, at: [fw, main]}
+  - {id: igw,  icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: sec, at: [igw, main]}
+  - {id: inet, icon: resource/Internet, label: Internet, at: [inet, main]}
+
+edges:
+  - {e: "ec2a.* -> enia.*", step: 1}
+  - {e: "ec2b.* -> enib.*"}
+  - {e: "enia.* <-> tgw", trunk: true, verb: VPC attachment, step: 2}
+  - {e: "enib.* <-> tgw", trunk: true}
+  - {e: "tgw <-> eni.1", verb: appliance mode, step: 3, step_at: start}
+  - {e: "tgw <-> eni.2"}
+  - {e: "eni.* <-> fwe.*", step: 4}
+  - {e: "fwe.* -> nat.*", step: 5}
+  - {e: "nat.* -> igw", trunk: true, step: 6}
+  - {e: "igw -> inet", step: 7}
+
+note:
+  steps:
+    - [EC2 → TGW ENI, "App VPC A Private subnet RT의 0.0.0.0/0 → TGW가 인터넷행 트래픽을 같은 AZ의 TGW subnet에 있는 TGW ENI로 보냅니다."]
+    - [TGW ENI → TGW, "App VPC A attachment에 연결된 Spoke RT의 0.0.0.0/0이 Security VPC attachment를 가리켜, 트래픽이 Security VPC로 넘어갑니다."]
+    - [TGW → Security VPC, "Security VPC attachment는 appliance mode가 켜져 있어, 한 흐름의 요청과 응답이 같은 AZ의 TGW ENI를 지납니다."]
+    - [TGW ENI → 방화벽, "TGW subnet RT의 0.0.0.0/0 → 같은 AZ firewall endpoint. AWS Network Firewall이 규칙으로 트래픽을 검사합니다."]
+    - [방화벽 → NAT, "검사를 통과한 트래픽은 Firewall subnet RT의 0.0.0.0/0 → 같은 AZ NAT gateway로 가고, NAT가 출발지 주소를 퍼블릭 IP로 바꿉니다."]
+    - [NAT → IGW, "Public subnet RT의 0.0.0.0/0 → IGW로 나갑니다. 응답은 10.0.0.0/8 → 같은 AZ firewall endpoint에서 다시 검사된 뒤 10.0.0.0/8 → TGW로 돌아갑니다."]
+    - [IGW → Internet, "IGW가 인터넷으로 보냅니다. 돌아온 응답은 TGW의 Firewall RT 10.1.0.0/16 → App VPC A attachment로 출발한 EC2에 도착합니다."]

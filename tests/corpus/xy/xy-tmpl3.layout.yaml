@@ -1,0 +1,12 @@
+name: xy_tmpl3
+mode: document
+cols: [a, b]
+rows: [az1, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: sn, type: private, label: App subnet, in: az}
+nodes:
+  - {id: e1, icon: service/Amazon-EC2, label: EC2, in: sn, col: a}
+  - {id: e2, icon: service/Amazon-EC2, label: EC2 B, in: sn, xy: [e1.1.cx+90, row.az1]}

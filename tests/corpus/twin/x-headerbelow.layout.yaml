@@ -1,0 +1,172 @@
+name: alb2-headerbelow
+mode: document
+cols:
+- users
+- igwa
+- puba
+- app1a
+- app2a
+- dba
+- igwb
+- pubb
+- app1b
+- app2b
+- dbb
+rows:
+- az1
+- main
+- az2
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: Region
+  in: cloud
+- id: vpca
+  type: vpc
+  label: VPC a
+  cidr: 10.0.0.0/16
+  in: region
+- id: aza
+  type: az
+  in: vpca
+  per:
+  - az1
+  - az2
+- id: pubsna
+  type: public
+  label: Public subnet
+  in: aza
+- id: appsna
+  type: private
+  label: App subnet
+  in: aza
+- id: dbsna
+  type: private
+  label: DB subnet
+  in: aza
+- id: asga
+  type: asg
+  label: ASG · target group
+  over:
+  - ec2aa.*
+  - ec2ba.*
+  header: below
+- id: vpcb
+  type: vpc
+  label: VPC b
+  cidr: 10.0.0.0/16
+  in: region
+- id: azb
+  type: az
+  in: vpcb
+  per:
+  - az1
+  - az2
+- id: pubsnb
+  type: public
+  label: Public subnet
+  in: azb
+- id: appsnb
+  type: private
+  label: App subnet
+  in: azb
+- id: dbsnb
+  type: private
+  label: DB subnet
+  in: azb
+- id: asgb
+  type: asg
+  label: ASG · target group
+  over:
+  - ec2ab.*
+  - ec2bb.*
+  header: below
+nodes:
+- id: users
+  icon: resource/Users
+  label: Users
+  at:
+  - users
+  - main
+- id: nata
+  icon: resource/Amazon-VPC_NAT-Gateway
+  label: NAT gateway
+  in: pubsna
+  col: puba
+- id: ec2aa
+  icon: service/Amazon-EC2
+  label: EC2
+  in: appsna
+  col: app1a
+- id: ec2ba
+  icon: service/Amazon-EC2
+  label: EC2
+  in: appsna
+  col: app2a
+- id: rdsa
+  icon: service/Amazon-RDS
+  label:
+    1: RDS Primary
+    2: RDS Standby
+  in: dbsna
+  col: dba
+- id: alba
+  icon: resource/Elastic-Load-Balancing_Application-Load-Balancer
+  label: ALB
+  in: vpca
+  at:
+  - puba
+  - main
+- id: igwa
+  icon: resource/Amazon-VPC_Internet-Gateway
+  label: IGW
+  'on': vpca
+  at:
+  - igwa
+  - main
+- id: natb
+  icon: resource/Amazon-VPC_NAT-Gateway
+  label: NAT gateway
+  in: pubsnb
+  col: pubb
+- id: ec2ab
+  icon: service/Amazon-EC2
+  label: EC2
+  in: appsnb
+  col: app1b
+- id: ec2bb
+  icon: service/Amazon-EC2
+  label: EC2
+  in: appsnb
+  col: app2b
+- id: rdsb
+  icon: service/Amazon-RDS
+  label:
+    1: RDS Primary
+    2: RDS Standby
+  in: dbsnb
+  col: dbb
+- id: albb
+  icon: resource/Elastic-Load-Balancing_Application-Load-Balancer
+  label: ALB
+  in: vpcb
+  at:
+  - pubb
+  - main
+- id: igwb
+  icon: resource/Amazon-VPC_Internet-Gateway
+  label: IGW
+  'on': vpcb
+  at:
+  - igwb
+  - main
+edges:
+- e: users -> igwa
+- e: igwa -> alba
+- e: alba -> asga
+- e: asga -> rdsa.1
+- e: igwb -> albb
+- e: albb -> asgb
+- e: asgb -> rdsb.1

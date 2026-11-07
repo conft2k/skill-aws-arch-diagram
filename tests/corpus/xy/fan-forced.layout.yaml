@@ -1,0 +1,13 @@
+name: fan_forced
+mode: slide
+cols: [a1, a2, a3]
+rows: [top, main]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: hub, icon: service/AWS-Transit-Gateway, label: Hub, in: cloud, at: [a2, main]}
+  - {id: l,   icon: service/Amazon-Virtual-Private-Cloud, label: Left VPC, in: cloud, at: [a1, top]}
+  - {id: r,   icon: service/Amazon-Virtual-Private-Cloud, label: Right VPC, in: cloud, at: [a3, top]}
+edges:
+  - {e: "hub -- l", shape: HVH}
+  - {e: "hub -- r"}

@@ -1,0 +1,13 @@
+name: xy1
+mode: document
+cols: [c]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud, pad_right: 60}
+nodes:
+  - {id: p, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Primary, in: vpc, at: [c, r1]}
+  - {id: q, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Third, in: vpc, at: [c, r2]}
+  - {id: s, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Standby, in: vpc, xy: [q.cx, q.cy]}
+edges:
+  - {e: "p -> s", shape: HVH, from_side: right, to_side: right}

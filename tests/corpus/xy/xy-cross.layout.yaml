@@ -1,0 +1,10 @@
+name: xy_cross
+mode: document
+cols: [a, b]
+rows: [r]
+groups:
+  - {id: cloud, type: cloud}
+nodes:
+  - {id: p, icon: service/Amazon-EC2, label: P, in: cloud, at: [a, r]}
+  - {id: q, icon: service/Amazon-EC2, label: Q, in: cloud, xy: [col.b, s.cy]}
+  - {id: s, icon: service/Amazon-EC2, label: S, in: cloud, xy: [q.cx, 300]}

@@ -1,0 +1,24 @@
+name: tw2
+mode: document
+cols: [ec2, att, tgw]
+rows: [a1, a2, main, b1, b2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpca, type: vpc, label: App VPC A, cidr: 10.1.0.0/16, in: region}
+  - {id: aza, type: az, in: vpca, per: [a1, a2]}
+  - {id: appa, type: private, label: App subnet, in: aza}
+  - {id: vpcb, type: vpc, label: App VPC B, cidr: 10.2.0.0/16, in: region}
+  - {id: azb1, type: az, label: Availability Zone 1, in: vpcb}
+  - {id: appb1, type: private, label: App subnet, in: azb1}
+  - {id: azb2, type: az, label: Availability Zone 2, in: vpcb}
+  - {id: appb2, type: private, label: App subnet, in: azb2}
+nodes:
+  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, in: appa, col: ec2}
+  - {id: ec2b1, icon: service/Amazon-EC2, label: EC2, in: appb1, at: [ec2, b1]}
+  - {id: ec2b2, icon: service/Amazon-EC2, label: EC2, in: appb2, at: [ec2, b2]}
+  - {id: tgw, icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
+edges:
+  - {e: "ec2a.* -> tgw"}
+  - {e: "ec2b1 -> tgw"}
+  - {e: "ec2b2 -> tgw"}

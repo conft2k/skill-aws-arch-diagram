@@ -1,0 +1,13 @@
+name: vbottom
+mode: slide
+cols: [a, b]
+rows: [r]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+  - {id: sn, type: private, label: DB subnet, in: vpc, pad_bottom: 44}
+nodes:
+  - {id: p, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Primary, in: sn, at: [a, r]}
+  - {id: s, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Standby, in: sn, at: [b, r]}
+edges:
+  - {e: "p -> s", label: "sync", shape: VHV, from_side: bottom, to_side: bottom}

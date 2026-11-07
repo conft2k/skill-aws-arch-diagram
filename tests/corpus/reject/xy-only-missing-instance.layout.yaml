@@ -1,0 +1,13 @@
+name: t_only
+mode: document
+cols: [a, b, c]
+rows: [az1, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: sn, type: private, label: App subnet, in: az}
+nodes:
+  - {id: e1, icon: service/Amazon-EC2, label: EC2, in: sn, col: a}
+  - {id: e3, icon: service/Amazon-EC2, label: E3, in: sn, col: b, only: [1]}
+  - {id: e2, icon: service/Amazon-EC2, label: EC2 B, in: sn, xy: [col.c, e3.cy]}

@@ -1,0 +1,1071 @@
+# Layout regression corpus: every case is run in each of its modes by tests/run_corpus.py.
+#
+#   path     the spec, relative to this file (examples: the docs/examples specs, by reference)
+#   modes    document (--mode document), slide (--mode slide), slide-no-title (--mode slide
+#            --no-title); defaults.modes when left out
+#   expect   load (loads and a draft is drawn), reject (refused at load with a clear message)
+#            or refuse (loads, but the solve refuses it, naming the contradictory constraints);
+#            one value for every mode, or a map mode -> value; load when left out
+#   rules    the user rules the case guards (judged by the rule checker, not yet by the runner):
+#              R-flow   the flow reads exactly as the spec says (no line reads as another, no
+#                       shared stem or merged lines that change the reading)
+#              R-rt     a route table sits beside its associated object, inside the bracket
+#                       its attachment lines draw
+#              R-twin   identical structures (twin VPCs, subnets, AZs, overlays) are drawn
+#                       the same shape
+#              R-label  connector labels above horizontal / right of vertical lines; badges
+#                       1:1 with note rows
+#              R-fit    a slide fits 1108 × 540 (titled) at ≥ 10pt
+#              R-reject the spec is rejected with a clear message
+#   what     what the case exercises
+#   match    on an entry that rejects or refuses: text one of the refusal's lines must
+#            contain (or a map of those modes to texts)
+#   known_fail  a recorded failure on the current engine (why, and what fixes it): reported as
+#            known instead of failing the run, and reported once it passes again
+#   note     why an expectation other than load holds
+#   from     where the repro came from (reviewer scratch name), for history only
+defaults:
+  modes: [document, slide, slide-no-title]
+cases:
+  - path: bench/engine1-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: Spoke/Firewall RT stacked in TGW column on outer rows a1/b2, one-way trunks, tgw -> eni.* fan"
+    from: "bench/engine1/centralized-egress.layout.yaml"
+  - path: bench/engine2-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: RTs on inner rows a2/b1, bidirectional spoke trunks (step_at stem), separate tgw <-> eni.1/.2"
+    from: "bench/engine2/centralized-egress.layout.yaml"
+  - path: bench/engine3-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: seni column min_gap_before 290, tgw <-> seni.* HVH with bend_x sec.x0-28, label_at right"
+    from: "bench/engine3/centralized-egress.layout.yaml"
+  - path: bench/latest1-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: attachments drawn as group edges vpca/vpcb <-> tgw, seni min_gap_before 345, bend_x"
+    from: "bench/latest1/centralized-egress.layout.yaml"
+  - path: bench/latest2-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: RTs on inner rows a2/b1, one-way spoke trunks into TGW, separate tgw <-> eni.1/.2 lines"
+    from: "bench/latest2/centralized-egress.layout.yaml"
+  - path: bench/latest3-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: RTs on outer rows a1/b2, bidirectional spoke trunks, separate tgw <-> enis.1/.2 lines"
+    from: "bench/latest3/centralized-egress.layout.yaml"
+  - path: bench/v2-1-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: RTs on inner rows a2/b1, bidirectional spoke trunks, separate tgw <-> eni.1/.2 lines"
+    from: "bench/v2-1/centralized-egress.layout.yaml"
+  - path: bench/v2-2-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: RTs on outer rows a1/b2, bidirectional spoke trunks, separate TGW lines, one-way eni -> fwe"
+    from: "bench/v2-2/centralized-egress.layout.yaml"
+  - path: bench/v2-3-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: RTs on outer rows a1/b2, bidirectional spoke trunks, one wildcard tgw <-> eni.* fan"
+    from: "bench/v2-3/centralized-egress.layout.yaml"
+  - path: bench/engine1-pipeline.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "order pipeline: one long main row with analytics row above, monitoring nodes in VPC rows, Aurora overlay"
+    from: "bench2/engine1/order-pipeline.layout.yaml"
+  - path: bench/engine2-pipeline.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "order pipeline: CW/X-Ray in flow row, no rule node, hand-routed points: edges to per-AZ VPC endpoints"
+    from: "bench2/engine2/order-pipeline.layout.yaml"
+  - path: bench/engine3-pipeline.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "order pipeline: analytics continues on main row after the bus, SFN beside the VPC, SNS/SES in a mail row"
+    from: "bench2/engine3/order-pipeline.layout.yaml"
+  - path: bench/latest1-pipeline.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "order pipeline: min_gap_before on cf/api columns, VPC around main row, Aurora overlay, monitoring row low"
+    from: "bench2/latest1/order-pipeline.layout.yaml"
+  - path: bench/latest2-pipeline.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "order pipeline: CW/X-Ray in flow row, analytics row above requests, trunked dotted proxy -> vpce.* -> sm"
+    from: "bench2/latest2/order-pipeline.layout.yaml"
+  - path: bench/latest3-pipeline.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "order pipeline: CW/X-Ray/Secrets in flow row, no stream/rule nodes, analytics on bottom row, VPC inline"
+    from: "bench2/latest3/order-pipeline.layout.yaml"
+  - path: bench/keep-egress.layout.yaml
+    rules: [R-flow, R-rt, R-label]
+    what: "centralized egress: Spoke/Firewall RT in own columns beside TGW on main row, HVH trunks, two tgw -> seni lines"
+    from: "e-egress/keep.yaml"
+  - path: rt/nfw-noatt.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide without rtsp/rtfw/att cols: Firewall RT above TGW (tgw,az1), Spoke RT with sub below (tgw,az2)"
+    from: "e-eng/nfw-noatt.layout.yaml"
+  - path: trunk/eng-egress-tgw.layout.yaml
+    rules: [R-flow, R-label]
+    what: "centralized-egress with an empty sp column before Spoke RT and the TGW label shortened to \"TGW\""
+    from: "e-eng/trunk/egress-tgw.layout.yaml"
+  - path: trunk/eng-egress.layout.yaml
+    rules: [R-flow, R-label]
+    what: "centralized-egress with an empty sp column before Spoke RT, keeping Spoke RT apart from App VPC B on x"
+    from: "e-eng/trunk/egress.layout.yaml"
+  - path: slide-fit/nfw-d2.layout.yaml
+    rules: [R-fit, R-rt, R-label]
+    what: "nfw doc with an extra empty att column between the spoke VPCs and the Spoke RT column"
+    from: "e-nfw/d2.layout.yaml"
+  - path: slide-fit/nfw-doc.layout.yaml
+    rules: [R-fit, R-rt, R-label]
+    what: "nfw doc with min_gap_before 170 on rtsp and 130 on tgw, spoke edge verb label_at above, step_at end"
+    from: "e-nfw/doc.layout.yaml"
+  - path: slide-fit/nfw-s2.layout.yaml
+    rules: [R-fit, R-rt, R-label]
+    what: "nfw slide with empty att column and spoke subnet boxes dropped (EC2 placed directly in VPC A / B)"
+    from: "e-nfw/s2.layout.yaml"
+  - path: slide-fit/nfw-slide.layout.yaml
+    rules: [R-fit, R-rt, R-label]
+    what: "nfw slide, empty att col, App subnet labels, verb on vpca<->tgw, one tgw<->eni.* VH edge for both AZs"
+    from: "e-nfw/slide.layout.yaml"
+  - path: slide-fit/nfw-t.layout.yaml
+    rules: [R-fit, R-rt, R-label]
+    what: "nfw slide, empty att col, App subnet labels, VPC attachment verb on a single tgw<->eni.* VH template edge"
+    from: "e-nfw/t.layout.yaml"
+  - path: slide-fit/nfw-t2.layout.yaml
+    rules: [R-fit, R-rt, R-label]
+    what: "nfw doc with min_gap_before 170 on rtsp only, spoke edge verb label_at above, step badge step_at end"
+    from: "e-nfw/t2.layout.yaml"
+  - path: slide-fit/nfw-t3.layout.yaml
+    rules: [R-fit, R-rt, R-label]
+    what: "nfw slide, empty att col, no spoke subnet boxes, VPC attachment verb on single tgw<->eni.* VH edge"
+    from: "e-nfw/t3.layout.yaml"
+  - path: slide-fit/nfw-t4.layout.yaml
+    rules: [R-fit, R-rt, R-label]
+    what: "nfw slide, empty att col, no spoke subnet boxes, verb on vpca<->tgw, single tgw<->eni.* VH edge"
+    from: "e-nfw/t4.layout.yaml"
+  - path: flowcol/fc.layout.yaml
+    rules: [R-flow, R-label]
+    what: "flow column with edge labels/verbs and Korean sub lines on stacked ACM/CloudWatch/S3"
+    from: "fc.json"
+  - path: rt/ce-right.layout.yaml
+    rules: [R-rt, R-label]
+    what: "centralized egress doc with columns reversed (Internet left, app EC2 right) so the Spoke RT sits right of TGW"
+    from: "gen/rr-rtside2__oldvar2__ce_right.layout.json"
+  - path: rt/ce-three.layout.yaml
+    rules: [R-rt, R-label]
+    what: "centralized egress doc with third App VPC C (AZ rows c1/c2, App + TGW subnets, trunk ENI->TGW edge)"
+    from: "gen/rr-rtside2__oldvar2__ce_three.layout.json"
+  - path: reject/col-list.layout.yaml
+    modes: [slide]
+    expect: reject
+    match: "col: expected a col track name"
+    rules: [R-reject]
+    what: "node col given as a list [rtsp, rtsp2] (the old span syntax) is refused: col takes one track name"
+    from: "gen/rr-rtside2__oldvar2__nfw_colspan.layout.json"
+  - path: reject/grid-col-needs-row.layout.yaml
+    modes: [slide]
+    expect: reject
+    match: "row: required"
+    rules: [R-reject]
+    what: "node on a grid column with no row is refused (only per-template or flow-column nodes may omit row)"
+    from: "gen/rr-rtside2__oldvar2__nfw_flow.layout.json"
+  - path: rt/longlabel.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with long Spoke RT label 'Spoke route table' and sub '0.0.0.0/0 → Inspection VPC attachment'"
+    from: "gen/rr-rtside__var1__longlabel.layout.json"
+  - path: rt/longvpc.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with long spoke VPC labels 'VPC A/B (production workloads)' beside the Spoke RT"
+    from: "gen/rr-rtside__var1__longvpc.layout.json"
+  - path: rt/notstacked.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with VPC B in its own spokeb column left of VPC A, so spoke VPCs are not stacked"
+    from: "gen/rr-rtside__var1__notstacked.layout.json"
+  - path: rt/right.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with column order reversed (inet ... spoke) so spokes sit on the right and Spoke RT right of TGW"
+    from: "gen/rr-rtside__var1__right.layout.json"
+  - path: rt/single.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with VPC B removed: single spoke VPC A above the Spoke RT row"
+    from: "gen/rr-rtside__var1__single.layout.json"
+  - path: rt/single-below.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with VPC B removed and VPC A moved to az2: single spoke VPC below the Spoke RT row"
+    from: "gen/rr-rtside__var1__single_below.layout.json"
+  - path: rt/wide-a.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide where VPC A gets a second node (Lambda in spoke2 col), making spoke VPCs different widths"
+    from: "gen/rr-rtside__var1__wide_a.layout.json"
+  - path: rt/nfw-colspan.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with Spoke RT centred across two columns (at rtsp..rtsp2 range) between spokes and TGW"
+    from: "gen/rr-rtside__var3__nfw_colspan.layout.json"
+  - path: rt/nfw-dx.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with Spoke RT nudged dx: -20 off its column"
+    from: "gen/rr-rtside__var3__nfw_dx.layout.json"
+  - path: reject/per-on-flow-row.layout.yaml
+    modes: [slide]
+    expect: reject
+    match: "is a flow row; a template instance needs a grid row"
+    rules: [R-reject]
+    what: "per template over flow rows is refused: a template instance needs a grid row"
+    from: "gen/rr-rtside__var3__nfw_flowrow.layout.json"
+  - path: rt/dx30.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with Spoke RT nudged dx: 30 off its column"
+    from: "gen/rr-rtside__var4__dx30.layout.json"
+  - path: rt/nd-single.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw doc with VPC B removed: single spoke VPC A (az1) above the Spoke RT"
+    from: "gen/rtlone__single__nd_single.layout.json"
+  - path: flowcol/base.layout.yaml
+    rules: [R-flow]
+    what: "ALB+EC2 slide with ACM/CloudWatch/S3 stacked in a default-align flow column in the region"
+    from: "r3-edge/base.yaml"
+  - path: trunk/merge-v3az.layout.yaml
+    rules: [R-flow]
+    what: "3 per-row AZs: ALB forks to 3 EC2s that merge dashed into CloudWatch on a bottom-aligned flow column"
+    from: "r3-merge/v3az.layout.json"
+  - path: trunk/merge-v3az-top.layout.yaml
+    rules: [R-flow]
+    what: "merge-v3az with the CloudWatch flow column set to align: top: 3 EC2s merge dashed into a top-pinned node"
+    from: "r3-merge/v3az_top.layout.json"
+  - path: trunk/merge-vfan.layout.yaml
+    rules: [R-flow]
+    what: "2 per-row AZs: EC2s merge dashed into CloudWatch (bottom flow column); S3 on a top row fans dashed to them"
+    from: "r3-merge/vfan.layout.json"
+  - path: flowcol/r2-float-two.layout.yaml
+    rules: [R-flow]
+    what: "generic Monitoring box holding two flow columns (default and align bottom), edge alb -> kms into the second"
+    from: "r4-port/rf/r2_float_two.layout.json"
+  - path: flowcol/r2-norows.layout.yaml
+    rules: [R-flow]
+    what: "no rows at all: only a flow column holding two connected nodes (A -> B) in a region"
+    from: "r4-port/rf/r2_norows.layout.json"
+  - path: reject/rows-missing.layout.yaml
+    modes: [slide]
+    expect: reject
+    match: "rows: required"
+    rules: [R-reject]
+    what: "spec without a rows key is refused (rows is required, even when empty)"
+    from: "r4-port/rf/r2_norows_key.layout.json"
+  - path: flowcol/r2-overlay-mixed.layout.yaml
+    expect: refuse
+    note: "overlay over a node inside the VPC and one outside it: contradictory x"
+    match: "contradictory x constraint 'overlay og right of group:vpc'"
+    rules: [R-flow, R-reject]
+    what: "overlay group spanning a VPC template node (ec2.1) and a flow-column node (cw)"
+    from: "r4-port/rf/r2_overlay_mixed.layout.json"
+  - path: flowcol/r2-pin-bottom.layout.yaml
+    rules: [R-flow]
+    what: "pinned KMS at [svc, az2] in an align-bottom flow column, with kms -> s3"
+    from: "r4-port/rf/r2_pin_bottom.layout.json"
+  - path: flowcol/r3-xy-30.layout.yaml
+    expect: {document: refuse, slide: load, slide-no-title: load}
+    note: "xy y 30 is inside the document canvas margin (refused) but not the slide's"
+    match: "contradictory y constraint 'xy 30'"
+    rules: [R-flow, R-reject]
+    what: "free xy node KMS at (600, 30) above the flow-column stack, with kms -> acm"
+    from: "r4-port/rf/r3_xy_30.layout.json"
+  - path: flowcol/r3-xy-560.layout.yaml
+    rules: [R-flow]
+    what: "free xy node KMS at (600, 560) below the flow-column stack, with s3 -> kms"
+    from: "r4-port/rf/r3_xy_560.layout.json"
+  - path: flowcol/r4-center-one.layout.yaml
+    rules: [R-flow, R-label]
+    what: "flow column holding only CloudWatch, fed by a labeled alb -> cw edge (HTTP :80)"
+    from: "r4-port/rf/r4_center_one.layout.json"
+  - path: flowcol/r5-mid-bottom.layout.yaml
+    rules: [R-flow]
+    what: "four-node stack, align bottom, with an Obs overlay over the middle nodes cw and s3"
+    from: "r4-port/rf/r5_mid_bottom.layout.json"
+  - path: flowcol/r5-mid-center.layout.yaml
+    rules: [R-flow]
+    what: "four-node stack, align center, with an Obs overlay over the middle nodes cw and s3"
+    from: "r4-port/rf/r5_mid_center.layout.json"
+  - path: flowcol/r5-mid-top.layout.yaml
+    rules: [R-flow]
+    what: "four-node stack, align top, with an Obs overlay over the middle nodes cw and s3"
+    from: "r4-port/rf/r5_mid_top.layout.json"
+  - path: flowcol/r6-flowrow-and-col.layout.yaml
+    rules: [R-flow]
+    what: "flow column plus a five-node flow row (svcrow) appended after the AZ rows"
+    from: "r4-port/rf/r6_flowrow_and_col.layout.json"
+  - path: flowcol/r6-flowrow-bottom.layout.yaml
+    rules: [R-flow]
+    what: "align-bottom flow column plus a five-node flow row appended after the AZ rows"
+    from: "r4-port/rf/r6_flowrow_bottom.layout.json"
+  - path: flowcol/r7-bottom-first.layout.yaml
+    rules: [R-flow]
+    what: "align-bottom flow column with a five-node flow row placed before the AZ rows"
+    from: "r4-port/rf/r7_bottom_first.layout.json"
+  - path: flowcol/r7-center-end.layout.yaml
+    rules: [R-flow]
+    what: "align-center flow column with a five-node flow row placed after the AZ rows"
+    from: "r4-port/rf/r7_center_end.layout.json"
+  - path: flowcol/r7-center-first.layout.yaml
+    rules: [R-flow]
+    what: "align-center flow column with a five-node flow row placed before the AZ rows"
+    from: "r4-port/rf/r7_center_first.layout.json"
+  - path: flowcol/r7-top-end.layout.yaml
+    rules: [R-flow]
+    what: "align-top flow column with a five-node flow row placed after the AZ rows"
+    from: "r4-port/rf/r7_top_end.layout.json"
+  - path: flowcol/r7-top-first.layout.yaml
+    rules: [R-flow]
+    what: "align-top flow column with a five-node flow row placed before the AZ rows"
+    from: "r4-port/rf/r7_top_first.layout.json"
+  - path: reject/only-outside-per.layout.yaml
+    modes: [slide]
+    expect: reject
+    match: "only: is for items inside a per template"
+    rules: [R-reject]
+    what: "only: on a node outside any per template is refused"
+    from: "r4-port/rf/t10_only.layout.json"
+  - path: flowcol/t1-pinned.layout.yaml
+    rules: [R-flow]
+    what: "pinned KMS at [svc, az1] in the same column and parent as the flow stack"
+    from: "r4-port/rf/t1_pinned.layout.json"
+  - path: flowcol/t2-cloud-overlap.layout.yaml
+    rules: [R-flow]
+    what: "one stack node (ACM) in the cloud while the rest sit in the region over the same column"
+    from: "r4-port/rf/t2_cloud_overlap.layout.json"
+  - path: flowcol/t3-group-only-stack.layout.yaml
+    rules: [R-flow]
+    what: "generic Monitoring group whose only content is the flow-column stack"
+    from: "r4-port/rf/t3_group_only_stack.layout.json"
+  - path: flowcol/t4-nocw.layout.yaml
+    rules: [R-flow]
+    what: "empty align-top flow column: all stack nodes and their edges removed"
+    from: "r4-port/rf/t4_nocw.layout.json"
+  - path: flowcol/t4-one-bottom.layout.yaml
+    rules: [R-flow]
+    what: "align-bottom flow column holding only CloudWatch, fed by ec2.* ..> cw"
+    from: "r4-port/rf/t4_one_bottom.layout.json"
+  - path: flowcol/t4-one-center.layout.yaml
+    rules: [R-flow]
+    what: "align-center flow column holding only CloudWatch, fed by ec2.* ..> cw"
+    from: "r4-port/rf/t4_one_center.layout.json"
+  - path: flowcol/t4-one-top.layout.yaml
+    rules: [R-flow]
+    what: "align-top flow column holding only CloudWatch, fed by ec2.* ..> cw"
+    from: "r4-port/rf/t4_one_top.layout.json"
+  - path: flowcol/t5-toplevel.layout.yaml
+    rules: [R-flow]
+    what: "top-level stack: flow-column nodes with no parent group"
+    from: "r4-port/rf/t5_toplevel.layout.json"
+  - path: flowcol/t6-overlay.layout.yaml
+    rules: [R-flow]
+    what: "overlay group Obs over two stacked flow-column nodes (cw, s3)"
+    from: "r4-port/rf/t6_overlay.layout.json"
+  - path: flowcol/t6b-overlay.layout.yaml
+    rules: [R-flow]
+    what: "overlay over stacked cw/s3 with a long label (Observability stack) wider than the stack"
+    from: "r4-port/rf/t6b_overlay.layout.json"
+  - path: flowcol/t7-xyref.layout.yaml
+    rules: [R-flow]
+    what: "xy node using refs to a stack node: KMS at [col.users, cw.cy]"
+    from: "r4-port/rf/t7_xyref.layout.json"
+  - path: flowcol/t8-two-cols.layout.yaml
+    rules: [R-flow]
+    what: "two adjacent flow columns in the region with an edge between them (cw -> kms)"
+    from: "r4-port/rf/t8_two_cols.layout.json"
+  - path: flowcol/t9-tmpl-on-flowcol.layout.yaml
+    rules: [R-flow]
+    what: "per-AZ template node (Lambda in app subnet) placed on the flow column"
+    from: "r4-port/rf/t9_tmpl_on_flowcol.layout.json"
+  - path: ports/io.layout.yaml
+    rules: [R-flow]
+    what: "HVH edges into and out of T on the same side (y -> t, t -> x) must not merge into one stem"
+    from: "review-check/io.layout.yaml"
+  - path: ports/u.layout.yaml
+    rules: [R-flow]
+    what: "three nodes in a row with a -> b, b -> c and skip edge a -> c that must detour, not read as one line"
+    from: "review-check/u.layout.yaml"
+  - path: ports/u3.layout.yaml
+    rules: [R-flow]
+    what: "four nodes in a row with all six pairwise edges: nested skip-edge detours sharing ports"
+    from: "review-check/u3.layout.yaml"
+  - path: ports/u4.layout.yaml
+    rules: [R-flow]
+    what: "four nodes in a row with chain plus skip edges a -> c and b -> d (no a -> d)"
+    from: "review-check/u4.layout.yaml"
+  - path: lanes/a.layout.yaml
+    rules: [R-flow, R-label]
+    what: "order pipeline in lanes (base): VHV bus -> rule wrap with bend_y gap(auth,ana), trunk from_offset 0, Aurora overlay"
+    from: "review-lanes/a.yaml"
+  - path: lanes/b.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 180, sfn -> reserve.* trunk without from_offset 0"
+    from: "review-lanes/b.yaml"
+  - path: lanes/c.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 180, proxy -> aurora overlay edge without its PostgreSQL label"
+    from: "review-lanes/c.yaml"
+  - path: lanes/d.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 180, bus -> rule lane wrap left to auto-routing (no shape/sides/bend_y)"
+    from: "review-lanes/d.yaml"
+  - path: lanes/g.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 180, reserve.* -> proxy trunk without its PostgreSQL label"
+    from: "review-lanes/g.yaml"
+  - path: lanes/h100.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 100: tight wrap corridor under Cognito for bus -> rule"
+    from: "review-lanes/h100.yaml"
+  - path: lanes/h150.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 150: wrap corridor under Cognito for bus -> rule"
+    from: "review-lanes/h150.yaml"
+  - path: lanes/h178.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 178: wrap corridor just under the 180 threshold"
+    from: "review-lanes/h178.yaml"
+  - path: lanes/i.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 0, Cognito moved to [x1, web], bus -> rule bend_y gap(sync,ana)"
+    from: "review-lanes/i.yaml"
+  - path: lanes/j.layout.yaml
+    rules: [R-flow, R-label]
+    what: "lanes with ana min_gap_before 180, no Aurora overlay: labeled writer/reader, proxy -> writer.1"
+    from: "review-lanes/j.yaml"
+  - path: lanes/k.layout.yaml
+    rules: [R-flow, R-label]
+    what: "reworked lanes: WAF row, Cognito in web row, dbsn span, no overlay, step_at stem, proxy -> writer.1 HV"
+    from: "review-lanes/k.yaml"
+  - path: sides/a.layout.yaml
+    rules: [R-flow]
+    what: "ASG overlay over Worker only (header: right), Bastion above it in one column of a nested private subnet, no edges"
+    from: "review-small/a.yaml"
+  - path: sides/b.layout.yaml
+    rules: [R-flow]
+    what: "ASG overlay (header: right) around a lone node A with no subnet, fed diagonally by an edge from Users x -> a"
+    from: "review-small/b.yaml"
+  - path: sides/f1.layout.yaml
+    rules: [R-flow]
+    what: "slide: flow column of Bastion, W1, W2 in a subnet, ASG overlay over w1, w2 only, no edges"
+    from: "review-small/f1.yaml"
+  - path: sides/fc1.layout.yaml
+    rules: [R-flow]
+    what: "flow column p, s in a VPC (pad_top 80): HVH out-and-back p -> s on the right sides"
+    from: "review-small/fc1.yaml"
+  - path: sides/fr1.layout.yaml
+    rules: [R-flow]
+    what: "flow row p, s in a VPC (pad_top 80): VHV out-and-back p -> s on the top sides"
+    from: "review-small/fr1.yaml"
+  - path: sides/gnoedge.layout.yaml
+    rules: [R-flow]
+    what: "diagonal p (a,r1) and s (b,r2) in a VPC with pad_right 80 and no edges, baseline for the gsame cases"
+    from: "review-small/gnoedge.yaml"
+  - path: sides/gnone.layout.yaml
+    rules: [R-flow, R-label]
+    what: "diagonal p -> s labelled HVH edge in a VPC with pad_right 80, with no from_side/to_side given"
+    from: "review-small/gnone.yaml"
+  - path: sides/gsame.layout.yaml
+    rules: [R-flow, R-label]
+    what: "diagonal p -> s labelled HVH out-and-back on the right sides, into the VPC's pad_right 80"
+    from: "review-small/gsame.yaml"
+  - path: sides/gsame2.layout.yaml
+    rules: [R-flow]
+    what: "diagonal p -> s unlabelled HVH out-and-back on the right sides, into the VPC's pad_right 80"
+    from: "review-small/gsame2.yaml"
+  - path: sides/k1.layout.yaml
+    rules: [R-flow, R-label]
+    what: "trunk fork s -> w1, w2 in one column with a label on the trunk, plus a side edge s -> t"
+    from: "review-small/k1.yaml"
+  - path: sides/k2.layout.yaml
+    rules: [R-flow, R-label]
+    what: "trunk fan-out s -> w1, w2, w3 across three columns below s, labelled gRPC"
+    from: "review-small/k2.yaml"
+  - path: sides/k3.layout.yaml
+    rules: [R-flow, R-label]
+    what: "trunk merge from per-AZ workers w.* (subnet per az2, az3) into d, labelled SQL, plus side edge t -> d"
+    from: "review-small/k3.yaml"
+  - path: sides/k4.layout.yaml
+    rules: [R-flow, R-label]
+    what: "k1 (trunk fork s -> w1, w2 plus side edge s -> t) with step: 1 on the trunk and a one-row step note"
+    from: "review-small/k4.yaml"
+  - path: sides/n1.layout.yaml
+    rules: [R-flow, R-label]
+    what: "per-AZ Aurora db.1 -> db.2 labelled replication, HVH out-and-back on the right, VPC pad_right 60"
+    from: "review-small/n1.yaml"
+  - path: sides/n2.layout.yaml
+    rules: [R-flow]
+    what: "per-AZ Aurora db.1 -> db.2 unlabelled HVH out-and-back on the right, with no VPC pad_right"
+    from: "review-small/n2.yaml"
+  - path: sides/ov3.layout.yaml
+    rules: [R-flow]
+    what: "edge from Monitor to an ASG overlay group over per-AZ app nodes fw.*, so it ends on the group's side"
+    from: "review-small/ov3.yaml"
+  - path: reject/same-side-same-row.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "needs ends on different rows"
+    rules: [R-reject]
+    what: "from_side = to_side (right) between two nodes on one row is refused (out-and-back leg of no length)"
+    from: "review-small/srow.yaml"
+  - path: sides/t1.layout.yaml
+    rules: [R-flow, R-label]
+    what: "stacked p, s in a DB subnet: labelled HVH out-and-back p -> s on the right sides"
+    from: "review-small/t1.yaml"
+  - path: sides/t2.layout.yaml
+    rules: [R-flow, R-label]
+    what: "stacked p, s with no groups: labelled HVH out-and-back p -> s on the right sides"
+    from: "review-small/t2.yaml"
+  - path: sides/t2b.layout.yaml
+    rules: [R-flow, R-label]
+    what: "side-by-side p, s with no groups: labelled VHV out-and-back p -> s on the bottom sides"
+    from: "review-small/t2b.yaml"
+  - path: sides/t2l.layout.yaml
+    rules: [R-flow, R-label]
+    what: "stacked p, s with no groups: labelled HVH out-and-back p -> s on the left sides"
+    from: "review-small/t2l.yaml"
+  - path: sides/t2t.layout.yaml
+    rules: [R-flow, R-label]
+    what: "side-by-side p, s with no groups: labelled VHV out-and-back p -> s on the top sides"
+    from: "review-small/t2t.yaml"
+  - path: sides/t4.layout.yaml
+    rules: [R-flow, R-label]
+    what: "stacked p, s in a DB subnet: labelled HVH out-and-back p -> s on the left sides"
+    from: "review-small/t4.yaml"
+  - path: sides/t5.layout.yaml
+    rules: [R-flow, R-label]
+    what: "stacked p, s in a DB subnet: labelled p -> s with from/to_side right and no shape given"
+    from: "review-small/t5.yaml"
+  - path: reject/side-vs-shape.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "does not fit shape HVH"
+    rules: [R-reject]
+    what: "from_side: top with shape HVH (first piece horizontal) is refused"
+    from: "review-small/t6.yaml"
+  - path: sides/two-document-l.layout.yaml
+    rules: [R-flow, R-label]
+    what: "p, s in two sibling subnets, labelled VHV out-and-back on the top sides crossing subnet borders"
+    from: "review-small/two_document_l.yaml"
+  - path: sides/two-document-n.layout.yaml
+    rules: [R-flow]
+    what: "p, s in two sibling subnets, unlabelled VHV out-and-back on the top sides"
+    from: "review-small/two_document_n.yaml"
+  - path: sides/two-slide-l-b.layout.yaml
+    rules: [R-flow, R-label]
+    what: "p, s in two sibling subnets, labelled VHV out-and-back on the bottom sides"
+    from: "review-small/two_slide_l_b.yaml"
+  - path: sides/two-slide-n-b.layout.yaml
+    rules: [R-flow]
+    what: "p, s in two sibling subnets, unlabelled VHV out-and-back on the bottom sides"
+    from: "review-small/two_slide_n_b.yaml"
+  - path: sides/vbottom.layout.yaml
+    rules: [R-flow, R-label]
+    what: "side-by-side p, s in one DB subnet, labelled VHV out-and-back on the bottom sides"
+    from: "review-small/vbottom.yaml"
+  - path: sides/vbottom2.layout.yaml
+    rules: [R-flow, R-label]
+    what: "vbottom with the subnet given pad_bottom 44 to make room for the bottom out-and-back and its label"
+    from: "review-small/vbottom2.yaml"
+  - path: sides/vtop.layout.yaml
+    rules: [R-flow, R-label]
+    what: "side-by-side p, s in one DB subnet, labelled VHV out-and-back on the top sides"
+    from: "review-small/vtop.yaml"
+  - path: sides/vtop2.layout.yaml
+    rules: [R-flow, R-label]
+    what: "vtop with the subnet given pad_top 80 to make room for the top out-and-back and its label"
+    from: "review-small/vtop2.yaml"
+  - path: sides/xy1.layout.yaml
+    rules: [R-flow]
+    what: "s pinned at xy [p.cx, p.cy+120] below p, HVH out-and-back p -> s on the right sides"
+    from: "review-small/xy1.yaml"
+  - path: sides/xy2.layout.yaml
+    rules: [R-flow]
+    what: "s pinned at xy [p.cx+150, p.cy] right of p, VHV out-and-back p -> s on the top sides"
+    from: "review-small/xy2.yaml"
+  - path: sides/xy3.layout.yaml
+    rules: [R-flow]
+    what: "s pinned at xy [q.cx, q.cy] on top of grid node q, HVH out-and-back p -> s on the right sides"
+    from: "review-small/xy3.yaml"
+  - path: xy/fan-forced.layout.yaml
+    rules: [R-flow]
+    what: "hub below with two undirected links to diagonal top neighbours, one forced HVH, one routed freely"
+    from: "review-tgw/fan_forced.yaml"
+  - path: xy/fan-v.layout.yaml
+    rules: [R-flow]
+    what: "hub with three undirected links up to Up (straight above), Left and Right VPCs in the row above"
+    from: "review-tgw/fan_v.yaml"
+  - path: xy/oab1.layout.yaml
+    rules: [R-flow, R-label]
+    what: "labelled left-side out-and-back p -> q in one column, p with a long label and a neighbour s on its right"
+    from: "review-tgw/oab1.yaml"
+  - path: xy/oab2.layout.yaml
+    rules: [R-flow, R-label]
+    what: "two parallel edges u -> v between diagonal nodes: right-side with verb manage, and bottom-side out-and-back"
+    from: "review-tgw/oab2.yaml"
+  - path: xy/oab3.layout.yaml
+    rules: [R-flow, R-label]
+    what: "labelled top-side out-and-back p -> q skipping over middle node M, plus straight chain p -> m -> q"
+    from: "review-tgw/oab3.yaml"
+  - path: xy/refuse.layout.yaml
+    rules: [R-flow]
+    what: "diagonal a -> b VHV with bend_y: m.cy, a bend through middle node M that should be refused"
+    from: "review-tgw/refuse.yaml"
+  - path: xy/span-border.layout.yaml
+    rules: [R-flow]
+    what: "IGW on the VPC border spanning two columns b1..b2 between outside Users and an inner node, no edges"
+    from: "review-tgw/span_border.yaml"
+  - path: xy/span-border2.layout.yaml
+    rules: [R-flow]
+    what: "span-border plus a bottom row with a very long outside label that widens col o and a node in b2"
+    from: "review-tgw/span_border2.yaml"
+  - path: xy/span-conv.layout.yaml
+    rules: [R-flow]
+    what: "column-spanning node b1..b2 with a long label above a long-label node in b0 and a node in b2"
+    from: "review-tgw/span_conv.yaml"
+  - path: xy/span-flow.layout.yaml
+    rules: [R-flow]
+    what: "span-conv (long-label b1..b2 span) plus a flow row svc (flow: 100) holding F1, F2"
+    from: "review-tgw/span_flow.yaml"
+  - path: xy/span-flow-ok.layout.yaml
+    rules: [R-flow]
+    what: "span-flow with a short label on the b1..b2 spanning node, plus flow row svc with F1, F2"
+    from: "review-tgw/span_flow_ok.yaml"
+  - path: reject/xy-cycle-template.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "refers back to e2.1"
+    rules: [R-reject]
+    what: "xy reference cycle through template instances (e2.1 -> e3.1 -> e2.1) is refused"
+    from: "review-tgw/t_cyc.yaml"
+  - path: xy/t-grp.layout.yaml
+    expect: refuse
+    note: "xy sn.y1-40 leaves the node's label outside its subnet: contradictory y"
+    match: "contradictory y constraint 'xy sn.1.y1-40'"
+    rules: [R-flow, R-reject]
+    what: "per-AZ subnet template: e2 pinned xy [col.c, sn.y1-40] relative to its own subnet copy"
+    from: "review-tgw/t_grp.yaml"
+  - path: reject/xy-other-instance.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "is in instance 1 of the per template"
+    rules: [R-reject]
+    what: "xy following another template instance's group edge (sn.1.y1 from instance 2) is refused"
+    from: "review-tgw/t_grp1.yaml"
+  - path: reject/xy-only-missing-instance.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "left out by `only:`"
+    rules: [R-reject]
+    what: "xy following a node instance left out by only: is refused"
+    from: "review-tgw/t_only.yaml"
+  - path: reject/xy-outside-template.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "is outside the per template"
+    rules: [R-reject]
+    what: "templated node following one node outside its per template (all instances on one y) is refused"
+    from: "review-tgw/t_out.yaml"
+  - path: reject/xy-unknown-ref.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "no node or group 'e1'"
+    rules: [R-reject]
+    what: "xy expression naming an unknown node is refused"
+    from: "review-tgw/t_ref_in.yaml"
+  - path: xy/t-ref-in1.layout.yaml
+    rules: [R-flow]
+    what: "VPC-level node x pinned at xy [col.c, e1.2.cy], referencing the second per-AZ copy of e1"
+    from: "review-tgw/t_ref_in1.yaml"
+  - path: xy/v1.layout.yaml
+    rules: [R-flow]
+    what: "vertical y -> z in col b beside a left node whose long sub line reaches toward the edge"
+    from: "review-tgw/v1.yaml"
+  - path: xy/v1up.layout.yaml
+    rules: [R-flow]
+    what: "v1 with the vertical edge reversed (z -> y, upward) beside the left node's long sub line"
+    from: "review-tgw/v1up.yaml"
+  - path: xy/xy-border.layout.yaml
+    rules: [R-flow]
+    what: "IGW on the VPC border pinned at xy [col.a, row.r], with edges Users -> igw -> p"
+    from: "review-tgw/xy_border.yaml"
+  - path: xy/xy-cross.layout.yaml
+    rules: [R-flow]
+    what: "cross-axis xy refs: q at [col.b, s.cy] and s at [q.cx, 300], each depends on the other's other axis"
+    from: "review-tgw/xy_cross.yaml"
+  - path: reject/xy-cycle3.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "refers back to q"
+    rules: [R-reject]
+    what: "three-node xy reference cycle (q -> s -> t -> q) is refused"
+    from: "review-tgw/xy_cycle3.yaml"
+  - path: xy/xy-grp.layout.yaml
+    expect: refuse
+    note: "xy cloud.x0 puts the node on the cloud border, inside the cloud's pad: contradictory x"
+    match: "contradictory x constraint 'xy cloud.x0'"
+    rules: [R-flow, R-reject]
+    what: "q pinned at xy [cloud.x0, row.r], i.e. on the cloud group's left edge"
+    from: "review-tgw/xy_grp.yaml"
+  - path: xy/xy-off.layout.yaml
+    rules: [R-flow]
+    what: "q pinned off-grid at xy [col.a2+70, row.bot] between L and R, fed by t -> q from above"
+    from: "review-tgw/xy_off.yaml"
+  - path: xy/xy-span.layout.yaml
+    rules: [R-flow]
+    what: "xy refs to a b..c spanning node (q at [p.cx, w.y1+40]) and grid z at [col.c, row.s], edge p -> z"
+    from: "review-tgw/xy_span.yaml"
+  - path: xy/xy-tmpl.layout.yaml
+    rules: [R-flow]
+    what: "per-AZ subnet template: e2 pinned xy [col.b, e1.cy], resolving e1 to the same AZ copy"
+    from: "review-tgw/xy_tmpl.yaml"
+  - path: xy/xy-tmpl3.layout.yaml
+    rules: [R-flow]
+    what: "per-AZ subnet template: e2 pinned xy [e1.1.cx+90, row.az1], an explicit copy index plus a fixed row"
+    from: "review-tgw/xy_tmpl3.yaml"
+  - path: twin/b-document.layout.yaml
+    rules: [R-twin]
+    what: "one VPC with 2 AZ columns side by side, one ASG over both EC2s; AZ a's EC2 has a long label"
+    from: "rr-asgcols/b_document.layout.yaml"
+  - path: twin/ell.layout.yaml
+    known_fail: "contradictory x on 38c44fd; fixed by the L-shaped ASG fix"
+    rules: [R-twin]
+    what: "L-shaped ASG over the EC2s in both AZs' app subnets plus a worker EC2 in AZ a's second subnet only"
+    from: "rr-asgcols/ell.layout.yaml"
+  - path: reject/overlay-holds-nonmember.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "so it would also hold alb"
+    rules: [R-reject]
+    what: "ASG overlay whose box would also hold a non-member node (alb) is refused at load"
+    from: "rr-asgcols/gap.layout.yaml"
+  - path: twin/grid.layout.yaml
+    rules: [R-twin]
+    what: "2x2 grid of web and worker subnets in 2 AZs, ASG header right over all four EC2s, long worker labels"
+    from: "rr-asgcols/grid.layout.yaml"
+  - path: twin/sub.layout.yaml
+    rules: [R-twin]
+    what: "3 AZ columns with app + DB subnets, ALB forking to 3 EC2s; ASG (header right) covers only the first two AZs"
+    from: "rr-asgcols/sub.layout.yaml"
+  - path: twin/three.layout.yaml
+    rules: [R-twin]
+    what: "3 AZ columns with app + DB subnets, ALB forking to 3 EC2s and EC2 -> RDS per AZ; ASG over all three EC2s"
+    from: "rr-asgcols/three.layout.yaml"
+  - path: twin/tw-long.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs stacked in shared columns, each 2 AZs with an ASG over both EC2s; VPC 2 AZ b subnet has a long label"
+    from: "rr-asgcols/tw_long.layout.yaml"
+  - path: twin/tw-side.layout.yaml
+    rules: [R-twin]
+    what: "two identical VPCs side by side (4 columns), each with 2 AZs and an ASG over both EC2s"
+    from: "rr-asgcols/tw_side.layout.yaml"
+  - path: twin/tw-stack.layout.yaml
+    rules: [R-twin]
+    what: "two identical VPCs stacked in shared columns, each with 2 AZs and an ASG over both EC2s"
+    from: "rr-asgcols/tw_stack.layout.yaml"
+  - path: ports/ce-tgw.layout.yaml
+    rules: [R-flow, R-label]
+    what: "centralized egress with Firewall RT sub line lengthened to '10.1.0.0/16 → Transit Gateway'"
+    from: "rr-cut/ce-tgw.layout.yaml"
+  - path: ports/ce.layout.yaml
+    rules: [R-flow, R-label]
+    what: "centralized egress with Firewall RT sub line lengthened to '10.1.0.0/16 → TGW attachment A'"
+    from: "rr-cut/ce.layout.yaml"
+  - path: ports/svc.layout.yaml
+    rules: [R-flow]
+    what: "SQS with two sub lines above Lambda: q -> f leaves under the label stack, plus undirected q -- g"
+    from: "rr-loose/svc.layout.yaml"
+  - path: ports/svc1.layout.yaml
+    rules: [R-flow]
+    what: "SQS with one sub line above Lambda: q -> f leaves under the label, plus undirected q -- g"
+    from: "rr-loose/svc1.layout.yaml"
+  - path: ports/svc2.layout.yaml
+    rules: [R-flow]
+    what: "SQS with sub lines that read like names (Amazon S3, DLQ after 3) above q -> f, plus q -- g"
+    from: "rr-loose/svc2.layout.yaml"
+  - path: ports/gm.layout.yaml
+    rules: [R-flow]
+    what: "two nodes above and below (r1, r3) both pointing at a VPC group side: group-side ports"
+    from: "rr-port/gm.layout.yaml"
+  - path: ports/gm4.layout.yaml
+    rules: [R-flow]
+    what: "two nodes into a VPC group side past S3 nodes in the middle column (obstacles near the stems)"
+    from: "rr-port/gm4.layout.yaml"
+  - path: ports/gm5.layout.yaml
+    rules: [R-flow]
+    what: "gm4 with to_offset 12 on b -> vpc to shift one group-side port"
+    from: "rr-port/gm5.layout.yaml"
+  - path: ports/xnt.layout.yaml
+    rules: [R-flow, R-label]
+    what: "centralized egress with App VPC B attachment reversed as untrunked tgw -> enib.* lines, short TGW label"
+    from: "rr-port/xnt.layout.yaml"
+  - path: ports/g1.layout.yaml
+    rules: [R-flow]
+    what: "three nodes into a VPC group side plus outgoing vpc -> s: in and out ports on one group"
+    from: "rr-port2/g/g1.layout.yaml"
+  - path: ports/g2.layout.yaml
+    rules: [R-flow]
+    what: "trunk u -> az.* into per-AZ groups plus v -> az.1 into the same AZ box: AZ group-side ports"
+    from: "rr-port2/g/g2.layout.yaml"
+  - path: ports/g3.layout.yaml
+    rules: [R-flow]
+    what: "node-level twin of g1: three nodes into Z inside the VPC plus z -> s"
+    from: "rr-port2/g/g3.layout.yaml"
+  - path: twin/ce-a.layout.yaml
+    rules: [R-twin, R-label]
+    what: "centralized-egress plus an ASG over App VPC A's EC2s only; twin App VPC B has no ASG"
+    from: "rr-twin/ce_a.layout.yaml"
+  - path: twin/ce-ab.layout.yaml
+    rules: [R-twin, R-label]
+    what: "centralized-egress plus an ASG over each App VPC's EC2s (both twins with ASGs)"
+    from: "rr-twin/ce_ab.layout.yaml"
+  - path: twin/b-side-two.layout.yaml
+    rules: [R-twin]
+    what: "one VPC with 2 AZ columns side by side and a separate ASG per AZ; AZ a's EC2 has a long label"
+    from: "rr-twin2/b_side_two-document.layout.yaml"
+  - path: twin/c-two.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs side by side, 2 per-row AZs each, ASG over each VPC's EC2s; VPC 1 long EC2 label, IGW on VPC 1"
+    from: "rr-twin2/c_two-document.layout.yaml"
+  - path: twin/d-twinvpc.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs side by side, 2 per-row AZs each, ASG over each VPC's EC2s; VPC 1 long EC2 label, no IGW"
+    from: "rr-twin2/d_twinvpc-document.layout.yaml"
+  - path: twin/r-a-explicit.layout.yaml
+    rules: [R-twin]
+    what: "one VPC, two explicit AZs stacked in one column, ASG with a long label over both EC2s"
+    from: "rr-twin2/r_a_explicit.layout.yaml"
+  - path: twin/r-a-template.layout.yaml
+    rules: [R-twin]
+    what: "one VPC, two AZs stacked via a per template in one column, ASG with a long label over both EC2s"
+    from: "rr-twin2/r_a_template.layout.yaml"
+  - path: twin/r-c-two-noasg.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs side by side, 2 per-row AZs each, no ASGs; VPC 1 long EC2 label, IGW on VPC 1"
+    from: "rr-twin2/r_c_two_noasg.layout.yaml"
+  - path: twin/v-below.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs side by side, 2 per-row AZs each, ASG over each VPC's EC2s with header below; VPC 1 long label"
+    from: "rr-twin2/v_below-document.layout.yaml"
+  - path: twin/v-firstonly.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs side by side, 2 per-row AZs each; each ASG covers only the first AZ's EC2 (e.1); VPC 1 long label"
+    from: "rr-twin2/v_firstonly-document.layout.yaml"
+  - path: twin/v-perazasg.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs, 2 per-row AZs each: VPC 1 one ASG over both AZs, VPC 2 a separate ASG per AZ; VPC 1 long label"
+    from: "rr-twin2/v_perazasg-document.layout.yaml"
+  - path: twin/v-stacked.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs stacked in one column, each 2 per-row AZs with an ASG over its EC2s; VPC 1 long EC2 label"
+    from: "rr-twin2/v_stacked-document.layout.yaml"
+  - path: twin/v-threeaz.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs side by side, 3 per-row AZs with two EC2 columns each, ASG over both columns; VPC 1 long label"
+    from: "rr-twin2/v_threeaz-document.layout.yaml"
+  - path: twin/x-headerbelow.layout.yaml
+    rules: [R-twin]
+    what: "x-same twin 3-tier VPCs (IGW, ALB, NAT, 2 EC2 cols, RDS, 2 AZs) with both ASG headers below"
+    from: "rr-twin2/x_headerbelow-document.layout.yaml"
+  - path: twin/x-longlabel.layout.yaml
+    rules: [R-twin]
+    what: "x-same twin 3-tier VPCs with ASGs header right; VPC b's first EC2 column labeled \"EC2 web server fleet\""
+    from: "rr-twin2/x_longlabel-document.layout.yaml"
+  - path: twin/x-onlya.layout.yaml
+    rules: [R-twin]
+    what: "twin 3-tier VPCs where only VPC a has an ASG; VPC b's ALB and RDS edges attach to its first EC2 instead"
+    from: "rr-twin2/x_onlyA-document.layout.yaml"
+  - path: twin/x-same.layout.yaml
+    rules: [R-twin]
+    what: "two identical 3-tier VPCs side by side (IGW, ALB, NAT, 2 EC2 cols, RDS, 2 AZs), ASG header right, ALB -> ASG"
+    from: "rr-twin2/x_same-document.layout.yaml"
+  - path: rt/alb-nat.layout.yaml
+    rules: [R-rt, R-label]
+    what: "alb doc plus a dotted 'nat.* ..> users' outbound return edge (verb 아웃바운드) past the IGW"
+    from: "rtlone/v_probe/alb_nat-modeslide.json"
+  - path: rt/alb-ret.layout.yaml
+    rules: [R-rt, R-label]
+    what: "alb doc plus a dotted 'ec2a.* ..> users' response return edge (verb 응답) past the IGW"
+    from: "rtlone/v_probe/alb_ret-modeslide.json"
+  - path: rt/att.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with TGW subnet + attachment ENI per spoke VPC (att col): ec2 -> ENI -> TGW edges"
+    from: "rtlone/v_probe/att-modedocument.json"
+  - path: rt/dash.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with spoke attachment edges as undirected 'vpca -- tgw' / 'vpcb -- tgw' lines"
+    from: "rtlone/v_probe/dash-modedocument.json"
+  - path: rt/fork.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with spoke edges merged into one trunk fork 'tgw -> vpca, vpcb'"
+    from: "rtlone/v_probe/fork-modedocument.json"
+  - path: rt/gw-ret.layout.yaml
+    rules: [R-rt, R-label]
+    what: "gwlb doc plus a dotted 'ec2.* ..> users' response return edge (verb 응답)"
+    from: "rtlone/v_probe/gw_ret-modeslide.json"
+  - path: rt/hub.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide where spoke lines end at an intermediate Hub node (hub col right of Spoke RT), then hub -> tgw"
+    from: "rtlone/v_probe/hub-modedocument.json"
+  - path: rt/nd-tgwside.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw doc with spoke edges written TGW-first ('tgw <-> vpca', 'tgw <-> vpcb')"
+    from: "rtlone/v_probe/nd_tgwside-modedocument.json"
+  - path: rt/nodeends.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with spoke edges ending at the EC2 nodes instead of VPC boxes ('ec2a <-> tgw', 'tgw <-> ec2b')"
+    from: "rtlone/v_probe/nodeends-modedocument.json"
+  - path: reject/note-step-no-edge.layout.yaml
+    modes: [slide]
+    expect: reject
+    match: "no edge has step 1"
+    rules: [R-reject]
+    what: "note.steps row with no edge carrying that step badge is refused"
+    from: "rtlone/v_probe/nolines-modedocument.json"
+  - path: rt/onelines.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide where only VPC B draws to TGW; VPC A draws a peering-style line to VPC B instead"
+    from: "rtlone/v_probe/onelines-modedocument.json"
+  - path: rt/rtcol.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide: Spoke RT moved to new row 'top'; spoke lines end at a Hub node in the RT's column on main"
+    from: "rtlone/v_probe/rtcol-modedocument.json"
+  - path: rt/rtsub.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with a Korean route sub on the Spoke RT ('0.0.0.0/0 → 검사 VPC')"
+    from: "rtlone/v_probe/rtsub-modedocument.json"
+  - path: rt/sgw-ret.layout.yaml
+    rules: [R-rt, R-label]
+    what: "gwlb slide plus a dotted 'ec2.* ..> users' response return edge (verb 응답)"
+    from: "rtlone/v_probe/sgw_ret-modeslide.json"
+  - path: rt/tgwside.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with spoke edges written TGW-first ('tgw <-> vpca', 'tgw <-> vpcb')"
+    from: "rtlone/v_probe/tgwside-modedocument.json"
+  - path: rt/three.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with a third spoke VPC C on its own row below VPC B (rows az1, main, az2, az3)"
+    from: "rtlone/v_probe/three-modedocument.json"
+  - path: rt/three-b.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with third spoke VPC C, rows az1, az2, main, az3 so the Spoke RT row sits between B and C"
+    from: "rtlone/v_probe/three_b-modedocument.json"
+  - path: rt/tmpl.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with spokes as one per-AZ VPC template (vpc per az1/az2, label/cidr maps) and 'vpc.* <-> tgw'"
+    from: "rtlone/v_probe/tmpl-modedocument.json"
+  - path: rt/tmpl-doc.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw doc with spokes as one per-AZ VPC template (vpc per az1/az2) and a 'vpc.* <-> tgw' edge"
+    from: "rtlone/v_probe/tmpl_doc-modedocument.json"
+  - path: rt/tmpl-rev.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with per-AZ spoke VPC template and a reversed trunk edge 'tgw -> vpc.*'"
+    from: "rtlone/v_probe/tmpl_rev-modedocument.json"
+  - path: rt/tmpl-trunk.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with per-AZ spoke VPC template and a trunk edge 'vpc.* -> tgw'"
+    from: "rtlone/v_probe/tmpl_trunk-modedocument.json"
+  - path: trunk/ce-tgw.layout.yaml
+    rules: [R-flow, R-label]
+    what: "centralized-egress with the TGW label shortened to \"TGW\" (two trunk merges in, two-line fork out)"
+    from: "rv-trunk/ce-tgw.layout.yaml"
+  - path: trunk/fp.layout.yaml
+    rules: [R-flow]
+    what: "SQS with a two-line sub above a Lambda (arrow down) and a no-head -- line to a Worker in the next column"
+    from: "rv-trunk/fp.layout.yaml"
+  - path: trunk/fp1.layout.yaml
+    rules: [R-flow]
+    what: "SQS with a one-line sub above a Lambda (arrow down) and a no-head -- line to a Worker in the next column"
+    from: "rv-trunk/fp1.layout.yaml"
+  - path: trunk/v-fork.layout.yaml
+    rules: [R-flow, R-label]
+    what: "ce-tgw with the TGW -> Security VPC pair replaced by one trunk fork tgw -> seni.* carrying step 3"
+    from: "rv-trunk/v-fork.layout.yaml"
+  - path: trunk/v-stem.layout.yaml
+    rules: [R-flow, R-label]
+    what: "ce-tgw with App VPC B's merge trunk also given step 2, with step_at: stem"
+    from: "rv-trunk/v-stem.layout.yaml"
+  - path: trunk/v-three.layout.yaml
+    rules: [R-flow, R-label]
+    what: "ce-tgw with App VPC B over 3 AZs (b1-b3), so its trunk is a three-way merge into TGW vs A's two"
+    from: "rv-trunk/v-three.layout.yaml"
+  - path: reject/step-beyond-note.layout.yaml
+    modes: [document]
+    expect: reject
+    match: "note.steps has only 6 rows"
+    rules: [R-reject]
+    what: "edge step 9 beyond the 6 note.steps rows is refused"
+    from: "rv-trunk/x-bidir-b.layout.yaml"
+  - path: trunk/x-fork-b.layout.yaml
+    rules: [R-flow, R-label]
+    what: "ce-tgw with App VPC B's trunk reversed to a fork tgw -> enib.* while App VPC A still merges into TGW"
+    from: "rv-trunk/x-fork-b.layout.yaml"
+  - path: twin/tw1.layout.yaml
+    rules: [R-twin]
+    what: "two VPCs side by side, one subnet with two linked EC2s each; only VPC one has an ASG (long label) over them"
+    from: "rv-twin/t/tw1.layout.yaml"
+  - path: twin/tw2.layout.yaml
+    rules: [R-twin]
+    what: "App VPC A with per-template unlabeled AZs vs App VPC B with explicit labeled AZs; all EC2s join into TGW"
+    from: "rv-twin/t/tw2.layout.yaml"
+  - path: rt/withsn.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with an empty att column between spokes and Spoke RT, and spoke subnets labelled 'App subnet'"
+    from: "withsn.layout.yaml"
+  - path: rt/withsn2.layout.yaml
+    rules: [R-rt, R-label]
+    what: "nfw slide with only an empty att column added between the spoke VPCs and the Spoke RT column"
+    from: "withsn2.layout.yaml"
+examples:
+  - path: ../../docs/examples/specs/alb-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-twin]
+    what: "ALB 3-tier: Users → IGW → internet-facing ALB → one ASG / target group over two AZs → RDS Multi-AZ, with Route 53 and the regional services row (ACM, WAF, CloudWatch, S3)"
+  - path: ../../docs/examples/specs/bedrock-dx-reference-architecture.layout.yaml
+    rules: [R-flow, R-label]
+    what: "Claude Code on Amazon Bedrock over Direct Connect: on-premises PC → DX → VGW → VPC endpoints in Seoul (+ us-west-2 option B), with a step legend pane"
+  - path: ../../docs/examples/specs/centralized-egress.layout.yaml
+    rules: [R-flow, R-label, R-rt]
+    what: "Centralized egress through a Security VPC: App VPC A and App VPC B (EC2 → TGW ENI per AZ) → TGW (Spoke RT on the spoke side, Firewall RT on the Security VPC side) → Security VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet"
+  - path: ../../docs/examples/specs/example.layout.yaml
+    rules: [R-flow, R-label]
+    what: "Skeleton (docs/example.svg): one VPC over two AZs, IGW → internet-facing ALB → an Auto Scaling group / target group of one EC2 per AZ"
+  - path: ../../docs/examples/specs/gwlb-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-twin]
+    what: "GWLB inspection: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs"
+  - path: ../../docs/examples/specs/nfw-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-rt]
+    what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
+  - path: ../../docs/examples/specs/nlb-mtls-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-twin]
+    what: "NLB mutual TLS: client → IGW → NLB (nlb-sg, trust store from S3) → same-AZ EC2 in backend-sg, with a left legend pane"
+  - path: ../../docs/examples/specs/nlb-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-twin]
+    what: "Internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and regional ACM / CloudWatch / S3"
+  - path: ../../docs/examples/specs/serverless-order-pipeline.layout.yaml
+    rules: [R-flow, R-label]
+    what: "Serverless order pipeline folded into lanes, top to bottom: request lane (CloudFront → API Gateway → Lambda → DynamoDB → Streams → Pipes → event bus), analytics lane (EventBridge rule → SQS → Ingest Lambda → Firehose → S3) and fulfillment lane (Step Functions → payment · VPC stock reservation on Aurora · SNS → SES); the rule at the head of the analytics lane also starts the fulfillment workflow"
+  - path: ../../docs/examples/specs/tgw-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-rt]
+    what: "TGW reference: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it"
+  - path: ../../docs/examples/specs/slides/alb-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-twin, R-fit]
+    what: "ALB 3-tier slide: Users → IGW → internet-facing ALB → one ASG / target group over two AZs → RDS Multi-AZ, with Route 53 and the regional services (ACM, WAF, CloudWatch, S3) in one column right of the VPC"
+  - path: ../../docs/examples/specs/slides/gwlb-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-twin, R-fit]
+    what: "GWLB inspection slide: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs"
+  - path: ../../docs/examples/specs/slides/nfw-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-rt, R-fit]
+    what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
+  - path: ../../docs/examples/specs/slides/nlb-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-twin, R-fit]
+    what: "Slide: internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and a regional ACM / CloudWatch / S3 column"
+  - path: ../../docs/examples/specs/slides/tgw-reference-architecture.layout.yaml
+    rules: [R-flow, R-label, R-rt, R-fit]
+    what: "TGW reference slide: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it"
+
+# Not kept from the review scratch (about 440 spec files, 230 kept):
+#   - exact duplicates (same content ignoring name and mode: the -document/-slide pairs,
+#     probe dumps per render mode, copies between review folders): about 170
+#   - copies or older revisions of the docs/examples specs (old4d3/, slides-specs-main/, ex/,
+#     w1/, w2/, tgw_plain, gwlb_nopad, three bench2 copies, egress-nosp): covered by the
+#     examples above
+#   - rr-twin/*.layout.yaml: templates with unfilled MODE/ASGLINE placeholders (their filled
+#     forms are the twin/ cases)
+#   - review-lanes h120-h175: inner points of one min_gap_before sweep (h100, h150, h178 kept)
+#   - rejections already covered by a kept reject/ case (ov1, ov2, srow2, xy_tmpl2,
+#     v_colspan, x-three-step) or a large spec for a small rejection (review-lanes/f:
+#     label_at: stem)
+#   - var*.py mutations whose result equals a kept case; the scratch gen*.py that draw SVG
+#     directly (no spec) and review-check/cases*.py (raw SVG check cases, no spec)

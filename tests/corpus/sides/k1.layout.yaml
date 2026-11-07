@@ -1,0 +1,12 @@
+name: k1
+mode: document
+cols: [a, b]
+rows: [r1, r2, r3]
+nodes:
+  - {id: s, icon: service/AWS-Lambda, label: Src, at: [a, r1]}
+  - {id: t, icon: service/AWS-Lambda, label: Side, at: [b, r1]}
+  - {id: w1, icon: service/AWS-Lambda, label: W1, at: [b, r2]}
+  - {id: w2, icon: service/AWS-Lambda, label: W2, at: [b, r3]}
+edges:
+  - {e: "s -> t"}
+  - {e: "s -> w1, w2", trunk: true, label: "HTTPS :443"}

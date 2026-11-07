@@ -1,0 +1,57 @@
+# Centralized egress: App VPC A and B (2 AZs each) → TGW (Spoke RT, Firewall RT) → Security VPC (TGW subnet → firewall subnet → public subnet with NAT per AZ) → IGW → Internet
+name: centralized-egress
+mode: document
+cols: [ec2, seni, tgw, eni, fw, nat, igw, inet]
+rows: [a1, a2, main, b1, b2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+  - {id: vpca,   type: vpc, label: App VPC A, cidr: 10.1.0.0/16, in: region}
+  - {id: aza,    type: az, in: vpca, per: [a1, a2]}
+  - {id: appa,   type: private, label: Private subnet, in: aza}
+  - {id: tgwa,   type: private, label: TGW subnet, in: aza}
+  - {id: vpcb,   type: vpc, label: App VPC B, cidr: 10.2.0.0/16, in: region}
+  - {id: azb,    type: az, in: vpcb, per: [b1, b2]}
+  - {id: appb,   type: private, label: Private subnet, in: azb}
+  - {id: tgwb,   type: private, label: TGW subnet, in: azb}
+  - {id: sec,    type: vpc, label: Security VPC, cidr: 10.100.0.0/16, in: region}
+  - {id: az,     type: az, in: sec, per: [a2, b1]}
+  - {id: tgwsn,  type: private, label: TGW subnet, in: az}
+  - {id: fwsn,   type: private, label: Firewall subnet, in: az}
+  - {id: pubsn,  type: public, label: Public subnet, in: az}
+
+nodes:
+  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: appa, col: ec2}
+  - {id: enia, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tgwa, col: seni}
+  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: appb, col: ec2}
+  - {id: enib, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tgwb, col: seni}
+  - {id: tgw,  icon: service/AWS-Transit-Gateway, label: Transit Gateway, in: region, at: [tgw, main]}
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: ["연결: App VPC A · B", "0.0.0.0/0 → Security VPC"], in: region, at: [tgw, a1]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: ["연결: Security VPC (appliance mode)", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"], in: region, at: [tgw, b2]}
+  - {id: eni,  icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, sub: "0.0.0.0/0 → 같은 AZ 방화벽", in: tgwsn, col: eni}
+  - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, sub: ["0.0.0.0/0 → 같은 AZ NAT", "10.0.0.0/8 → TGW"], in: fwsn, col: fw}
+  - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, sub: ["0.0.0.0/0 → IGW", "10.0.0.0/8 → 같은 AZ 방화벽"], in: pubsn, col: nat}
+  - {id: nfw,  icon: service/AWS-Network-Firewall, label: AWS Network Firewall, in: sec, at: [fw, main]}
+  - {id: igw,  icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: sec, at: [igw, main]}
+  - {id: inet, icon: resource/Internet, label: Internet, at: [inet, main]}
+
+edges:
+  - {e: "ec2a.* -> enia.*", step: 1}
+  - {e: "ec2b.* -> enib.*"}
+  - {e: "enia.* <-> tgw", trunk: true, verb: VPC attachment}
+  - {e: "enib.* <-> tgw", trunk: true}
+  - {e: "tgw <-> eni.*", step: 2, step_at: start}
+  - {e: "eni.* <-> fwe.*", step: 3}
+  - {e: "fwe.* -> nat.*", step: 4}
+  - {e: "nat.* -> igw", trunk: true, step: 5}
+  - {e: "igw -> inet", step: 6}
+
+note:
+  steps:
+    - [EC2 → TGW, "App VPC A Private subnet RT의 0.0.0.0/0 → TGW로, 인터넷행 트래픽이 같은 AZ의 TGW ENI를 거쳐 VPC attachment로 TGW에 들어갑니다."]
+    - [TGW → Security VPC, "App VPC A · B attachment에 연결된 Spoke RT의 0.0.0.0/0이 Security VPC attachment를 가리킵니다. appliance mode로 한 흐름의 양방향이 같은 AZ의 TGW ENI를 지납니다."]
+    - [TGW ENI → 방화벽, "Security VPC TGW subnet RT의 0.0.0.0/0 → 같은 AZ firewall endpoint. Network Firewall이 규칙에 따라 트래픽을 검사합니다."]
+    - [방화벽 → NAT, "검사를 통과한 트래픽은 Firewall subnet RT 0.0.0.0/0 → 같은 AZ NAT gateway로 가고, NAT가 출발지 주소를 퍼블릭 IP로 바꿉니다."]
+    - [NAT → IGW, "Public subnet RT 0.0.0.0/0 → IGW로 VPC를 나갑니다."]
+    - [IGW → Internet, "IGW가 NAT gateway의 퍼블릭 IP로 인터넷에 내보냅니다. 응답은 IGW → NAT → 10.0.0.0/8 → 같은 AZ 방화벽에서 다시 검사된 뒤 10.0.0.0/8 → TGW로 가고, Firewall RT의 10.1.0.0/16 → App VPC A로 EC2에 돌아옵니다."]

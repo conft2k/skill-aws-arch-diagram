@@ -1,0 +1,12 @@
+name: fr1
+mode: document
+cols: [c]
+rows: [{id: r, flow: true}]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud, pad_top: 80}
+nodes:
+  - {id: p, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Primary, in: vpc, row: r}
+  - {id: s, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Standby, in: vpc, row: r}
+edges:
+  - {e: "p -> s", shape: VHV, from_side: top, to_side: top}

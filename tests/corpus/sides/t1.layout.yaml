@@ -1,0 +1,13 @@
+name: t1
+mode: document
+cols: [c]
+rows: [r1, r2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+  - {id: sn, type: private, label: DB subnet, in: vpc}
+nodes:
+  - {id: p, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Primary, in: sn, at: [c, r1]}
+  - {id: s, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Standby, in: sn, at: [c, r2]}
+edges:
+  - {e: "p -> s", label: "sync", shape: HVH, from_side: right, to_side: right}

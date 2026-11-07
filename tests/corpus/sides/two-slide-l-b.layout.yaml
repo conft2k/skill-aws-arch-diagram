@@ -1,0 +1,14 @@
+name: two_slide_l
+mode: slide
+cols: [a, b]
+rows: [r]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: cloud}
+  - {id: sa, type: private, label: App subnet A, in: vpc}
+  - {id: sb, type: private, label: App subnet B, in: vpc}
+nodes:
+  - {id: p, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Primary, in: sa, at: [a, r]}
+  - {id: s, icon: resource/Amazon-Aurora_Amazon-RDS-Instance, label: Standby, in: sb, at: [b, r]}
+edges:
+  - {e: "p -> s", label: "replication", shape: VHV, from_side: bottom, to_side: bottom}

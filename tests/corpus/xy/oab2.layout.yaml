@@ -1,0 +1,10 @@
+name: oab2
+mode: slide
+cols: [a, b]
+rows: [r1, r2]
+nodes:
+  - {id: u, icon: resource/Users, label: Users, at: [a, r1]}
+  - {id: v, icon: resource/Users, label: Admins, at: [b, r2]}
+edges:
+  - {e: "u -> v", from_side: right, to_side: right, verb: manage}
+  - {e: "u -> v", from_side: bottom, to_side: bottom}

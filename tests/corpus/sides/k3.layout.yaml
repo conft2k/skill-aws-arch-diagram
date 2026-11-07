@@ -1,0 +1,15 @@
+name: k3
+mode: document
+cols: [a, b]
+rows: [az1, az2, az3]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+  - {id: sn, type: private, label: App subnet, in: vpc, per: [az2, az3]}
+nodes:
+  - {id: d, icon: service/AWS-Lambda, label: Dst, in: vpc, at: [a, az1]}
+  - {id: t, icon: service/AWS-Lambda, label: Side, in: vpc, at: [b, az1]}
+  - {id: w, icon: service/AWS-Lambda, label: Worker, in: sn, col: b}
+edges:
+  - {e: "t -> d"}
+  - {e: "w.* -> d", trunk: true, label: "SQL"}

@@ -1,0 +1,160 @@
+name: nfw-reference-architecture
+mode: document
+cols:
+- spoke
+- rtsp
+- tgw
+- rtfw
+- eni
+- fw
+- nat
+- igw
+- inet
+rows:
+- az1
+- main
+- az2
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: Region ap-northeast-2
+  in: cloud
+- id: vpc
+  type: vpc
+  label:
+    '1': VPC A
+    '2': VPC B
+  cidr:
+    '1': 10.1.0.0/16
+    '2': 10.2.0.0/16
+  in: region
+  per:
+  - az1
+  - az2
+- id: sn
+  type: private
+  label: Subnet
+  in: vpc
+- id: insp
+  type: vpc
+  label: Inspection VPC
+  cidr: 100.64.0.0/16
+  in: region
+- id: az
+  type: az
+  in: insp
+  per:
+  - az1
+  - az2
+- id: tgwsn
+  type: private
+  label: TGW subnet
+  in: az
+- id: fwsn
+  type: private
+  label: Firewall subnet
+  in: az
+- id: pubsn
+  type: public
+  label: Public subnet
+  in: az
+nodes:
+- id: ec2
+  icon: service/Amazon-EC2
+  label: EC2
+  in: sn
+  col: spoke
+- id: tgw
+  icon: service/AWS-Transit-Gateway
+  label: TGW
+  in: region
+  at:
+  - tgw
+  - main
+- id: rtfw
+  icon: resource/Amazon-Route-53_Route-Table
+  label: Firewall RT
+  sub: VPC A · B 전파
+  in: region
+  at:
+  - rtfw
+  - main
+- id: rtsp
+  icon: resource/Amazon-Route-53_Route-Table
+  label: Spoke RT
+  sub: 0.0.0.0/0 → 검사 VPC
+  in: region
+  at:
+  - rtsp
+  - main
+- id: eni
+  icon: resource/AWS-Transit-Gateway_Attachment
+  label: TGW ENI
+  sub: 0.0.0.0/0 → 같은 AZ 방화벽
+  in: tgwsn
+  col: eni
+- id: fwe
+  icon: resource/AWS-Network-Firewall_Endpoints
+  label: Firewall endpoint
+  sub:
+  - 0.0.0.0/0 → 같은 AZ NAT
+  - 10.0.0.0/8 → TGW
+  in: fwsn
+  col: fw
+- id: nat
+  icon: resource/Amazon-VPC_NAT-Gateway
+  label: NAT gateway
+  sub:
+  - 0.0.0.0/0 → IGW
+  - 10.0.0.0/8 → 같은 AZ 방화벽
+  in: pubsn
+  col: nat
+- id: nfw
+  icon: service/AWS-Network-Firewall
+  label: AWS Network Firewall
+  in: insp
+  at:
+  - fw
+  - main
+- id: igw
+  icon: resource/Amazon-VPC_Internet-Gateway
+  label: IGW
+  'on': insp
+  at:
+  - igw
+  - main
+- id: inet
+  icon: resource/Internet
+  label: Internet
+  at:
+  - inet
+  - main
+edges:
+- e: vpc.* <-> tgw
+  step: 1
+- e: tgw <-> eni.*
+  shape: VH
+  step: 2
+  step_at: start
+- e: eni.* <-> fwe.*
+  step: 3
+- e: fwe.* -> nat.*
+  step: 4
+- e: nat.* -> igw
+  trunk: true
+  step: 5
+- e: igw -> inet
+note:
+  steps:
+  - - VPC → TGW
+    - VPC A·B의 App 서브넷 RT가 0.0.0.0/0을 TGW로 보내, VPC 간 트래픽과 인터넷행 트래픽이 모두 TGW로 들어옵니다.
+  - - TGW → 검사 VPC
+    - Spoke VPC attachment에 연결된 Spoke RT의 0.0.0.0/0이 검사 VPC attachment를 가리킵니다. appliance mode로 한 흐름의 양방향이 같은 AZ를 지납니다.
+  - - TGW ENI → 방화벽
+    - TGW 서브넷 RT 0.0.0.0/0 → 같은 AZ 방화벽 엔드포인트. 검사를 통과한 VPC 간 트래픽은 10.0.0.0/8 → TGW로 돌아가고, Firewall RT가 목적지 VPC로 보냅니다.
+  - - 방화벽 → NAT
+    - 인터넷행 트래픽은 방화벽 서브넷 RT 0.0.0.0/0 → 같은 AZ NAT 게이트웨이로 가고, NAT가 출발지 주소를 퍼블릭 IP로 바꿉니다.
+  - - NAT → IGW
+    - 퍼블릭 서브넷 RT 0.0.0.0/0 → IGW로 인터넷에 나갑니다. 응답은 10.0.0.0/8 → 같은 AZ 방화벽을 거쳐 다시 검사된 뒤 VPC로 돌아옵니다.
