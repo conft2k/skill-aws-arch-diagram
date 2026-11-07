@@ -151,7 +151,8 @@ scripts/embed.py             bundle: 참조를 base64로 넣음; 모르는 참�
 scripts/svg2pptx.py          초안 -> 기본 도형으로 된 .pptx; 정확히 바꿀 수 없는 요소에서 실패
 scripts/render_pptx.py       덱의 슬라이드마다 PNG로 렌더
 scripts/check_layout.py      선이 라벨·아이콘을 지나는지, 라벨 겹침·간격, 캔버스 밖 글자,
-                             12px 미만 글자, 연결선 라벨로만 쓴 서비스 검사
+                             12px 미만 글자, 캔버스 밖으로 나가거나 양 끝이 있는 박스
+                             밖으로 돌아 나가는 연결선, 연결선 라벨로만 쓴 서비스 검사
 scripts/fetch_icons.py       고정한 AWS 아이콘 패키지를 받아 icons.json 만들기
 scripts/build_bundle.py      압축을 푼 아이콘 패키지를 icons.json으로 묶기
 scripts/macos_cairo.py       macOS(Apple Silicon)에서 Homebrew의 cairo를 찾게 함

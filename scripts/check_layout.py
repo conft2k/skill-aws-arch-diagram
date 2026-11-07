@@ -28,6 +28,14 @@ Reports, and exits with status 1 on any of them:
                    stuck on a bend or trunk junction)
   LINE HUGS BORDER a connector runs alongside (or on top of) a container border less
                    than 12px from it for more than 20px
+  LINE OFF CANVAS  a connector runs past (or on) the edge of the viewBox
+  LINE LEAVES BOX  a connector runs out of the innermost container that holds all of its
+                   ends (the AWS Cloud, a Region, a VPC) and back in — a detour around the
+                   outside, not a crossing. An end is the nearest node (icon and the labels
+                   under it) within 6px; one at a gateway sitting across a border belongs
+                   to neither side, and lines joined at a junction (a trunk and its
+                   branches, a bracket and its stem) count the ends of the whole net, so a
+                   line between nodes in different boxes is never flagged
   TITLE OFFSET     a container title not on its box's header row (baseline box.y + 18;
                    the 15px AWS Cloud title + 22)
   OUTSIDE CLOUD    a Direct Connect location, Internet or Site-to-Site VPN icon inside the
@@ -334,6 +342,119 @@ def container_rects(root):
     return out
 
 
+# A connector end this close to an icon's box is that icon's end.
+END_REACH = 6
+SIDES = ("left", "top", "right", "bottom")
+
+
+def beyond(run, box, strict):
+    """(segment, side, px) of the point of a connector (its segments, in order) farthest past
+    box's edge — past by more than 0.5px when strict, else on the edge or past it; None
+    when it stays inside."""
+    best = None
+    for s in run:
+        for k, side in enumerate(SIDES):
+            # how far past that side each end of the segment is; a run wholly past it wins a tie
+            d1, d2 = ((box[k] - pt[k % 2]) * (1 if k < 2 else -1) for pt in (s["p"], s["q"]))
+            d = max(d1, d2)
+            if (d > 0.5 if strict else d >= 0) and (best is None or (d, min(d1, d2)) > best[3]):
+                best = (s, side, round(d, 2), (d, min(d1, d2)))
+    return best[:3] if best else None
+
+
+def footprints(icons, texts):
+    """Each node icon (badges and junction dots aside) with its box grown over the labels
+    centered under it — the stack a connector end attaches to: [(icon, box)]."""
+    out = []
+    for i in icons:
+        if i["badge"]:
+            continue
+        x0, y0, x1, y1 = b = i["box"]
+        for t in texts:
+            if abs(t["cx"] - (x0 + x1) / 2) <= 3 and y1 < t["y"] <= y1 + 44:
+                b = union(b, t["box"])
+        out.append((i, b))
+    return out
+
+
+def end_icon(pt, feet):
+    """The node a connector end attaches to (the nearest footprint within END_REACH), or None."""
+    best = None
+    for i, (x0, y0, x1, y1) in feet:
+        d = math.hypot(max(x0 - pt[0], 0, pt[0] - x1), max(y0 - pt[1], 0, pt[1] - y1))
+        if d <= END_REACH and (best is None or d < best[0]):
+            best = (d, i)
+    return best[1] if best else None
+
+
+def straddles(b, r):
+    """Does box b sit across one of rect r's borders (a gateway on a VPC border)?"""
+    x0, y0, x1, y1 = r[0], r[1], r[0] + r[2], r[1] + r[3]
+    across_x = any(b[0] < v < b[2] for v in (x0, x1)) and b[1] < y1 and b[3] > y0
+    across_y = any(b[1] < v < b[3] for v in (y0, y1)) and b[0] < x1 and b[2] > x0
+    return across_x or across_y
+
+
+def shared_box(ends, rects, feet):
+    """The innermost container rect every one of a connector's (or a net's) ends is inside —
+    not on its border, nor at an icon that sits across its border — or None."""
+    owners = [end_icon(p, feet) for p in ends]
+    best = None
+    for r in rects:
+        x0, y0, x1, y1 = r[0], r[1], r[0] + r[2], r[1] + r[3]
+        if all(x0 + 0.5 < x < x1 - 0.5 and y0 + 0.5 < y < y1 - 0.5 for x, y in ends) \
+                and not any(i and straddles(i["box"], r) for i in owners) \
+                and (best is None or r[2] * r[3] < best[2] * best[3]):
+            best = r
+    return best
+
+
+def on_seg(pt, s, tol=1.5):
+    """Is point pt on segment s (within tol)?"""
+    (x1, y1), (x2, y2) = s["p"], s["q"]
+    dx, dy = x2 - x1, y2 - y1
+    t = max(0.0, min(1.0, ((pt[0] - x1) * dx + (pt[1] - y1) * dy) / (dx * dx + dy * dy or 1.0)))
+    return math.hypot(x1 + t * dx - pt[0], y1 + t * dy - pt[1]) <= tol
+
+
+def nets(paths, feet):
+    """Connectors joined where one's end sits on another's line (a trunk and its branches, a
+    bracket and its stem): [(the runs, the terminal ends — at an icon, or on no other line)]."""
+    runs = list(paths.values())
+    parent = list(range(len(runs)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    terms = []
+    for i, run in enumerate(runs):
+        for pt in (run[0]["p"], run[-1]["q"]):
+            # two edges out of one node share their first point: each ends at the node
+            hit = [] if end_icon(pt, feet) else [j for j, o in enumerate(runs)
+                                                  if j != i and any(on_seg(pt, s) for s in o)]
+            for j in hit:
+                parent[find(i)] = find(j)
+            if not hit:
+                terms.append((i, pt))
+    out = {}
+    for i, run in enumerate(runs):
+        out.setdefault(find(i), ([], []))[0].append(run)
+    for i, pt in terms:
+        out[find(i)][1].append(pt)
+    return list(out.values())
+
+
+def box_name(r, texts):
+    """A container rect named by its title (when it has one) and its coordinates."""
+    t = next((t for t in texts if t["header"] and any(abs(t["box"][0] - (r[0] + off)) <= 1 for off in (42, 32, 12))
+              and r[1] < t["y"] <= r[1] + 26), None)
+    where = f"({r[0]:g},{r[1]:g} {r[2]:g}×{r[3]:g})"
+    return f"{t['s']!r} {where}" if t else f"the box {where}"
+
+
 class Issue:
     """One reported problem: its report line, a key that names the elements involved (so a
     re-check can tell whether this problem is gone), and the items the hint needs."""
@@ -415,6 +536,35 @@ def run_checks(root):
                 add("LINE HUGS BORDER", f"LINE HUGS BORDER {fmt(s)} runs {where} the border {fmt(b)} — "
                     f"keep {HUG_CLEAR}px or more", [s, b], s=s, b=b, d=d)
                 break
+    # A connector stays on the canvas, and inside the innermost box that holds both of its
+    # ends: a route that runs out of the box it starts and ends in (past the AWS Cloud or
+    # Region border, or off the canvas) and back in is a detour, not a crossing.
+    paths = {}
+    for s in segs:
+        if s["kind"] == "connector":
+            paths.setdefault(id(s["el"]), []).append(s)
+    for run in paths.values():
+        if cw and ch:
+            past = beyond(run, (0.0, 0.0, cw, ch), strict=False)
+            if past:
+                s, side, d = past
+                where = f"{d:g}px past" if d > 0 else "on"
+                add("LINE OFF CANVAS", f"LINE OFF CANVAS connector {fmt(s)} runs {where} the {side} edge of the "
+                    f"{cw:g} × {ch:g} canvas — route it inside", [{"el": s["el"]}], s=s, run=run, side=side, d=d,
+                    r=None)
+    feet = footprints(icons, texts)
+    for runs, ends in nets(paths, feet):
+        r = shared_box(ends, rects, feet) if ends else None
+        if r is None:
+            continue
+        for run in runs:
+            past = beyond(run, (r[0], r[1], r[0] + r[2], r[1] + r[3]), strict=True)
+            if past:
+                s, side, d = past
+                whose = "both of its ends are" if len(runs) == 1 else f"every end of the {len(runs)} lines it joins is"
+                add("LINE LEAVES BOX", f"LINE LEAVES BOX connector {fmt(s)} runs {d:g}px out past the {side} border "
+                    f"of {box_name(r, texts)} and back in — {whose} inside that box; keep the route in it",
+                    [{"el": s["el"]}, r], s=s, run=run, side=side, d=d, r=r)
     for t in texts:
         if t["title"] and CIDR_IN.search(t["s"]):
             add("CIDR IN TITLE", f"CIDR IN TITLE   {t['s']!r} — put the CIDR on its own 12px {CIDR_COLOR.upper()} line "
@@ -1201,6 +1351,68 @@ class Advisor:
                 cands.append((abs(delta), edits, f"{text} ({where}, {HUG_CLEAR + extra}px from the border of "
                                                  f"{self.rdesc(b['el'])})"))
         return self.pick(iss.key, cands)
+
+    def bring_inside(self, iss, run, side, r):
+        """Move the runs of a connector that lie wholly past one side of the canvas (r None) or
+        of box r back inside it, together (one polyline edit)."""
+        cw, ch = self.canvas
+        box = (0.0, 0.0, cw, ch) if r is None else (r[0], r[1], r[0] + r[2], r[1] + r[3])
+        k = SIDES.index(side)
+        edge, inward, axis = box[k], (1 if k < 2 else -1), k % 2      # axis 0: x, 1: y
+        past = (lambda v: (edge - v) * inward >= 0) if r is None else (lambda v: (edge - v) * inward > 0.5)
+        out = [s for s in run if all(past(pt[axis]) for pt in (s["p"], s["q"]))
+               and abs(s["p"][axis] - s["q"][axis]) < 0.5]
+        what = (f"the {cw:g} × {ch:g} canvas" if r is None else self.rdesc(r[4]))
+        if not out:
+            return None, what
+        margins = (12, 16, 20, 24, 32, 40, 48) if r is None else tuple(HUG_CLEAR + e for e in (0, 4, 8, 12, 16, 24, 32))
+        el = out[0]["el"]
+        tag = el.tag.replace(NS, "")
+        cands = []
+        for m in margins:
+            target = edge + inward * m
+            if tag == "polyline":
+                pts = el.get("points", "")
+                for s in out:
+                    dv = target - s["p"][axis]
+                    pts = shift_points(pts, {s["i"], s["i"] + 1}, dv if axis == 0 else 0, dv if axis == 1 else 0)
+                edits = [("attr", el, "points", pts)]
+                _, text = self.move_run(out[0], *((target - out[0]["p"][0], 0) if axis == 0
+                                                 else (0, target - out[0]["p"][1])))
+            else:
+                dv = target - out[0]["p"][axis]
+                edits, text = self.move_run(out[0], *((dv, 0) if axis == 0 else (0, dv)))
+                if not edits:
+                    continue
+            more = f" (and its {len(out) - 1} other run{'s' if len(out) > 2 else ''} past that side)" if len(out) > 1 else ""
+            v = target - out[0]["off"][axis]
+            cands.append((m, edits, f"{text}{more} ({'xy'[axis]}={fnum(v)}, {m}px inside the {side} "
+                                    f"{'edge' if r is None else 'border'} of {what})"))
+        return cands, what
+
+    def h_line_off_canvas(self, iss, s, run, side, d, r):
+        cands, what = self.bring_inside(iss, run, side, None)
+        cw, ch = self.canvas
+        grow = (f" — or grow the viewBox {'width' if side == 'right' else 'height'} to "
+                f"{math.ceil((cw if side == 'right' else ch) + d + 16)} (and the white background rect)"
+                if side in ("right", "bottom") else "")
+        fallback = (f"route {self.sdesc(s)} inside {what}: give the edge a bend between its two ends instead of a "
+                    f"detour around the outside (in a layout spec: shape / bend_x / bend_y, or widen the gap "
+                    f"between the ends){grow}")
+        if not cands:
+            return Hint(fallback)
+        h = self.pick(iss.key, cands, fallback=fallback)
+        h.text += grow if grow and grow not in h.text else ""
+        return h
+
+    def h_line_leaves_box(self, iss, s, run, side, d, r):
+        cands, what = self.bring_inside(iss, run, side, r)
+        fallback = (f"route {self.sdesc(s)} inside {what}, where both of its ends are: a bend between them "
+                    "instead of a detour around the outside (in a layout spec: shape / bend_x / bend_y, or widen "
+                    "the gap between the ends)")
+        if not cands:
+            return Hint(fallback)
+        return self.pick(iss.key, cands, fallback=fallback)
 
     def h_cidr_in_title(self, iss, t):
         el = t["el"]

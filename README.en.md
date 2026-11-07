@@ -165,7 +165,8 @@ scripts/svg2pptx.py          drafts -> .pptx of native shapes; fails on anything
                              convert exactly
 scripts/render_pptx.py       render each slide of a deck to PNG
 scripts/check_layout.py      flag lines over labels/icons, label overlap and spacing,
-                             text off the canvas or < 12px, services written as
+                             text off the canvas or < 12px, connectors off the canvas
+                             or detouring out of their box, services written as
                              connector labels
 scripts/fetch_icons.py       download the pinned AWS icon package and build icons.json
 scripts/build_bundle.py      pack an extracted icon package into icons.json
