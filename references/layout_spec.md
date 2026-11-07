@@ -428,6 +428,9 @@ of the widest free corridor between two tracks of one axis). Examples: `"besg.1.
 `raw: [{layer: below|above, svg: '…'}]` adds an SVG fragment of the draft subset with
 `{expression}` placeholders — for a mark nothing above can say; prefer `sub` for text.
 `- {layer: above, svg: '<text x="{alb.cx}" y="{alb.label.y1+16}" font-size="12" text-anchor="middle" fill="#545B64">internet-facing</text>'}`
+Raw text without `font-size` starts at 16px and scales with the other fonts.
+A parent `<g font-size="…">` is flattened onto its text before checking/export, so
+inherited sizes and explicit overrides use the same multiplier.
 
 ## Running it and reading the output
 

@@ -83,6 +83,48 @@ def test_slide_enlarges_and_fixed_multiplier_does_not_retry(tmp_path):
             if t.tag.endswith("}text")} == {18, 21}
 
 
+@pytest.mark.parametrize("scale,expected", [("auto", 20), (1.5, 24), ("off", 16)])
+def test_raw_default_font_scales_with_nodes(tmp_path, scale, expected):
+    document = {**wide_spec(), "text_scale": scale,
+                "raw": [{"layer": "above", "svg": '<text x="400" y="60">Raw annotation</text>'}]}
+    sp = layout_spec.load(document)
+    result = layout.render_readable(sp, "wide.yaml", tmp_path / "round.svg")
+    texts = list(layout.CL.slide_texts(ET.fromstring(result[1])))
+    assert next(size for size, text in texts if text == "Raw annotation") == expected
+    assert not result[3]
+    if scale == "off":
+        assert result[1] == layout.render_checked(sp, "wide.yaml", tmp_path / "round.svg")[1]
+        assert '<text x="400" y="60">Raw annotation</text>' in result[1].decode()
+
+
+@pytest.mark.parametrize("scale,expected", [(1.5, [24, 24, 18]), ("off", [16, 16, 12])])
+def test_raw_explicit_and_nested_inherited_fonts(tmp_path, scale, expected):
+    fragment = ('<!-- 그대로 > 유지 -->'
+                '<g font-size="16"><g transform="translate(0,0)">'
+                '<text x="400" y="40">Inherited annotation</text>'
+                '<text x="400" y="70" font-size="16">Explicit annotation</text>'
+                '<g font-size="12"><text x="400" y="100" font-size="inherit">Nested annotation</text>'
+                '</g></g></g>')
+    sp = layout_spec.load({**wide_spec(), "text_scale": scale,
+                           "raw": [{"layer": "above", "svg": fragment}]})
+    result = layout.render_readable(sp, "wide.yaml", tmp_path / "round.svg")
+    root = ET.fromstring(result[1])
+    text_sizes = {text: size for size, text in layout.CL.slide_texts(root)}
+    assert [text_sizes[text] for text in ("Inherited annotation", "Explicit annotation", "Nested annotation")] == expected
+    assert "<!-- 그대로 > 유지 -->" in result[1].decode()
+    assert all("font-size" not in group.attrib for group in root.iter() if group.tag.endswith("}g"))
+    assert not result[3]
+
+
+def test_raw_font_transform_preserves_unrelated_bytes_and_rounds_each_pass():
+    source = '<g id="주석"><text x="400" y="60" font-size="12">한글 > text</text></g>'
+    assert layout.scale_raw_text(source, 1) == source
+    changed = layout.scale_raw_text(source, 3.24, (1.8, 1.8))
+    assert changed == '<g id="주석"><text x="400" y="60" font-size="40">한글 > text</text></g>'
+    quoted = '<text data-note="keep font-size=\'12\' > text" font-size=\'16\' x="400">Text</text>'
+    assert layout.scale_raw_text(quoted, 1.5) == quoted.replace("font-size='16'", "font-size='24'")
+
+
 @pytest.mark.parametrize("bad", [True, 0, -1, float("inf"), float("nan"), "large"])
 def test_reject_invalid_scale(bad):
     with pytest.raises(layout.M.SpecError, match="text_scale"):

@@ -51,6 +51,7 @@ import re
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+import xml.parsers.expat
 from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -200,6 +201,77 @@ def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place
 # raw fragments
 
 PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
+RAW_ATTRIBUTES = re.compile(rb'\s+([^\s=/>]+)\s*=\s*("[^"]*"|\'[^\']*\')')
+
+
+def scale_raw_text(svg: str, factor: float, steps=()) -> str:
+    """Materialize default/inherited text sizes and scale each original size once.
+
+    Flatten group font inheritance onto text so SVG, the checker and svg2pptx see
+    the same size. Byte edits preserve the rest of the fragment, including comments;
+    unscaled fragments without inheritance stay byte-identical.
+    """
+    prefix = f'<svg xmlns="{SVG_NS}">'.encode()
+    raw = svg.encode()
+    wrapped = prefix + raw + b"</svg>"
+    parser = xml.parsers.expat.ParserCreate()
+    stack, edits = [(16.0, False)], []   # svg2pptx's default text size
+
+    def start(name, attrs):
+        tag = name.rsplit(":", 1)[-1]
+        font, inherited = stack[-1]
+        declared = attrs.get("font-size")
+        valid = declared is None or declared == "inherit"
+        if declared is not None and declared != "inherit":
+            try:
+                value = float(declared)
+                valid = math.isfinite(value) and value >= 0
+                if valid:
+                    font = value
+            except ValueError:
+                pass
+        group_font = tag == "g" and declared is not None and valid
+        stack.append((font, inherited or group_font))
+        text_font = tag in ("text", "tspan") and valid and (
+            factor != 1 or inherited or declared == "inherit")
+        if not group_font and not text_font:
+            return
+        begin = parser.CurrentByteIndex
+        end, quote = begin, None
+        while end < len(wrapped):
+            char = wrapped[end]
+            if quote is not None:
+                if char == quote:
+                    quote = None
+            elif char in (34, 39):
+                quote = char
+            elif char == 62:
+                break
+            end += 1
+        opening = wrapped[begin:end + 1]
+        attr = next((m for m in RAW_ATTRIBUTES.finditer(opening) if m[1] == b"font-size"), None)
+        updated = opening
+        if group_font and attr:
+            updated = opening[:attr.start()] + opening[attr.end():]
+        if text_font:
+            size = layout_text.font_size(font, factor, steps) if font else 0
+            if attr:
+                quote_byte = attr[2][:1]
+                updated = opening[:attr.start(2)] + quote_byte + str(size).encode() + quote_byte + opening[attr.end(2):]
+            else:
+                at = len(updated) - (2 if updated.endswith(b"/>") else 1)
+                updated = updated[:at] + f' font-size="{size}"'.encode() + updated[at:]
+        edits.append((begin - len(prefix), end + 1 - len(prefix), updated))
+
+    parser.StartElementHandler = start
+    parser.EndElementHandler = lambda name: stack.pop()
+    try:
+        parser.Parse(wrapped, True)
+    except xml.parsers.expat.ExpatError:
+        return svg                    # raw_problems supplies the existing diagnostic
+    for begin, end, updated in reversed(edits):
+        raw = raw[:begin] + updated + raw[end:]
+    return raw.decode()
 
 
 def raw_elements(spec: Spec, geom: Geometry) -> Tuple[List[Element], List[str]]:
@@ -214,11 +286,7 @@ def raw_elements(spec: Spec, geom: Geometry) -> Tuple[List[Element], List[str]]:
             svg = PLACEHOLDER.sub(sub, r.svg)
         except (KeyError, ValueError, M.LayoutError) as err:
             raise M.SpecError([f"{r.src or f'raw[{i}]'}: placeholder {err}"])
-        if spec.font_factor != 1:
-            svg = re.sub(r'(font-size\s*=\s*["\'])([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)'
-                         r'(?:[eE][+-]?[0-9]+)?)(["\'])',
-                         lambda m: m[1] + str(layout_text.font_size(
-                             float(m[2]), spec.font_factor, spec.font_steps)) + m[3], svg)
+        svg = scale_raw_text(svg, spec.font_factor, spec.font_steps)
         bad = raw_problems(svg)
         if bad:
             raise M.SpecError([f"{r.src or f'raw[{i}]'}: {b}" for b in bad])
