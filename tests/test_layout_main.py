@@ -430,6 +430,36 @@ class ShapeMissResolve(unittest.TestCase):
         self.assertNotIn("SLIDE TOO SMALL", text)
         self.assertNotIn("check: ", text)
 
+    def test_doc_width_warning_beats_any_number_of_misses(self):
+        """Review f-gport: flowcol/r2-float-two in document mode with cloud pad_right 924. A
+        clean round under the width warning with two missed shapes (1780) is kept over the
+        clean round past it with none (1924): too wide is compared before the misses, not
+        added to them."""
+        yaml, loader = layout_spec._yaml_loader()
+        d = yaml.load((ROOT / "tests" / "corpus" / "flowcol" / "r2-float-two.layout.yaml")
+                      .read_text(encoding="utf-8"), Loader=loader)
+        d["mode"] = "document"
+        next(g for g in d["groups"] if g["id"] == "cloud")["pad_right"] = 924
+        real, rounds = layout.build, []
+
+        def build(*a, **kw):
+            b = real(*a, **kw)
+            rounds.append((b.geom.canvas_w, layout.problem_count(layout.problems_of(b.svg)[0]),
+                           layout.shape_misses(b)))
+            return b
+
+        with mock.patch.object(layout, "build", build):
+            rc, text, root = main_on(d)
+        # the trap is there: a clean round past the warning with fewer misses than a clean one under it
+        under = [r for r in rounds if r[0] <= K.DOC_WIDE and r[1] == 0]
+        over = [r for r in rounds if r[0] > K.DOC_WIDE and r[1] == 0]
+        self.assertTrue(under and over, rounds)
+        self.assertLess(min(r[2] for r in over), min(r[2] for r in under) - 1, rounds)
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        w = float(root.get("viewBox").split()[2])
+        self.assertLessEqual(w, K.DOC_WIDE, rounds)
+        self.assertEqual(w, min(under, key=lambda r: r[2])[0], rounds)
+        self.assertNotIn(f"(> {K.DOC_WIDE})", text)
 
 
 def row_spec(groups=True, **edge):

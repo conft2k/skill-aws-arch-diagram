@@ -309,7 +309,8 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   is not under the limit); layout.py's feedback widens the gap along that line where
   they part, so the fallback can take its planned shape, except a gap between two ports
   of one node, which no track sets. A feedback round that takes a document past the
-  1800px width warning only to redraw a missed shape is not kept.
+  1800px width warning to redraw missed shapes is not kept over a round under it with
+  no more check problems, however many shapes it redraws.
   For the instances of one `.*` line on one run, write `trunk: true` when they are meant
   to merge. Lines that meet one side of a group at one point (a group end takes the other
   end's coordinate where it faces the side, else the group's row / column center) are

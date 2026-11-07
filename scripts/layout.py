@@ -763,7 +763,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     extra: Dict[Tuple[str, str, str], Requirement] = {}
     skip: Dict[int, int] = {}
-    best = None                     # ((problems, shape misses + too wide), round, build, feedback reqs, skips)
+    best = None                     # ((problems, too wide, shape misses), round, build, feedback reqs, skips)
     place = None
     try:
         for rnd in range(MAX_ROUNDS + 1):
@@ -775,21 +775,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 break                   # a feedback requirement the spec cannot meet: keep the best round
             place = b.nb.place if b.nb.place != "none" else None
             if a.no_check:
-                best = ((0, 0), rnd, b, [], {})
+                best = ((0, 0, 0), rnd, b, [], {})
                 break
             probs = problems_of(b.svg)[0]
             # A clean check with an edge drawn in another shape still re-solves: the router's
             # fallback (a U around the outside) can pass the check and still be a detour.
             # A slide that comes out too small counts as a problem: a round that widened a gap
-            # for a miss alone must not trade a fitting slide for one under 10pt; nor a
-            # document under the width warning (DOC_WIDE) for one over it, which counts as a
-            # miss (the miss feedback widens every gap between an edge's ends). One text
-            # clash reported twice counts once (problem_count).
-            wide = spec.mode == "document" and b.geom.canvas_w > K.DOC_WIDE
-            score = (problem_count(probs) + (1 if slide_problem(spec, b.geom) else 0), shape_misses(b) + wide)
+            # for a miss alone must not trade a fitting slide for one under 10pt. One text
+            # clash reported twice counts once (problem_count). Nor may a round trade a document
+            # under the width warning (DOC_WIDE) for one over it for any number of missed shapes
+            # (the miss feedback widens every gap between an edge's ends): too wide is compared
+            # after the problems and before the misses.
+            wide = int(spec.mode == "document" and b.geom.canvas_w > K.DOC_WIDE)
+            score = (problem_count(probs) + (1 if slide_problem(spec, b.geom) else 0), wide, shape_misses(b))
             if best is None or score < best[0]:
                 best = (score, rnd, b, list(extra.values()), dict(skip))
-            if score == (0, 0) or rnd == MAX_ROUNDS:
+            if score == (0, 0, 0) or rnd == MAX_ROUNDS:
                 break
             if not feedback(b, probs, extra, skip):
                 break
