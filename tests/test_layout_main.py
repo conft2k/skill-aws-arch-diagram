@@ -300,6 +300,54 @@ class Feedback(unittest.TestCase):
                     self.assertFalse(layout.feedback(b, clipped, extra, {}))
                     self.assertEqual(extra, {})
 
+    def header_baseline(self, case="t7-xyref"):
+        spec = layout_spec.load(ROOT / f"tests/corpus/flowcol/{case}.layout.yaml", mode="slide")
+        extra, skip = {}, {}
+        for _ in range(layout.MAX_ROUNDS + 1):
+            b = layout.build(spec, list(extra.values()), skip, None, "t7")
+            probs = layout.problems_of(b.svg)[0]
+            if any(p.iss.kind == "LINE IN HEADER" for p in probs):
+                return spec, b, extra
+            layout.feedback(b, probs, extra, skip)
+        self.fail("the retained baseline should expose B2")
+
+    def test_header_feedback_routes_before_growing_geometry(self):
+        spec, b, baseline = self.header_baseline("r5-mid-bottom")
+        probs = layout.problems_of(b.svg)[0]
+        header, = [p for p in probs if p.iss.kind == "LINE IN HEADER"]
+        extra, skip, avoid = dict(baseline), {}, set()
+        self.assertTrue(layout.feedback(b, [header], extra, skip, avoid))
+        self.assertEqual((extra, skip, avoid), (baseline, {}, {3}))
+        fixed = layout.build(spec, list(extra.values()), skip, None, "t7", avoid_headers=avoid)
+        kinds = [p.iss.kind for p in layout.problems_of(fixed.svg)[0]]
+        self.assertNotIn("LINE IN HEADER", kinds)
+        self.assertNotIn("LINE HUGS BORDER", kinds)
+        self.assertEqual((b.geom.canvas_w, b.geom.canvas_h), (fixed.geom.canvas_w, fixed.geom.canvas_h))
+        self.assertGreaterEqual(layout.slide_text_pt(spec, fixed.svg)[0], 10)
+        self.assertEqual(fixed.svg, layout.build(spec, list(extra.values()), skip, None, "t7", avoid_headers=avoid).svg)
+
+    def test_header_feedback_requires_room_when_routing_still_crosses(self):
+        spec, b, _ = self.header_baseline()
+        header, = [p for p in layout.problems_of(b.svg)[0] if p.iss.kind == "LINE IN HEADER"]
+        extra = {}
+        self.assertTrue(layout.feedback(b, [header], extra, {}, {3}))
+        req, = extra.values()
+        self.assertEqual((req.axis, req.a, req.b, req.owner),
+                         ("x", "group:appsn.2.L", "node:ec2.2", "edge:3"))
+        self.assertAlmostEqual(req.d, 175)
+
+    def test_header_feedback_in_cli_is_deterministic(self):
+        path = ROOT / "tests/corpus/flowcol/t7-xyref.layout.yaml"
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            out = Path(tmp) / "t7.svg"
+            # The input already has a KMS/Users clash; header repair must not add others.
+            layout.main([str(path), "--mode", "slide", "-o", str(out)])
+            first = out.read_bytes()
+            layout.main([str(path), "--mode", "slide", "-o", str(out)])
+            self.assertEqual(out.read_bytes(), first)
+        kinds = [i.kind for i in CL.run_checks(ET.fromstring(first))]
+        self.assertEqual(sorted(kinds), ["TEXT NEAR ICON", "TEXT OVERLAP"])
+
     def test_bracket(self):
         spec, b = built("nfw-reference-architecture")
         g = b.geom
@@ -1027,15 +1075,17 @@ class XyMoved(unittest.TestCase):
     past the canvas margin) is moved to the nearest center that meets it, with a warning
     saying from where to where and why; a sibling it then lands on is kept apart from it;
     a column only an xy names gets a node's room. The three corpus specs the solve used to
-    refuse as contradictory draw clean in every mode."""
+    refuse as contradictory draw in every mode. r3-xy-30's slide keeps its reported
+    header crossing when opening room would collide with the pinned KMS."""
 
     def test_corpus_cases_draw_clean(self):
         for case in ("xy/t-grp", "xy/xy-grp", "flowcol/r3-xy-30"):
             for mode, more in XY_MODES:
                 with self.subTest(case=case, mode=mode, more=more):
                     rc, text, kinds = main_file(CORPUS / f"{case}.layout.yaml", mode, *more)
-                    self.assertEqual(rc, 0, text)
-                    self.assertEqual(kinds, [], text)
+                    expected = ["LINE IN HEADER"] if case == "flowcol/r3-xy-30" and mode == "slide" else []
+                    self.assertEqual(rc, bool(expected), text)
+                    self.assertEqual(kinds, expected, text)
                     self.assertNotIn("contradictory", text)
 
     def test_label_room_moves_it_up_and_its_column_gets_room(self):
@@ -1293,14 +1343,17 @@ class Lanes(unittest.TestCase):
         as the dashed line); now it takes a port of its own, PORT_PITCH toward ALB. The UHVH
         stays only while the round that widens for the HVH (548 high) would take the slide's
         smallest text under 10pt: a 12px label on igw -> alb here; with 14px text the
-        smallest, that round fits (11.5pt) and draws the HVH asked for."""
+        smallest, that round fits (11.5pt). Its HVH crosses the subnet header band, so
+        header feedback keeps a clean UHVH at the same canvas size."""
         for align in ("bottom", "top"):
             with self.subTest(align=align, smallest="14px"):
                 rc, text, data = run_main(lanes_spec(align))
                 self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
                 self.assertIn("the smallest text (14px) → 11.5pt (OK ≥ 10)", text)
-                self.assertNotIn("drew UHVH instead of HVH", text)
+                self.assertIn("drew UHVH instead of HVH", text)
                 self.assertEqual(len(edge_points(data, 3)), 4)
+                self.assertNotIn("LINE IN HEADER", text)
+                self.assertNotIn("LINE HUGS BORDER", text)
             with self.subTest(align=align, smallest="12px"):
                 d = lanes_spec(align)
                 d["edges"][1]["label"] = "HTTPS"

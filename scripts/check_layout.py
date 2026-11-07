@@ -33,6 +33,8 @@ Reports, and exits with status 1 on any of them:
                    often a route squeezed flat)
   LINE HUGS BORDER a connector runs alongside (or on top of) a container border less
                    than 12px from it for more than 20px
+  LINE IN HEADER  a connector passes through a group's badge, title and CIDR band,
+                   including the gaps between them
   LINE ON LINE     two connectors run on top of each other (on one line, or 2px apart or
                    less) for more than 8px: two flows read as one line that splits
                    unannounced, and out-of-phase dashes look solid. Lines joined at a
@@ -950,6 +952,87 @@ def line_hugs(segs, masks):
     return out
 
 
+def group_owners(root):
+    """Element id -> enclosing named <g> id, as layout.py drafts use for ownership."""
+    owner = {}
+    for g in root.iter(NS + "g"):
+        gid = g.get("id")
+        if gid:
+            for el in g.iter():
+                owner.setdefault(id(el), gid)
+    return owner
+
+
+def header_band(left, top, marks):
+    """The box from a group's top-left border to the ends of its header marks."""
+    return (left, top, max(b[2] for _, b in marks), max(b[3] for _, b in marks))
+
+
+def header_bands(rects, icons, texts, owner):
+    """[(group id, container rect, band, [(badge/title/CIDR line, box)])].
+
+    Only the group's own marks count. A plain group with no marks has no band;
+    CIDR lines count regardless of address family or whether a title is present.
+    """
+    out = []
+    for r in rects:
+        gid = owner.get(id(r[4]), "")
+        if not gid.startswith("group:") or len(gid.split(":")) != 2:
+            continue
+        marks = [("badge", i["box"]) for i in icons
+                 if i["badge"] and not i.get("dot") and owner.get(id(i["el"])) == gid][:1]
+        ts = [t for t in texts if owner.get(id(t["el"])) == gid]
+        marks += [("title", t["box"]) for t in ts if t["header"]][:1]
+        marks += [("CIDR line", t["box"]) for t in ts if not t["header"]][:1]
+        if marks:
+            out.append((gid, r, header_band(r[0], r[1], marks), marks))
+    return out
+
+
+def lines_in_headers(segs, masks, bands, owner):
+    """B2 / LINE IN HEADER: one visible connector piece per connector owner and group.
+
+    The band's boundary has the existing B2 0.5px tolerance. Borders themselves and
+    pieces hidden by a later mask do not count. Return (segment, rect, band, location).
+    """
+    out = []
+    path_order = {id(s["el"]): j for j, s in enumerate(segs)}
+    for gid, r, band, marks in bands:
+        hit = {}
+        for s in segs:
+            if s["kind"] != "connector" or not segment_in_header(s, band, masks):
+                continue
+            inner = shrink(band, 0.5)
+            sb = seg_box(s)
+            part = (max(sb[0], inner[0]), max(sb[1], inner[1]),
+                    min(sb[2], inner[2]), min(sb[3], inner[3]))
+            pid = id(s["el"])
+            key = (owner.get(pid, ""), 0 if pid in owner else path_order[pid])
+            hit.setdefault(key, (s, part))
+        box = dict(marks)
+        for _, (s, part) in sorted(hit.items()):
+            over = [w for w, b in marks if seg_hits_box(s["p"], s["q"], b)]
+            if over:
+                how = f"over its {' and '.join(over)}"
+            elif "badge" in box and "title" in box and box["badge"][2] <= part[0] and part[2] <= box["title"][0]:
+                how = "between its badge and title"
+            else:
+                how = "beside its " + " and ".join(w for w, _ in marks)
+            out.append((s, r, band, how))
+    return out
+
+
+def segment_in_header(s, band, masks=()):
+    """Whether a piece crosses the visible interior of a header band (B2 tolerance)."""
+    inner = shrink(band, 0.5)
+    if not seg_hits_box(s["p"], s["q"], inner):
+        return False
+    sb = seg_box(s)
+    part = (max(sb[0], inner[0]), max(sb[1], inner[1]),
+            min(sb[2], inner[2]), min(sb[3], inner[3]))
+    return not masked(part, s.get("o", 0), masks)
+
+
 def open_ends(paths, feet, rects, texts):
     """The connector ends (paths: id(element) -> its segments) that touch nothing — no node,
     no other line, no container border, no label its arrowhead points into — as
@@ -1082,6 +1165,17 @@ def run_checks(root):
         where = "on top of" if d == 0 else f"{d:g}px from"
         add("LINE HUGS BORDER", f"LINE HUGS BORDER {fmt(s)} runs {where} the border {fmt(b)} — "
             f"keep {HUG_CLEAR}px or more", [s, b], s=s, b=b, d=d)
+    owner = group_owners(root)
+    for s, r, band, how in lines_in_headers(segs, masks, header_bands(rects, icons, texts, owner), owner):
+        vertical = abs(s["p"][0] - s["q"][0]) < 0.5
+        i = 0 if vertical else 1
+        need = band[i + 2] + LINE_CLEAR - min(s["p"][i], s["q"][i])
+        direction = "right" if vertical else "down"
+        gid = owner[id(r[4])]
+        add("LINE IN HEADER", f"LINE IN HEADER {fmt(s)} passes through {gid}'s header band {how} "
+            f"(band {fnum(band[0])},{fnum(band[1])}–{fnum(band[2])},{fnum(band[3])}) — "
+            f"move this run {direction} {fnum(need)}px to clear the header by {LINE_CLEAR}px",
+            [s, r], s=s, r=r, band=band, how=how)
     # A connector stays on the canvas, and inside the innermost box that holds both of its
     # ends: a route that runs out of the box it starts and ends in (past the AWS Cloud or
     # Region border, or off the canvas) and back in is a detour, not a crossing.
@@ -2014,6 +2108,18 @@ class Advisor:
                 where = f"{'x' if vertical else 'y'}={fnum(target - (s['off'][0] if vertical else s['off'][1]))}"
                 cands.append((abs(delta), edits, f"{text} ({where}, {HUG_CLEAR + extra}px from the border of "
                                                  f"{self.rdesc(b['el'])})"))
+        return self.pick(iss.key, cands)
+
+    def h_line_in_header(self, iss, s, r, band, how):
+        vertical = abs(s["p"][0] - s["q"][0]) < 0.5
+        i = 0 if vertical else 1
+        cur = s["p"][i]
+        cands = []
+        for target in (band[i + 2] + LINE_CLEAR, band[i] - HUG_CLEAR):
+            delta = target - cur
+            edits, text = self.move_run(s, delta if vertical else 0, 0 if vertical else delta)
+            if edits:
+                cands.append((abs(delta), edits, text + f" (outside {self.rdesc(r[4])}'s header band)"))
         return self.pick(iss.key, cands)
 
     def h_loose_end(self, iss, s, pt):

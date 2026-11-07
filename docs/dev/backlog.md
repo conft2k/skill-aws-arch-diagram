@@ -30,10 +30,13 @@
 2. **3단계: 경우별 휴리스틱 제거.**
    - 대상은 `rules-design.md` §3 끝의 Removable later 목록입니다.
    - 휴리스틱 하나당 커밋 하나로 지우고, 지울 때마다 corpus 판정과 검사 건수가 같거나 좋아야 합니다.
-3. **R-border B2를 check_layout에도 넣기.**
-   - B2는 선이 그룹 머리띠(아이콘·제목·CIDR 줄)를 지나는 경우입니다.
-   - 지금은 rules.py만 보고합니다. corpus 슬라이드 59건(주로 x=308에서 App subnet 아이콘과 제목 사이)은 check_layout에 넣어야 엔진이 고칩니다.
-   - 이 중 11건은 실제 글자 크기 판정으로 요청한 HVH 선이 그려지면서 생겼습니다(r5-mid-*, r6-flowrow-bottom, r7-*, t2-cloud-overlap, t4-*, merge-vfan). 같은 케이스의 다른 모드에 원래 있던 유형입니다.
+3. **R-border B2의 잔여 경로 개선.**
+   - `b2-check`에서 공통 판정을 check_layout으로 옮겨 `LINE IN HEADER`로 보고하고,
+     routing 장애물·공간 요구 제약을 feedback에 연결했습니다. corpus B2는 63→6건,
+     기존 check 코드와 다른 규칙 위반 수는 동일하고 새 <10pt run은 없습니다.
+   - 남은 입력: `flowcol/r3-xy-30`, `twin/sub`, `twin/three`의 slide/slide-no-title.
+     고정 KMS와 새 테두리 충돌, ASG overlay 멤버십의 공간 제약이 남습니다.
+   - 판정·변경 draft·검증·PNG·재사용 JSON은 [`b2-check.md`](b2-check.md)에 있습니다.
 4. **저장소 전체 Codex 재리뷰(`CODE_REVIEW-2.md`).**
    - 첫 리뷰의 R1~R7은 모두 고쳤습니다.
    - 레이아웃 엔진 바깥 부분(export, PPTX, 아이콘, spec 로더, 문서)은 지금 바로 리뷰할 수 있습니다.

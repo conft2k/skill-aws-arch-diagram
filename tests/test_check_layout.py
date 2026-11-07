@@ -69,6 +69,55 @@ class ConnectorLabelNearLine(unittest.TestCase):
         self.assertEqual(msgs, [])
 
 
+class ConnectorInHeader(unittest.TestCase):
+    HEADER = ('<g id="group:sn"><rect x="100" y="100" width="300" height="180" fill="none" '
+              'stroke="#00A4A6"/><image href="bundle:group/Private-subnet_32" x="100" y="100" '
+              'width="24" height="24"/><text x="132" y="118" font-size="14" font-weight="600">'
+              'App subnet</text><text x="132" y="134" font-size="12">2001:db8::/64</text></g>')
+
+    def hits(self, *parts):
+        return [i for i in CL.run_checks(svg(self.HEADER, *parts)) if i.kind == "LINE IN HEADER"]
+
+    def test_band_boundaries_use_the_existing_half_pixel_tolerance(self):
+        # The CIDR descender ends at 137, so the tested interior ends at 136.5.
+        for y, hit in ((100.5, False), (100.501, True), (136.499, True),
+                       (136.5, False), (137, False)):
+            with self.subTest(y=y):
+                self.assertEqual(bool(self.hits(LINE.format(x1=90, y1=y, x2=390, y2=y))), hit)
+        for x, hit in ((100, False), (100.5, False), (100.501, True)):
+            with self.subTest(x=x):
+                self.assertEqual(bool(self.hits(LINE.format(x1=x, y1=80, x2=x, y2=180))), hit)
+
+    def test_message_names_the_gap_and_the_move(self):
+        line = LINE.format(x1=126, y1=80, x2=126, y2=180)
+        iss, = self.hits(line)
+        self.assertIn("group:sn's header band between its badge and title", iss.msg)
+        self.assertRegex(iss.msg, r"move this run right [\d.]+px")
+        adv = CL.Advisor(svg(self.HEADER, line), engine=True)
+        hint = adv.hint(next(i for i in adv.issues if i.kind == "LINE IN HEADER"))
+        self.assertTrue(hint.text)
+        self.assertFalse(hint.auto)
+
+    def test_one_hit_per_edge_and_group_and_later_mask(self):
+        lines = (f'<g id="edge:3">{LINE.format(x1=126, y1=80, x2=126, y2=180)}'
+                 f'{LINE.format(x1=128, y1=80, x2=128, y2=180)}</g>')
+        self.assertEqual(len(self.hits(lines)), 1)
+        mask = '<rect x="125" y="100" width="4" height="38" fill="#FFFFFF"/>'
+        self.assertEqual(self.hits(lines, mask), [])
+        self.assertEqual(len(self.hits(mask, lines)), 1)
+
+    def test_translated_groups_use_the_drawn_band(self):
+        root = svg(f'<g transform="translate(50,20)">{self.HEADER}</g>',
+                   LINE.format(x1=176, y1=100, x2=176, y2=200))
+        iss, = [i for i in CL.run_checks(root) if i.kind == "LINE IN HEADER"]
+        self.assertEqual(iss.ctx["band"][:2], (150, 120))
+
+    def test_unowned_connectors_keep_document_order(self):
+        parts = [LINE.format(x1=x, y1=80, x2=x, y2=180) for x in (128, 126, 130)]
+        for _ in range(3):
+            self.assertEqual([i.ctx["s"]["p"][0] for i in self.hits(*parts)], [128, 126, 130])
+
+
 ICON = '<image href="bundle:service/AWS-Lambda" x="{x}" y="{y}" width="48" height="48"/>'
 POLY = '<polyline points="{pts}" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>'
 BOX = '<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="none" stroke="#232F3E" stroke-width="2"/>'

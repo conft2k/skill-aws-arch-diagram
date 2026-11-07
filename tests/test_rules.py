@@ -358,6 +358,11 @@ def subnet(gid, x, y, w, h, title="App subnet"):
             f'{title}</text></g>')
 
 
+def bands(*parts):
+    d = rules.Drawn.parse(svg(*parts))
+    return rules.CL.header_bands(d.rects, d.icons, d.texts, d.owner)
+
+
 class BorderRules(unittest.TestCase):
     """R-border (user decision 2026-11-07, rules-design §6, hug.png)."""
 
@@ -382,7 +387,7 @@ class BorderRules(unittest.TestCase):
         # runs from x = 282 to the title's end, y = 390 to the header's bottom (414)
         sn = subnet("appsn", 282, 390, 124, 106)
         d = rules.Drawn.parse(svg(sn))
-        (gid, band, marks), = rules.header_bands(d)
+        (gid, _, band, marks), = rules.CL.header_bands(d.rects, d.icons, d.texts, d.owner)
         self.assertEqual((gid, band[:2], band[3]), ("group:appsn", (282, 390), 414))
         right = band[2]
         # flowcol/t7-xyref slide: a line down x = 308 between the badge and the title
@@ -390,8 +395,9 @@ class BorderRules(unittest.TestCase):
         got = codes(self.run_border(sn, between), "B2")
         self.assertEqual([v.owners for v in got], [("edge:3", "group:appsn")])
         self.assertIn("between its badge and title", got[0].message)
-        # … which check_layout misses: no line over / near the badge or the title
+        # check_layout reports the band even in the gap between the badge and title
         cl = {i.kind for i in rules.CL.run_checks(rules.ET.fromstring(svg(sn, between)))}
+        self.assertIn("LINE IN HEADER", cl)
         self.assertFalse(cl & {"LINE OVER ICON", "LINE OVER TEXT", "LINE NEAR TEXT"}, cl)
         # inside the band / outside it, on x (past the title's end) and on y (under the header)
         for pts, hit in (([(right - 1, 300), (right - 1, 450)], True), ([(right + 1, 300), (right + 1, 450)], False),
@@ -400,10 +406,13 @@ class BorderRules(unittest.TestCase):
             with self.subTest(pts=pts):
                 got = codes(self.run_border(sn, edge(0, pts)), "B2")
                 self.assertEqual([v.owners for v in got], [("edge:0", "group:appsn")] if hit else [])
+                cl = [i for i in rules.CL.run_checks(rules.ET.fromstring(svg(sn, edge(0, pts))))
+                      if i.kind == "LINE IN HEADER"]
+                self.assertEqual(len(cl), len(got))
         over = codes(self.run_border(sn, edge(0, [(330, 300), (330, 450)])), "B2")
         self.assertIn("over its title", over[0].message)
         # a box with neither badge nor title has no band
-        self.assertEqual(rules.header_bands(rules.Drawn.parse(svg(group("g", 100, 100, 200, 200)))), [])
+        self.assertEqual(bands(group("g", 100, 100, 200, 200)), [])
 
     def test_b2_cidr_line_any_family_with_or_without_title(self):
         # the group's own CIDR line (what its <g> draws, not a pattern) is in the band: IPv4,
@@ -415,7 +424,7 @@ class BorderRules(unittest.TestCase):
                     f'fill="#232F3E">{cidr}</text></g>')
         for cidr, title in (("10.0.0.0/24", True), ("2001:db8:1::/64", True), ("2001:db8:1::/64", False)):
             with self.subTest(cidr=cidr, title=title):
-                (_, band, marks), = rules.header_bands(rules.Drawn.parse(svg(vpc(cidr, title))))
+                (_, _, band, marks), = bands(vpc(cidr, title))
                 self.assertIn("CIDR line", dict(marks))
                 self.assertEqual(band[3], 137)              # the CIDR glyph bottom: 134 + 0.25 · 12
                 got = codes(self.run_border(vpc(cidr, title), edge(0, [(90, 136), (420, 136)])), "B2")

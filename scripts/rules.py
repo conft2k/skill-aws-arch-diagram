@@ -48,8 +48,8 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            the end of what its <g> draws — badge, title, CIDR line — top border to their bottom),
            most often between the badge and the title, where check_layout's LINE OVER ICON,
            LINE OVER TEXT and LINE NEAR TEXT do not reach (flowcol/t7-xyref slide: ALB →
-           AZ2 EC2 at x=308 between the App subnet's badge and its title). B2 is judged here
-           only: check_layout does not report it, so the engine's feedback does not move it.
+           AZ2 EC2 at x=308 between the App subnet's badge and its title). Both predicates
+           come from check_layout, which reports B2 as LINE IN HEADER for engine feedback.
   R-fit    a slide's smallest drawn text comes out at ≥ K.SLIDE_MIN_PT (cost: the points short).
 
 User decisions (2026-11-07, rules-design §6, after the tgw / nlb-mtls / latest2 cases): the
@@ -129,12 +129,7 @@ class Drawn:
     def __init__(self, root: ET.Element):
         self.root = root
         self.texts, self.segs, self.masks, self.icons, self.canvas = CL.collect(root)
-        owner: Dict[int, str] = {}
-        for g in root.iter(CL.NS + "g"):
-            gid = g.get("id")
-            if gid:
-                for el in g.iter():
-                    owner.setdefault(id(el), gid)
+        owner = CL.group_owners(root)
         self.owner = owner
         self.paths: Dict[int, List[dict]] = {}
         for s in self.segs:
@@ -779,38 +774,6 @@ def label_rules(spec, d: Drawn) -> List[Violation]:
 # =======================================================================================
 # R-border
 
-def header_bands(d: Drawn) -> List[Tuple[str, BoxT, List[Tuple[str, BoxT]]]]:
-    """Each group's header band: [(group id, band, [(what, box)] of its badge, title and
-    CIDR line)]. The header is what the group's own <g id="group:…"> draws besides its
-    border: the badge image, the bold title and the regular CIDR line (any address family,
-    with or without a title). The band runs from the box's left edge to the right end of
-    those, from its top border to their bottom. A group drawing none has no band."""
-    out = []
-    for r in d.rects:
-        gid = d.owner.get(id(r[4]), "")
-        kind, ref, part = _split(gid)
-        if kind != "group" or part:
-            continue
-        marks = [("badge", i["box"]) for i in d.icons
-                 if i["badge"] and not i.get("dot") and d.owner.get(id(i["el"])) == gid][:1]
-        texts = [t for t in d.texts if d.owner.get(id(t["el"])) == gid]
-        marks += [("title", t["box"]) for t in texts if t["header"]][:1]
-        marks += [("CIDR line", t["box"]) for t in texts if not t["header"]][:1]
-        if not marks:
-            continue
-        band = (r[0], r[1], max(b[2] for _, b in marks), max(b[3] for _, b in marks))
-        out.append((gid, band, marks))
-    return out
-
-
-def _clip(s: dict, b: BoxT) -> Optional[BoxT]:
-    """The box of the part of a piece inside box b's interior, or None."""
-    if not CL.seg_hits_box(s["p"], s["q"], b):
-        return None
-    sb = CL.seg_box(s)
-    return (max(sb[0], b[0]), max(sb[1], b[1]), min(sb[2], b[2]), min(sb[3], b[3]))
-
-
 def border_rules(d: Drawn) -> List[Violation]:
     out = []
     # B1: check_layout's LINE HUGS BORDER predicate, once per connector and border owner
@@ -823,26 +786,12 @@ def border_rules(d: Drawn) -> List[Violation]:
         where = "on top of" if dd == 0 else f"{_f(dd)}px from"
         out.append(Violation("R-border", (a, g), f"B1 {a} runs {where} {g}'s border ({CL.fmt(s)} / {CL.fmt(b)}, "
                              f"< {K.HUG_CLEAR}px): the line reads as the border", K.HUG_CLEAR - dd, code="B1"))
-    # B2: a piece through a group's header band (its edges themselves: a border, not the band)
-    for g, band, marks in header_bands(d):
-        hit: Dict[str, Tuple[dict, BoxT]] = {}
-        for pid, run in d.paths.items():
-            for s in run:
-                part = _clip(s, CL.shrink(band, STRAIGHT))
-                if part is None or CL.masked(part, s["o"], d.masks):
-                    continue
-                hit.setdefault(d.eid(pid), (s, part))
-        box = dict(marks)
-        for a, (s, part) in sorted(hit.items()):
-            over = [w for w, b in marks if CL.seg_hits_box(s["p"], s["q"], b)]
-            if over:            # check_layout's LINE OVER ICON / TEXT too
-                how = f"over its {' and '.join(over)}"
-            elif "badge" in box and "title" in box and box["badge"][2] <= part[0] and part[2] <= box["title"][0]:
-                how = "between its badge and title"
-            else:
-                how = "beside its " + " and ".join(w for w, _ in marks)
-            out.append(Violation("R-border", (a, g), f"B2 {a} passes through {g}'s header band {CL.fmt(s)} {how} "
-                                 f"(band {_f(band[0])},{_f(band[1])}–{_f(band[2])},{_f(band[3])})", 1.0, code="B2"))
+    # B2: the same visible pieces and bands as check_layout's LINE IN HEADER.
+    bands = CL.header_bands(d.rects, d.icons, d.texts, d.owner)
+    for s, r, band, how in CL.lines_in_headers(d.segs, d.masks, bands, d.owner):
+        a, g = d.eid(id(s["el"])), d.owner[id(r[4])]
+        out.append(Violation("R-border", (a, g), f"B2 {a} passes through {g}'s header band {CL.fmt(s)} {how} "
+                             f"(band {_f(band[0])},{_f(band[1])}–{_f(band[2])},{_f(band[3])})", 1.0, code="B2"))
     return out
 
 

@@ -72,3 +72,9 @@ Run time (budget, caching, pruning); false verdicts (report-only first, corpus t
 - Border hug (saw hug.png): a line running along a group border closer than 12px (check_layout LINE HUGS BORDER)
   becomes a tier-0 rule (R-border) avoided first in step 2; also flag a line crossing a group's header band
   (between its icon and title), which check_layout misses today.
+
+Implementation update (`b2-check`, 2026-11-07): B2 now shares check_layout's public
+`header_bands` / `lines_in_headers` predicates and reports `LINE IN HEADER`. Feedback
+repairs the retained draft's remaining B2 with header routing obstacles, then wall-to-end
+space requirements, keeping other check/rule counts and fitting slides from regressing.
+Corpus B2 is 63→6; [validation and remaining cases](b2-check.md).

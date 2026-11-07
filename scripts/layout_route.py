@@ -1,7 +1,7 @@
 """Edge routing for the layout engine (W3): shapes, the space routes need, lines, labels, badges.
 
     plan(spec) -> [Requirement]                  space the routes need (Spec only)
-    draw(spec, geom, skip=None) -> ([Element], [str])   lines, labels, badges on a solved Geometry
+    draw(spec, geom, skip=None, avoid_headers=None) -> ([Element], [str])
     shapes(spec) -> {edge n: shape}              the rule-based shape choice plan() and draw() share
     same_side_problems(spec) -> [(where, msg)]   from_side = to_side lines no shape can draw (W1 rejects)
 
@@ -61,6 +61,9 @@ arrow_target (48 / 20), else the middle of the free stretch nearest the target. 
 candidate is tested with check_layout's own seg_hits_box against icons, labels and
 borders (LINE OVER ICON/TEXT, LINE NEAR TEXT, LINE HUGS BORDER, SHORT ARROW); edges that share a spec line or a node
 side try to share one bend. skip={n: k} takes edge n's k-th clean candidate instead.
+Feedback's avoid_headers set marks edges whose remaining header crossings must clear
+the whole badge/title/CIDR band, including the gaps. Their bend search blocks the band,
+and their candidate checks use check_layout's shared B2 predicate.
 Lanes: members of such a group whose legs would run over each other at the shared bend
 (their spans along the leg overlap by more than K.ON_LINE_RUN; the instances of one
 `trunk` line merge on purpose) each take a lane LANE_PITCH (12) apart round the bend
@@ -935,6 +938,8 @@ class _Ctx:
         self.node_icons: List[Box] = []
         self.badges: List[Box] = []          # group badge images
         self.texts: List[Box] = []           # node labels, headers
+        self.headers: List[Tuple[str, Box]] = []
+        self.avoid_headers = set()
         self.borders: List[Tuple[str, float, float, float, str]] = []   # (h|v, pos, lo, hi, gid)
         self.border_segs: List[Tuple[Pt, Pt]] = []
         for gid, g in geom.groups.items():
@@ -948,6 +953,10 @@ class _Ctx:
             for t in (g.title, g.cidr):
                 if t:
                     self.texts.append(t.box())
+            marks = [("badge", g.badge.t())] if g.badge else []
+            marks += [(what, t.box().t()) for what, t in (("title", g.title), ("CIDR line", g.cidr)) if t]
+            if marks:
+                self.headers.append((gid, Box(*CL.header_band(r.x0, r.y0, marks))))
         for n in geom.nodes.values():
             self.node_icons.append(n.icon)
             self.texts += [t.box(conservative=True) for t in n.lines]
@@ -1038,7 +1047,7 @@ def _len(p: Pt, q: Pt) -> float:
 # =======================================================================================
 # draw(): candidate validation
 
-def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool) -> List[str]:
+def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool, headers: bool = False) -> List[str]:
     """What check_layout would say about these segments (plus a 1 px margin round icons)."""
     probs = []
     segs = list(zip(pts, pts[1:]))
@@ -1047,6 +1056,11 @@ def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool) -> List[str
     for i, (p, q) in enumerate(segs):
         x0, x1 = (p[0], q[0]) if p[0] <= q[0] else (q[0], p[0])
         y0, y1 = (p[1], q[1]) if p[1] <= q[1] else (q[1], p[1])
+        if headers:
+            for gid, b in ctx.headers:
+                if CL.segment_in_header({"p": p, "q": q}, b.t()):
+                    probs.append(f"LINE IN HEADER {gid}")
+                    break
         for t, b in ctx.icon_t:
             if t[0] <= x1 and x0 <= t[2] and t[1] <= y1 and y0 <= t[3] and CL.seg_hits_box(p, q, t):
                 probs.append(f"LINE OVER ICON ({b.x0:g},{b.y0:g})")
@@ -1125,14 +1139,16 @@ def _subtract(lo: float, hi: float, blocks) -> List[Tuple[float, float]]:
     return [(a, b) for a, b in free if b - a >= 0 and a <= hi and b >= lo]
 
 
-def _free(ctx: _Ctx, leg_x: bool, lo: float, hi: float, s0: float, s1: float, clear: float):
+def _free(ctx: _Ctx, leg_x: bool, lo: float, hi: float, s0: float, s1: float, clear: float,
+          headers: bool = False):
     """Free stretches for a leg at v ∈ [lo, hi] (x when leg_x: a vertical leg) running
     s0..s1 on the other axis: icons and labels + 4, parallel borders + clear blocked."""
     if lo > hi:
         return []
     s0, s1 = min(s0, s1), max(s0, s1)
     blocks = []
-    for b in ctx.icons + ctx.texts:
+    obstacles = ctx.icons + ctx.texts + ([b for _, b in ctx.headers] if headers else [])
+    for b in obstacles:
         a0, a1, o0, o1 = (b.x0, b.x1, b.y0, b.y1) if leg_x else (b.y0, b.y1, b.x0, b.x1)
         if o1 + OBST_CLEAR > s0 and o0 - OBST_CLEAR < s1:
             blocks.append((a0 - OBST_CLEAR, a1 + OBST_CLEAR))
@@ -1291,7 +1307,7 @@ def _bends(ctx: _Ctx, x: _Edge, shape: str, pa: Pt, pb: Pt) -> List[float]:
     tiers = []
     for (l, h) in ((glo, ghi), (lo, hi)):
         for clear in (m.trunk_clear, K.HUG_CLEAR):
-            tiers.append(_free(ctx, leg_x, l, h, s0, s1, clear))
+            tiers.append(_free(ctx, leg_x, l, h, s0, s1, clear, x.e.n in ctx.avoid_headers))
     for free in tiers:
         free = sorted(free, key=lambda iv: -abs((iv[0] + iv[1]) / 2 - a))   # target side first
         if want is not None:
@@ -1341,7 +1357,7 @@ def _out_and_back(ctx: _Ctx, x: _Edge, leg_x: bool, i: int, pa: Pt, pb: Pt, side
         return []
     out: List[float] = []
     for clear in (m.trunk_clear, K.HUG_CLEAR):
-        free = _free(ctx, leg_x, lo, hi, pa[1 - i], pb[1 - i], clear)
+        free = _free(ctx, leg_x, lo, hi, pa[1 - i], pb[1 - i], clear, x.e.n in ctx.avoid_headers)
         for f0, f1 in sorted(free, key=lambda iv: abs((iv[0] if sgn > 0 else iv[1]) - near)):
             start = math.ceil(f0 * 2) / 2 if sgn > 0 else math.floor(f1 * 2) / 2
             for k in range(4):
@@ -2390,9 +2406,11 @@ def _bend_groups(xs: Dict[int, _Edge]) -> List[List[int]]:
 # =======================================================================================
 # draw()
 
-def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> Tuple[List[Element], List[str]]:
+def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
+         avoid_headers=None) -> Tuple[List[Element], List[str]]:
     skip = dict(skip or {})
     ctx = _Ctx(spec, geom)
+    ctx.avoid_headers = set(avoid_headers or ())
     topo = _topology(spec)
     warns: List[str] = []
     xs: Dict[int, _Edge] = {}
@@ -2421,7 +2439,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         shape, pa, pb, bend = cand
         pts, stem = _drawn(x, shape, pa, pb, bend, None)
         hs, he = x.hs and len(pts) >= 2, x.he and len(pts) >= 2
-        probs = _line_problems(ctx, pts, hs, he) + (_crowded(ctx, x, pts) if shape != x.t.shape else [])
+        probs = _line_problems(ctx, pts, hs, he, x.e.n in ctx.avoid_headers) \
+            + (_crowded(ctx, x, pts) if shape != x.t.shape else [])
         r = _Route(x.e.n, shape, pts, hs, he, probs, stem, bend)
         if r.probs:
             r.quality = 3
@@ -2440,7 +2459,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
             warns.append(f"{_where(x.e)}: points {err}")
             pts = list(x.ends(H, 0, 0))
         pts = _simplify(pts)
-        return _Route(x.e.n, P, pts, x.hs, x.he, _line_problems(ctx, pts, x.hs, x.he))
+        return _Route(x.e.n, P, pts, x.hs, x.he,
+                      _line_problems(ctx, pts, x.hs, x.he, x.e.n in ctx.avoid_headers))
 
     def individual(x: _Edge, k: int = 0) -> _Route:
         t = x.t
@@ -2479,9 +2499,11 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
             pts = _joined(full, lead.pts, merge)
             if pts is not None:
                 joins.append(rate(x, _Route(x.e.n, shape, pts, x.hs and len(pts) >= 2, x.he and len(pts) >= 2,
-                                            _line_problems(ctx, pts, x.hs, x.he), (0, 0), bend), k))
+                                            _line_problems(ctx, pts, x.hs, x.he, x.e.n in ctx.avoid_headers),
+                                            (0, 0), bend), k))
             hs, he = x.e.head_start, x.e.head_end
-            whole.append(rate(x, _Route(x.e.n, shape, full, hs, he, _line_problems(ctx, full, hs, he), (0, 0), bend),
+            whole.append(rate(x, _Route(x.e.n, shape, full, hs, he,
+                                       _line_problems(ctx, full, hs, he, x.e.n in ctx.avoid_headers), (0, 0), bend),
                               k))
         joins.sort(key=lambda it: it[:2])
         whole.sort(key=lambda it: it[:2])

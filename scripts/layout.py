@@ -28,6 +28,12 @@ the router refused is not counted: no widening is planned for it). The round wit
 fewest problems (a slide that comes out too small counts as one), then the fewest edges
 drawn in another shape, is written.
 
+The retained draft's remaining LINE IN HEADER problems get at most five further feedback
+rounds: mark those edges' header bands as routing obstacles, then, if no acceptable route
+fits, require room from the group's left/top wall to the contained end node. Keep a
+candidate only when it reduces header crossings without adding another check code or
+rule violation, or taking a previously fitting slide below 10pt.
+
 Output: a summary (canvas, the size the smallest text gets on a 16:9 slide, the note, the icon
 refs, warnings), then check_layout's problem lines, each with the spec items behind it and
 a spec change to try, and last `Layout OK` or `N problems`. Exit status 0 when the draft
@@ -82,9 +88,10 @@ class Build:
     """Everything one pass of the pipeline produced."""
 
     def __init__(self, spec: Spec, geom: Geometry, nb: NoteBlock, elements: List[Element],
-                 warnings: List[str], svg: bytes):
+                 warnings: List[str], svg: bytes, avoid_headers=None):
         self.spec, self.geom, self.nb, self.elements = spec, geom, nb, elements
         self.warnings, self.svg = warnings, svg
+        self.avoid_headers = set(avoid_headers or ())
 
 
 def slide_text_pt(spec: Spec, svg: bytes) -> Tuple[float, Optional[Tuple[float, str]], Tuple[float, float]]:
@@ -122,15 +129,16 @@ def value(var: str, geom: Geometry, axis: str) -> float:
 
 
 def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
-          source: str) -> Build:
-    b = _build(spec, extra, skip, place, source)
+          source: str, avoid_headers=None) -> Build:
+    route_kw = {"avoid_headers": avoid_headers} if avoid_headers else {}
+    b = _build(spec, extra, skip, place, source, **route_kw)
     if b.geom.diag_y and slide_problem(spec, b.svg):
         # the solve weighs a diagonal pair's x and y growth px for px, but a 1108 × 540
         # slide has half the room down: with the pairs put on y leaving the text under
         # 10pt, build again with every pair on x and keep the larger text (both passes
         # solve the note too, so its place and size follow the geometry it sits on)
         try:
-            alt = _build(spec, extra, skip, place, source, diag_x=True)
+            alt = _build(spec, extra, skip, place, source, diag_x=True, **route_kw)
         except M.LayoutError:
             return b
         if slide_text_pt(spec, alt.svg)[0] > slide_text_pt(spec, b.svg)[0]:
@@ -139,7 +147,7 @@ def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place:
 
 
 def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
-           source: str, diag_x: bool = False) -> Build:
+           source: str, diag_x: bool = False, avoid_headers=None) -> Build:
     reqs = layout_route.plan(spec) + list(extra)
     geom0 = layout_solve.solve(spec, reqs, diag_x=diag_x)
     nb0 = layout_note.block(spec, geom0, place=place)
@@ -150,11 +158,12 @@ def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place
         got = value(r.b, geom, r.axis) - value(r.a, geom, r.axis)
         if got < r.d - 0.5:
             warns.append(f"note: requirement {r.why!r} short by {M.fmt_num(r.d - got)}px on the final geometry")
-    edges, route_warns = layout_route.draw(spec, geom, skip)
+    route_kw = {"avoid_headers": avoid_headers} if avoid_headers else {}
+    edges, route_warns = layout_route.draw(spec, geom, skip, **route_kw)
     raws, raw_warns = raw_elements(spec, geom)
     elements = layout_solve.draw(spec, geom) + edges + nb.elements + raws
     warns += [w for w in nb.warnings if w not in warns] + route_warns + raw_warns
-    return Build(spec, geom, nb, elements, warns, emit(spec, geom, elements, source))
+    return Build(spec, geom, nb, elements, warns, emit(spec, geom, elements, source), avoid_headers)
 
 
 # =======================================================================================
@@ -455,7 +464,7 @@ def edge_of(owner: str) -> Optional[Tuple[int, str]]:
 
 
 def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], Requirement],
-             skip: Dict[int, int]) -> bool:
+             skip: Dict[int, int], avoid_headers=None) -> bool:
     """Answer the problems left with new requirements / skips. False when nothing changes."""
     changed = False
     widened = set()
@@ -481,6 +490,25 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
         edges = [e for e in (edge_of(o) for o in p.owners) if e]
         line_edges = [n for n, part in edges if part == ""]
         owner = p.owners[0] if p.owners else "check"
+        if k == "LINE IN HEADER" and line_edges:
+            n = line_edges[0]
+            # First constrain routing on the existing geometry. Only a crossing that
+            # remains after that asks the solve to open room beside/below the header.
+            if avoid_headers is not None and n not in avoid_headers:
+                avoid_headers.add(n)
+                changed = True
+                continue
+            r = header_room(b, p, n)
+            if r is not None:
+                key = (r.axis, r.a, r.b)
+                if r.d > (extra[key].d if key in extra else -1e9):
+                    extra[key] = r
+                    changed = True
+                    continue
+            if skip.get(n, 0) < MAX_SKIP:
+                skip[n] = skip.get(n, 0) + 1
+                changed = True
+            continue
         if k in DETOURS and line_edges:
             n = line_edges[0]
             r = room(b, p, n)
@@ -605,6 +633,88 @@ def room(b: Build, p: Problem, n: int) -> Optional[Requirement]:
     return Requirement(axis, a, c, cur + need, f"feedback: {p.iss.kind.lower()} ({where})", M.edge_eid(n))
 
 
+def header_room(b: Build, p: Problem, n: int) -> Optional[Requirement]:
+    """Keep a header-crossing leg past the band's right/bottom edge.
+
+    As with detour room(), measure from a group wall to the line's contained end.
+    Preserve the leg's offset from that end when asking the solve for more room,
+    rather than widening an unrelated neighbouring track by a fixed increment.
+    """
+    spec, geom = b.spec, b.geom
+    gid = next((M.split_eid(o)[1] for o in p.owners if M.split_eid(o)[0] == "group"
+                and M.split_eid(o)[1] in spec.groups), None)
+    if gid is None:
+        return None
+    e = spec.edges[n]
+    ends = [nid for nid, kind in ((e.b, e.b_kind), (e.a, e.a_kind))
+            if kind == "node" and gid in spec.node_chain(nid)]
+    if not ends or e.points:
+        return None
+    s, band = p.iss.ctx["s"], p.iss.ctx["band"]
+    axis = "x" if _vertical(s) else "y"
+    i = 0 if axis == "x" else 1
+    nid = min(ends, key=lambda v: abs(value(f"node:{v}", geom, axis) - _centre(s)[i]))
+    wall, end = f"group:{gid}.{'L' if axis == 'x' else 'T'}", f"node:{nid}"
+    need = band[i + 2] + CL.LINE_CLEAR - min(s["p"][i], s["q"][i])
+    cur = value(end, geom, axis) - value(wall, geom, axis)
+    return Requirement(axis, wall, end, cur + need, f"feedback: line in header ({gid})", M.edge_eid(n))
+
+
+def repair_headers(b: Build, rnd: int, used: Sequence[Requirement], skipped: Dict[int, int],
+                   source: str, scratch: Path):
+    """Repair B2 on the retained draft, preserving its other checks, rules and slide fit.
+
+    Earlier rounds can clear transient header crossings by resolving their original
+    problems. Start here only if the retained, auto-repaired draft still has B2, so
+    inputs whose final draft had no B2 keep their existing output.
+    """
+    raw_probs = problems_of(b.svg)[0]
+    if not any(p.iss.kind in {"LINE IN HEADER", "TITLE OFFSET", "CIDR IN TITLE",
+                              "CIDR OFF HEADER", "SMALL TEXT"} for p in raw_probs):
+        return rnd, b, list(used), skipped
+    initial = fix_pass(b.svg, scratch)[0]
+    probs = problems_of(initial)[0]
+    headers = [p for p in probs if p.iss.kind == "LINE IN HEADER"]
+    if not headers:
+        return rnd, b, list(used), skipped
+    import rules
+
+    def judge(candidate):
+        data = fix_pass(candidate.svg, scratch)[0]
+        probs = problems_of(data)[0]
+        other = Counter(p.iss.kind for p in probs if p.iss.kind != "LINE IN HEADER")
+        viol = Counter((v.rule, v.code) for v in rules.check(candidate.spec, candidate.geom, data) if v.code != "B2")
+        return probs, other, viol, bool(slide_problem(candidate.spec, data))
+
+    base_checks = Counter(p.iss.kind for p in probs if p.iss.kind != "LINE IN HEADER")
+    base_rules = Counter((v.rule, v.code) for v in rules.check(b.spec, b.geom, initial) if v.code != "B2")
+    base_small = bool(slide_problem(b.spec, initial))
+    best = (len(headers), rnd, b, list(used), dict(skipped))
+    extra = {(r.axis, r.a, r.b): r for r in used}
+    skip, avoid = dict(skipped), set()
+    place = b.nb.place if b.nb.place != "none" else None
+    for step in range(1, MAX_ROUNDS + 1):
+        if not feedback(b, headers, extra, skip, avoid):
+            break
+        previous, previous_headers = b, headers
+        try:
+            b = build(b.spec, list(extra.values()), skip, place, source, avoid_headers=avoid)
+        except M.LayoutError:
+            break
+        probs, checks, violations, small = judge(b)
+        headers = [p for p in probs if p.iss.kind == "LINE IN HEADER"]
+        if not (checks - base_checks or violations - base_rules or (small and not base_small)):
+            if len(headers) < best[0]:
+                best = (len(headers), rnd + step, b, list(extra.values()), dict(skip))
+            if not headers:
+                break
+        elif not headers:
+            # A route that clears B2 by creating another defect is not a repair.
+            # Ask for room from the last crossing, then try another candidate.
+            b, headers = previous, previous_headers
+    return best[1:]
+
+
 def _end_center(geom: Geometry, eid: str) -> Optional[Tuple[float, float]]:
     if eid in geom.nodes:
         n = geom.nodes[eid]
@@ -668,7 +778,7 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
         elif kind == "node" and ref in spec.nodes:
             tips.append(f"{spec.nodes[ref].src} {ref}: dx / dy")
         elif kind == "group" and ref in spec.groups and p.iss.kind in ("TEXT AT BORDER", "HEADER CLEARANCE",
-                                                                       "LINE HUGS BORDER"):
+                                                                       "LINE HUGS BORDER", "LINE IN HEADER"):
             tips.append(f"{spec.groups[ref].src} {ref}: pad / min_w / min_h")
     w = where_to_widen(p, spec, geom)
     st = stack_bracket(spec, geom, p.owners, w[1]) if w and w[0] == "y" else None
@@ -813,7 +923,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if a.no_check:
                 best = ((0, 0, 0), rnd, b, [], {})
                 break
-            probs = problems_of(b.svg)[0]
+            # Preserve the established feedback result before repairing its remaining B2.
+            probs = [p for p in problems_of(b.svg)[0] if p.iss.kind != "LINE IN HEADER"]
             # A clean check with an edge drawn in another shape still re-solves: the router's
             # fallback (a U around the outside) can pass the check and still be a detour.
             # A slide that comes out too small counts as a problem: a round that widened a gap
@@ -840,6 +951,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     _, rnd, b, used, skipped = best
+    if not a.no_check:
+        rnd, b, used, skipped = repair_headers(b, rnd, used, skipped, source, out)
     data, fixed = (b.svg, 0) if a.no_check else fix_pass(b.svg, out)
     out.write_bytes(data)
     probs, hints = ([], []) if a.no_check else problems_of(data, hints=True)[0::2]
@@ -851,7 +964,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"check: {rnd} feedback round{'s' if rnd != 1 else ''} ("
               + ", ".join(f"{r.why[len('feedback: '):]}: {r.a} → {r.b} ≥ {M.fmt_num(r.d)}" for r in used)
               + (f"; next routing candidate for {', '.join(f'edges[{k}]×{v}' for k, v in skipped.items())}"
-                 if skipped else "") + ")")
+                 if skipped else "")
+              + (f"; avoid header bands for {', '.join(f'edges[{k}]' for k in sorted(b.avoid_headers))}"
+                 if b.avoid_headers else "") + ")")
     if fixed:
         print(f"check: {fixed} fixed-answer repair{'s' if fixed != 1 else ''} applied (check_layout --fix)")
     if a.explain:
