@@ -824,7 +824,7 @@ cases:
     rules: [R-flow]
     what: "three nodes into a VPC group side plus outgoing vpc -> s: in and out ports on one group"
     from: "rr-port2/g/g1.layout.yaml"
-    bad: {R-flow: edge:0}   # vpc -> s leaves the VPC side and crosses edge:0's arrow 12px after its bend
+    bad: {R-flow: {slide: edge:0, slide-no-title: edge:0}}   # on a slide vpc -> s leaves the VPC side and crosses edge:0's arrow 12px after its bend; the document draft (fewest-crossings port order, 6a518e1) puts vpc -> s above a -> vpc and no longer crosses it
   - path: ports/g2.layout.yaml
     rules: [R-flow]
     what: "trunk u -> az.* into per-AZ groups plus v -> az.1 into the same AZ box: AZ group-side ports"
