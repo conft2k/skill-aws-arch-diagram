@@ -299,7 +299,8 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 - **Problems**: `check_layout.py`'s message, then up to three lines — `fix:` the draft
   coordinate correction (spec path: ignore it; it applies only once you edit the draft),
   `spec:` the spec items behind the problem (`edges[3] alb -> asg (label)`), `try:` the
-  spec change to make (`label_at: …`, `shape / bend_x / …`, `dx / dy`, `pad / min_w`,
+  spec change to make (`label_at: …`, `shape / bend_x / …`, `dx / dy` (a flow-column
+  node: `dx` and the column's `flow` / `align`), `pad / min_w`,
   `cols: {id: app, min_gap_before: 140}`). `SLIDE TOO SMALL` lists the constraint chain of
   the overflowing axis.
 - Last line `Layout OK` (exit 0) or `N problems` (exit 1). Change the spec, re-run, until

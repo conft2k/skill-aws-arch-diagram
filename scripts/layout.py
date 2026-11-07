@@ -442,6 +442,7 @@ def spec_item(spec: Spec, owner: str) -> str:
 def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
     """A spec change to try for a problem the engine could not clear."""
     tips = []
+    stacked = {nid: col for (_, col), ids in spec.flow_stacks().items() for nid in ids}
     for o in p.owners:
         kind, ref, part = M.split_eid(o)
         if kind == "edge" and part in ("label", "badge"):
@@ -449,6 +450,9 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
                         + ("step_at: start|end|gap|[x, y]" if part == "badge" else "label_at: above|below|left|right"))
         elif kind == "edge":
             tips.append(f"{spec_item(spec, o).split(' ')[0]}: shape / bend_x / bend_y / from_side / to_side")
+        elif kind == "node" and ref in stacked:
+            # a flow-column node takes no dy: the stack sets its y
+            tips.append(f"{spec.nodes[ref].src} {ref}: dx (its y: flow / align on column {stacked[ref]})")
         elif kind == "node" and ref in spec.nodes:
             tips.append(f"{spec.nodes[ref].src} {ref}: dx / dy")
         elif kind == "group" and ref in spec.groups and p.iss.kind in ("TEXT AT BORDER", "HEADER CLEARANCE",

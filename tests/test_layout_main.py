@@ -443,6 +443,20 @@ class FlowColumnFixes(unittest.TestCase):
         tip = layout.spec_fix(spec, g, layout.Problem(iss, ["node:cw", "node:s3"], [txt, ico]))
         self.assertIn(f"cols: {{id: svc, flow: {M.fmt_num(s3.cy - cw.cy + layout.WIDEN)}, align: bottom}}", tip)
 
+    def test_stack_node_tip_gives_no_dy(self):
+        """A flow-column node takes no dy (the loader rejects it): its tip offers dx and the
+        column's flow / align; a grid node keeps dx / dy."""
+        spec, b = built(flow_column_spec())
+        g = b.geom
+        cw, ec2 = g.nodes["cw"], g.nodes["ec2.1"]
+        txt = {"box": (cw.cx - 20, cw.last_baseline - 10, cw.cx + 20, cw.last_baseline + 3), "el": None}
+        ico = {"box": (ec2.icon.x0, ec2.icon.y0, ec2.icon.x1, ec2.icon.y1), "el": None}
+        iss = CL.Issue("TEXT NEAR ICON", "TEXT NEAR ICON ...", [], {"t": txt, "i": ico})
+        tip = layout.spec_fix(spec, g, layout.Problem(iss, ["node:cw", "node:ec2.1"], [txt, ico]))
+        self.assertIn("nodes[6] cw cw: dx (its y: flow / align on column svc)", tip)
+        self.assertIn("nodes[4] ec2 ec2.1: dx / dy", tip)
+        self.assertNotIn("cw cw: dx / dy", tip)
+
     def test_flow_row_keeps_off_the_stack(self):
         """A flow row and a flow column in one parent: the row has no column, so whether it
         meets the stack is known only once x is solved; a row node that does is kept off the
