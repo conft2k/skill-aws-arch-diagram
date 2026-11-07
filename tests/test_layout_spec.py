@@ -7,6 +7,7 @@ kind of spec problem gives its exact message.
 Needs PyYAML (`uv run --with pyyaml python3 tests/test_layout_spec.py` where it is missing)
 and the icon bundle, like every script of the skill.
 """
+import copy
 import json
 import sys
 import tempfile
@@ -17,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import layout_model as M  # noqa: E402
+import layout_route  # noqa: E402
 import layout_solve  # noqa: E402
 import layout_spec as L  # noqa: E402
 from layout_model import SpecError  # noqa: E402
@@ -990,11 +992,22 @@ class FlowColumns(unittest.TestCase):
 
 class SplitOverlays(unittest.TestCase):
     """An overlay whose members sit in nested containers (an EC2 in a subnet of the VPC,
-    CloudWatch in the Region outside it) is drawn as boxes that cross no group border."""
+    CloudWatch in the Region outside it) and that one box cannot draw is drawn as boxes
+    that cross no group border; one that one box can draw stays one box."""
     MIXED = ROOT / "tests" / "corpus" / "flowcol" / "r2-overlay-mixed.layout.yaml"
     WARN = ("groups[6] og: members ec2.1 (in vpc) and cw (outside vpc) cannot share one box without crossing a "
             "group border; drew 2 boxes titled 'Monitored' (og around ec2.1; og.2 around cw); for one box, list "
             "in `over:` only members on one side of vpc's border, or move cw into appsn.1")
+    # nested and sibling containers mixed (sn in v1, v1 beside v2): one box solves (codex review)
+    NESTED_SIBLINGS = {
+        "name": "probe", "cols": ["c0", "c1", "c2"], "rows": ["r0", "r1", "r2"],
+        "groups": [{"id": "cloud", "type": "cloud"}, {"id": "region", "type": "region", "in": "cloud"},
+                   {"id": "v1", "type": "vpc", "in": "region"}, {"id": "v2", "type": "vpc", "in": "region"},
+                   {"id": "sn", "type": "private", "in": "v1"},
+                   {"id": "og", "type": "generic", "label": "Monitored", "over": ["n0", "n1", "n2"]}],
+        "nodes": [{"id": "n0", "icon": "service/Amazon-EC2", "label": "N0", "in": "sn", "at": ["c0", "r0"]},
+                  {"id": "n1", "icon": "service/Amazon-EC2", "label": "N1", "in": "v1", "at": ["c1", "r1"]},
+                  {"id": "n2", "icon": "service/Amazon-EC2", "label": "N2", "in": "v2", "at": ["c2", "r2"]}]}
 
     def mixed(self, f=None):
         yaml, loader = L._yaml_loader()
@@ -1008,6 +1021,7 @@ class SplitOverlays(unittest.TestCase):
         self.assertEqual(list(s.groups)[-2:], ["og", "og.2"])
         og, og2 = s.groups["og"], s.groups["og.2"]
         self.assertEqual((og.over, og2.over), (["ec2.1"], ["cw"]))
+        self.assertEqual((og.cols, og.rows, og2.cols, og2.rows), (("app", "app"), ("az1", "az1"), ("svc", "svc"), None))
         same = [(g.type, g.label, g.dash, g.header, g.pad, g.src) for g in (og, og2)]
         self.assertEqual(same[0], same[1])
         self.assertEqual(same[0][:2], ("generic", "Monitored"))
@@ -1025,9 +1039,27 @@ class SplitOverlays(unittest.TestCase):
     def test_one_container_stays_one_box(self):
         for over in (["ec2.*"], ["acm", "cw"], ["ec2.1", "nat.1"]):
             with self.subTest(over):
-                s = self.mixed(lambda d: d["groups"][-1].update(over=over, label="Monitored"))
+                s = self.mixed(lambda d: d["groups"][-1].update(over=over))
                 self.assertNotIn("og.2", s.groups)
                 self.assertEqual(s.warnings, [])
+
+    def test_nested_and_sibling_containers_one_box_solves(self):
+        """One box over a subnet's node, its VPC's node and another VPC's node solves (it
+        stretches across the borders as an ASG across stacked AZs does): kept as it is."""
+        s = L.load(copy.deepcopy(self.NESTED_SIBLINGS))
+        self.assertEqual([g.id for g in s.groups.values() if g.overlay], ["og"])
+        self.assertEqual((s.groups["og"].over, s.warnings), (["n0", "n1", "n2"], []))
+        layout_solve.solve(s, layout_route.plan(s))
+        # split anyway, the containment levels [n0, n2] | [n1] would put n1 inside the first
+        # box: that level goes by container, and no box holds a node of another
+        idx = {t.id: t.index for t in s.cols + s.rows}
+        g = s.groups["og"]
+        nest = L._nest_parts(s, g.over)
+        self.assertEqual(nest, [["n0", "n2"], ["n1"]])
+        self.assertEqual(L._box_holds(s, idx, nest[0], None, None), ["n1"])
+        parts = L._overlay_parts(s, idx, g, nest)
+        self.assertEqual(parts, [["n0"], ["n1"], ["n2"]])
+        self.assertEqual([L._box_holds(s, idx, p, None, None) for p in parts], [[], [], []])
 
     def test_shipped_specs_keep_one_box(self):
         """Every docs/examples and corpus spec but r2-overlay-mixed draws each overlay as one box."""
@@ -1048,20 +1080,39 @@ class SplitOverlays(unittest.TestCase):
         self.assertEqual([(e.a, e.b, e.b_kind) for e in s.edges[-3:]],
                          [("acm", "og.2", "group"), ("alb", "og", "group"), ("og.2", "s3", "node")])
         self.assertEqual(s.warnings, [self.WARN])
-        s = self.mixed(lambda d: d["edges"].append({"e": "acm ..> og.2"}))       # a box by its id
-        self.assertEqual(s.edges[-1].b, "og.2")
+
+    def test_edge_between_two_split_overlays(self):
+        """Both ends split: the pair of boxes is chosen together (the EC2's and the NAT's,
+        both in AZ 1), whatever the order of either `over:` and of the edge."""
+        for oh in (["acm", "nat.1"], ["nat.1", "acm"]):
+            for e in ("og -> oh", "oh -> og"):
+                with self.subTest(oh=oh, e=e):
+                    def f(d):
+                        d["groups"].append({"id": "oh", "type": "generic", "label": "Managed", "over": oh})
+                        d["edges"] = [{"e": e}]
+                    s = self.mixed(f)
+                    self.assertEqual({k: s.groups[k].over for k in ("og", "og.2", "oh", "oh.2")},
+                                     {"og": ["ec2.1"], "og.2": ["cw"], "oh": [oh[0]], "oh.2": [oh[1]]})
+                    ends = [s.groups[x].over for x in (s.edges[0].a, s.edges[0].b)]
+                    self.assertEqual(ends, [["ec2.1"], ["nat.1"]] if e == "og -> oh" else [["nat.1"], ["ec2.1"]])
+                    self.assertEqual(len(s.warnings), 2)        # one per split overlay, no tie
+                    self.assertIn("groups[7] oh: members", "\n".join(s.warnings))
 
     def test_edge_equally_near_two_boxes_warns(self):
         def f(d):
             d["groups"][-1]["over"] = ["ec2.*", "alb"]
             d["edges"].append({"e": "users -> og"})
-        s = self.mixed(f)
-        self.assertEqual((s.groups["og"].over, s.groups["og.2"].over), (["ec2.1", "ec2.2"], ["alb"]))
-        self.assertEqual(s.edges[-1].b, "og")
-        self.assertEqual(s.warnings[1:], [
-            "edges[5] users -> og: 'og' is drawn as 2 boxes (og, og.2) and users is as near to og and og.2; drew "
-            "the line to og (name og.2 for the other)"])
-        self.assertIn("members ec2.1 (in az.1) and alb (outside az.1)", s.warnings[0])
+        for over in (["ec2.*", "alb"], ["alb", "ec2.*"]):
+            with self.subTest(over):
+                s = self.mixed(lambda d: (f(d), d["groups"][-1].update(over=over)))
+                box = s.edges[-1].b
+                self.assertEqual(s.groups[box].over, ["alb"])          # the members sorting first
+                self.assertEqual(s.warnings[1:], [
+                    f"edges[5] users -> og: 'og' is drawn as 2 boxes (og, og.2), and the ends users – og and "
+                    f"users – og.2 are as near; drew users – {box} (point the edge at a member node to pick "
+                    f"another box)"])
+                self.assertIn("(in az.1) and alb (outside az.1)" if over[0] != "alb"
+                              else "alb (outside az.1) and ec2.1 (in az.1)", s.warnings[0])
 
 
 class Errors(unittest.TestCase):

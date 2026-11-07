@@ -189,17 +189,22 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   at `[c1, r2]` / `[c2, r1]`; a colspan node counts when its span meets those columns):
   list it in `over:`, move it, or split the overlay.
   Members in nested containers (one member's group holds another's: an EC2 in a subnet
-  of the VPC and CloudWatch in the Region outside it) cannot share one box without
-  crossing a group border, so the overlay is drawn as several boxes with the same title
-  and style, each a box as above: the members in the innermost containers (none holding
-  another member's), then the next ones out. The box with the first member listed keeps
-  the id, the others are `<id>.2`, `<id>.3`, and a warning names the two members and the
-  border between them. An edge to the overlay's id goes to the box on the other end's side:
-  the one sharing its innermost container, then the one fewer borders away (`acm ..> og`
-  goes to the box around CloudWatch beside ACM, `alb -> og` to the one in the VPC); when
-  two boxes are as near, it takes the first and warns. Name `<id>.2` to pick that box.
-  For one box, list in `over:` only members on one side of the border, or move them into
-  one group.
+  of the VPC and CloudWatch in the Region outside it) stay one box when that box can be
+  drawn, stretching across the borders between (an EC2 in a subnet, one beside the subnet
+  in its VPC and one in the next VPC, stacked on rows). When it cannot — the solve finds it
+  contradictory, or the box would hold a node that is not a member — the overlay is drawn
+  as several boxes with the same title and style, none crossing a group border: the members
+  in the innermost containers (none holding another member's), then the next ones out; a
+  level whose box would hold a member of another level, by container; one box per member
+  where that still would. The box with the first member listed keeps the id, the others
+  are `<id>.2`, `<id>.3`, and a warning names two members and the border between them.
+  An edge to the overlay's id goes to the box on the other end's side: the one sharing its
+  innermost container, then the one fewer borders away (`acm ..> og` goes to the box
+  around CloudWatch beside ACM, `alb -> og` to the one in the VPC); between two split
+  overlays the pair of boxes is chosen together the same way (the EC2's and the NAT's in
+  one AZ). When pairs are as near, it takes the one whose members sort first and warns;
+  point the edge at a member node to pick another. For one box, list in `over:` only
+  members on one side of the border, or move them into one group.
 - A group covers the tracks of what it contains. `span: {cols: [pub, pub], rows: [a, b]}`
   stretches it over tracks with no node of its own (an empty public subnet); the spanned
   track centers keep `pad` (or the node padding) from the border, `pad_left` / `pad_right` /

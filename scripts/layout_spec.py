@@ -20,6 +20,7 @@ to its Expr, so W5 substitutes with re.sub(r"\\{([^{}]+)\\}", …) and looks the
 """
 from __future__ import annotations
 
+import copy
 import dataclasses
 import difflib
 import functools
@@ -35,8 +36,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_layout  # noqa: E402  (services_in_label, OUTSIDE_CLOUD)
 import find_icon  # noqa: E402  (search, SETS: the icon bundle assets/icons.json)
 import layout_const as K  # noqa: E402
-import layout_route  # noqa: E402  (same_side_problems)
-from layout_model import (Assoc, Edge, Expr, Group, Node, NoteSpec, Place, RawSpec, Spec,  # noqa: E402
+import layout_route  # noqa: E402  (same_side_problems, plan: split_overlays)
+import layout_solve  # noqa: E402  (solve: split_overlays)
+from layout_model import (Assoc, Edge, Expr, Group, LayoutError, Node, NoteSpec, Place, RawSpec, Spec,  # noqa: E402
                           SpecError, Track, fmt_num)
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -294,6 +296,142 @@ def _inst_id(base: str, n: Optional[int]) -> str:
     return base if n is None else f"{base}.{n}"
 
 
+# =======================================================================================
+# Overlays over nested containers (_Loader.split_overlays)
+
+def _holds(sp: Spec, p: Optional[str], q: Optional[str]) -> bool:
+    """Group p strictly holds group q (None, the top level, holds every group)."""
+    return p != q and (p is None or p in sp.ancestors(q))
+
+
+def _nest_parts(sp: Spec, over: Sequence[str]) -> List[List[str]]:
+    """An overlay's members by containment level: those in the innermost containers (none
+    holding another member's container), then the next ones out, and so on. One part when
+    no member's container holds another's (subnets side by side or stacked, one subnet)."""
+    par = {m: sp.nodes[m].parent for m in over}
+    left, parts = list(over), []
+    while left:
+        ps = {par[m] for m in left}
+        inner = {p for p in ps if not any(_holds(sp, p, q) for q in ps)}
+        parts.append([m for m in left if par[m] in inner])
+        left = [m for m in left if par[m] not in inner]
+    return parts
+
+
+def _box_range(sp: Spec, idx: Dict[str, int], over: Sequence[str], span_cols, span_rows):
+    """An overlay box's (cols, rows): its members' cells and its span (as _Loader.ranges)."""
+    def merge(cur, ids):
+        ids = [i for i in ids if i is not None]
+        if not ids:
+            return cur
+        lo, hi = min(ids, key=idx.get), max(ids, key=idx.get)
+        return (lo, hi) if cur is None else (min(cur[0], lo, key=idx.get), max(cur[1], hi, key=idx.get))
+
+    cols = rows = None
+    for m in over:
+        n = sp.nodes[m]
+        cols, rows = merge(cols, [n.col, n.col2]), merge(rows, [n.row])
+    return merge(cols, list(span_cols or ())), merge(rows, list(span_rows or ()))
+
+
+def _box_holds(sp: Spec, idx: Dict[str, int], over: Sequence[str], span_cols, span_rows) -> List[str]:
+    """The nodes not in `over` on a track cell its box covers (as _Loader.overlay_strays)."""
+    cols, rows = _box_range(sp, idx, over, span_cols, span_rows)
+    if not cols or not rows:
+        return []
+    (c0, c1), (r0, r1) = [(idx[a], idx[b]) for a, b in (cols, rows)]
+    return [n.id for n in sp.nodes.values()
+            if n.id not in over and n.xy is None and n.col is not None and n.row is not None
+            and idx[n.col] <= c1 and c0 <= idx[n.col2 or n.col] and r0 <= idx[n.row] <= r1]
+
+
+def _overlay_parts(sp: Spec, idx: Dict[str, int], g: Group, nest: List[List[str]]) -> List[List[str]]:
+    """The boxes of a split overlay: its containment levels (_nest_parts), a level whose box
+    would hold a node that is not in it (a member of another level between its members)
+    split by container, and a container's members whose box still would, one box each.
+    Ordered by the first member listed in `over:`."""
+    out: List[List[str]] = []
+    for part in nest:
+        by_parent: Dict[Optional[str], List[str]] = {}
+        for m in part:
+            by_parent.setdefault(sp.nodes[m].parent, []).append(m)
+        for subs in ([part], list(by_parent.values())):
+            if not any(_box_holds(sp, idx, s, g.span_cols, g.span_rows) for s in subs):
+                out += subs
+                break
+        else:
+            for s in by_parent.values():
+                out += [s] if not _box_holds(sp, idx, s, g.span_cols, g.span_rows) else [[m] for m in s]
+    return sorted(out, key=lambda part: g.over.index(part[0]))
+
+
+def _split_warning(sp: Spec, g: Group, ids: Sequence[str], parts) -> str:
+    """Which two members cannot share a box (the border between them), the boxes drawn and
+    how to get one box."""
+    over = g.over
+    par = {m: sp.nodes[m].parent for m in over}
+    a, b = next((a, b) for a in over for b in over if _holds(sp, par[b], par[a]) or _holds(sp, par[a], par[b]))
+    inner, outer = (a, b) if _holds(sp, par[b], par[a]) else (b, a)
+    chain = sp.ancestors(par[inner])
+    border = chain[chain.index(par[outer]) - 1] if par[outer] is not None else chain[-1]
+    side = {inner: f"in {border}", outer: f"outside {border}"}
+    titled = f" titled {g.label!r}" if g.label else ""
+    boxes = "; ".join(f"{bid} around {', '.join(part)}" for bid, part in zip(ids, parts))
+    return (f"{g.src}: members {a} ({side[a]}) and {b} ({side[b]}) cannot share one box without crossing a group "
+            f"border; drew {len(parts)} boxes{titled} ({boxes}); for one box, list in `over:` only members on "
+            f"one side of {border}'s border, or move {outer} into {par[inner]}")
+
+
+def _end_chain(sp: Spec, eid: str) -> List[str]:
+    """The groups an edge end sits in, innermost first: a node's containers, a group and its
+    ancestors, an overlay (box) its members' common containers."""
+    if eid in sp.nodes:
+        return sp.node_chain(eid)
+    g = sp.groups[eid]
+    if not g.overlay:
+        return sp.ancestors(eid)
+    chains = [sp.node_chain(m) for m in g.over]
+    return [c for c in chains[0] if all(c in ch for ch in chains[1:])]
+
+
+def _end_boxes(sp: Spec, e: Edge, boxes: Dict[str, List[str]], loc: str) -> Optional[str]:
+    """Point an edge at a split overlay to one of its boxes (both ends together when both
+    are split overlays): the pair of ends sharing the innermost container, then the one
+    fewer group borders apart — `acm ..> og` ends on the box around CloudWatch beside ACM,
+    `alb -> og` on the one in the VPC. A tie takes the pair whose members sort first (so
+    the order of `over:` does not choose) and returns a warning."""
+    A, B = boxes.get(e.a, [e.a]), boxes.get(e.b, [e.b])
+
+    def key(pair):
+        ca, cb = (_end_chain(sp, x) for x in pair)
+        shared = sum(1 for c in ca if c in cb)
+        return -shared, len(ca) + len(cb) - 2 * shared
+
+    def members(x):
+        return tuple(sorted(sp.groups[x].over)) if x in sp.groups and sp.groups[x].overlay else (x,)
+
+    pairs = [(x, y) for x in A for y in B]
+    best = min(pairs, key=lambda p: (key(p), members(p[0]), members(p[1])))
+    tied = [p for p in pairs if key(p) == key(best)]
+    orig = (e.a, e.b)
+    e.a, e.b = best
+    if len(tied) == 1:
+        return None
+    split = "; ".join(f"{x!r} is drawn as {len(boxes[x])} boxes ({', '.join(boxes[x])})" for x in orig if x in boxes)
+    return (f"{loc}: {split}, and the ends {' and '.join(f'{x} – {y}' for x, y in tied)} are as near; drew "
+            f"{best[0]} – {best[1]} (point the edge at a member node to pick another box)")
+
+
+def _solves(sp: Spec) -> bool:
+    """The build's first solve (the route plan, no note) has no contradiction."""
+    s = copy.deepcopy(sp)
+    try:
+        layout_solve.solve(s, layout_route.plan(s))
+    except LayoutError:
+        return False
+    return True
+
+
 class _Conv(Exception):
     """A field conversion failed; the message is the problem text after 'key: '."""
 
@@ -314,6 +452,7 @@ class _Loader:
         self.pending: List[Tuple[str, str, Any, Expr]] = []   # expressions to resolve once ids exist
         self.edge_lines: List[dict] = []
         self.edge_failed = False         # some edge line was dropped: don't report its step as missing
+        self.split_needed: List[str] = []  # overlays whose one box would hold non-members (overlay_strays)
 
     # ---- problem helpers
     def err(self, loc: str, msg: str) -> None:
@@ -356,6 +495,7 @@ class _Loader:
         self.lint()
         if self.problems:
             raise SpecError(self.problems)
+        self.split_overlays()
         self.spec.warnings = self.warnings
         return self.spec
 
@@ -978,7 +1118,6 @@ class _Loader:
         self.inst: Dict[str, List[Tuple[int, str]]] = {}   # templated base id → [(n, id)]
         self.dropped: Dict[str, str] = {}                  # instance id left out by `only` → its src
         self.restricted: set = set()                       # base ids with `only` (directly or by a parent)
-        self.overlay_boxes: Dict[str, List[str]] = {}      # split overlay id → its box ids (split_overlay)
 
         def emit(base: str, n: Optional[int], parent: Optional[str], depth: int) -> None:
             r = self.graw[base]
@@ -1123,7 +1262,6 @@ class _Loader:
 
     def overlays(self) -> None:
         sp = self.spec
-        extra: Dict[str, Group] = {}
         for gid in self.gorder:
             r = self.graw[gid]
             if not r["over"]:
@@ -1141,90 +1279,80 @@ class _Loader:
             g.over = members
             if not members:
                 self.err(loc, "over: no member nodes")
-            else:
-                extra.update(self.split_overlay(g))
-        if extra:            # each split box right after the one keeping the id
-            order = list(sp.groups.items())
-            sp.groups.clear()
-            for gid, g in order:
-                sp.groups[gid] = g
-                for bid in self.overlay_boxes.get(gid, [])[1:]:
-                    sp.groups[bid] = extra[bid]
 
-    def split_overlay(self, g: Group) -> Dict[str, Group]:
-        """An overlay is one box around its members with its edges inside their containers
-        (an ASG across AZ columns spans the AZ borders between its member subnets). A member
-        whose container holds another member's (CloudWatch in the Region, an EC2 in a subnet
-        of the Region's VPC) cannot share that box: its edge would cross the inner member's
-        borders out to it. Such members go in boxes of their own, drawn with the same title
-        and style: the innermost containers first (none holds another member's), then the
-        next ones out, and so on. The box with the first member listed keeps the id, the
-        others are <id>.2, <id>.3 (edges to the id: overlay_end). Returns the new boxes."""
+    # ---- overlays over nested containers
+    def split_overlays(self) -> None:
+        """An overlay is one box around its members (an ASG over subnets stacked on rows sits
+        inside each, across AZ columns it spans the AZ borders between). When a member's
+        container holds another member's (CloudWatch in the Region, an EC2 in a subnet of the
+        Region's VPC) and that one box would hold a node that is not a member (overlay_strays:
+        split_needed) or cannot be solved (the probe: the first solve the build makes, without
+        the note), the overlay is drawn as several boxes with its title and style instead
+        (_overlay_parts). Only the overlays the solve needs split are split (added one by one
+        in spec order until it solves, then each dropped again that it solves without); when
+        splitting does not make it solve, those overlays stay one box and the build reports
+        the contradiction as before. A spec that solves as it is, with no overlay holding a
+        non-member, keeps every overlay one box."""
         sp = self.spec
-        par = {m: sp.nodes[m].parent for m in g.over}
+        cands = {gid: parts for gid, g in sp.groups.items() if g.overlay
+                 for parts in [_nest_parts(sp, g.over)] if len(parts) > 1}
+        must = list(self.split_needed)
+        if not cands or _solves(self.split_spec(must, cands)[0] if must else sp):
+            if must:
+                self.spec, warns = self.split_spec(must, cands)
+                self.warnings += warns
+            return
+        chosen: List[str] = list(must)
+        for gid in cands:
+            if gid in chosen:
+                continue
+            chosen.append(gid)
+            if _solves(self.split_spec(chosen, cands)[0]):
+                break
+        else:
+            chosen = must
+        for gid in list(chosen):
+            rest = [x for x in chosen if x != gid]
+            if gid not in must and _solves(self.split_spec(rest, cands)[0] if rest else sp):
+                chosen = rest
+        if not chosen:
+            return
+        self.spec, warns = self.split_spec(chosen, cands)
+        self.warnings += warns
 
-        def holds(p, q):         # p strictly holds q (None, the top level, holds every group)
-            return p != q and (p is None or p in sp.ancestors(q))
-
-        left, parts = list(g.over), []
-        while left:
-            ps = {par[m] for m in left}
-            inner = {p for p in ps if not any(holds(p, q) for q in ps)}
-            parts.append([m for m in left if par[m] in inner])
-            left = [m for m in left if par[m] not in inner]
-        if len(parts) == 1:
-            return {}
-        parts.sort(key=lambda part: g.over.index(part[0]))
-        a, b = next((a, b) for a in g.over for b in g.over if holds(par[b], par[a]) or holds(par[a], par[b]))
-        inner_m, outer_m = (a, b) if holds(par[b], par[a]) else (b, a)
-        chain = sp.ancestors(par[inner_m])
-        border = chain[chain.index(par[outer_m]) - 1] if par[outer_m] is not None else chain[-1]
-        side = {inner_m: f"in {border}", outer_m: f"outside {border}"}
-        ids = [g.id] + [f"{g.id}.{k}" for k in range(2, len(parts) + 1)]
-        out = {bid: dataclasses.replace(g, id=bid, over=part, children=[], nodes=[])
-               for bid, part in zip(ids[1:], parts[1:])}
-        g.over = parts[0]
-        self.overlay_boxes[g.id] = ids
-        titled = f" titled {g.label!r}" if g.label else ""
-        boxes = "; ".join(f"{bid} around {', '.join(part)}" for bid, part in zip(ids, parts))
-        self.warn(g.src, f"members {a} ({side[a]}) and {b} ({side[b]}) cannot share one box without "
-                         f"crossing a group border; drew {len(parts)} boxes{titled} ({boxes}); for one box, "
-                         f"list in `over:` only members on one side of {border}'s border, or move {outer_m} "
-                         f"into {par[inner_m]}")
-        return out
-
-    def overlay_end(self, loc: str, x: str, other: str) -> str:
-        """An edge end naming an overlay drawn as several boxes (split_overlay): the box on
-        the other end's side of the borders — the one sharing its innermost container, then
-        the one fewer borders away (`s3 ..> og` with og around an EC2 in a subnet and og.2
-        around CloudWatch beside S3: og.2). A tie keeps the first box and warns."""
-        boxes = self.overlay_boxes.get(x)
-        if not boxes:
-            return x
-        sp = self.spec
-
-        def chain(eid):
-            if eid in sp.nodes:
-                return sp.node_chain(eid)
-            g = sp.groups[eid]
-            if not g.overlay:
-                return sp.ancestors(eid)
-            chains = [sp.node_chain(m) for m in g.over]
-            return [c for c in chains[0] if all(c in ch for ch in chains[1:])]
-
-        oc = chain(other)
-
-        def key(bid):
-            bc = chain(bid)
-            shared = sum(1 for c in oc if c in bc)
-            return -shared, len(oc) + len(bc) - 2 * shared
-
-        best = min(boxes, key=key)
-        tied = [bid for bid in boxes if key(bid) == key(best)]
-        if len(tied) > 1:
-            self.warn(loc, f"{x!r} is drawn as {len(boxes)} boxes ({', '.join(boxes)}) and {other} is as near "
-                           f"to {' and '.join(tied)}; drew the line to {best} (name {tied[1]} for the other)")
-        return best
+    def split_spec(self, gids: Sequence[str], cands: Dict[str, List[List[str]]]) -> Tuple[Spec, List[str]]:
+        """A copy of the spec with each overlay of gids drawn as boxes (_overlay_parts): the
+        box with the first member listed keeps the id, the others are <id>.2, <id>.3, each
+        right after it; edges to the overlay end on one of its boxes (_end_boxes). Returns
+        the copy and its warnings."""
+        sp, warns = copy.deepcopy(self.spec), []
+        idx = {t.id: t.index for t in sp.cols + sp.rows}
+        boxes: Dict[str, List[str]] = {}
+        new: Dict[str, Group] = {}
+        for gid in gids:
+            g = sp.groups[gid]
+            parts = _overlay_parts(sp, idx, g, cands[gid])
+            ids = [gid] + [f"{gid}.{k}" for k in range(2, len(parts) + 1)]
+            boxes[gid] = ids
+            warns.append(_split_warning(sp, g, ids, parts))
+            for bid, part in zip(ids, parts):
+                b = g if bid == gid else dataclasses.replace(g, id=bid, children=[], nodes=[])
+                b.over = part
+                b.cols, b.rows = _box_range(sp, idx, part, g.span_cols, g.span_rows)
+                if bid != gid:
+                    new[bid] = b
+        order = list(sp.groups.items())
+        sp.groups.clear()
+        for gid, g in order:
+            sp.groups[gid] = g
+            for bid in boxes.get(gid, [])[1:]:
+                sp.groups[bid] = new[bid]
+        for e in sp.edges:
+            if e.a in boxes or e.b in boxes:
+                w = _end_boxes(sp, e, boxes, self.edge_lines[e.line]["loc"])
+                if w:
+                    warns.append(w)
+        return sp, warns
 
     def ranges(self) -> None:
         """Group.cols / rows: the track range of descendants, over members, span, per row."""
@@ -1291,15 +1419,21 @@ class _Loader:
         def tracks(kind, a, b):
             return f"{kind} {a}" if a == b else f"{kind}s {a}–{b}"
 
-        for gid, g in sp.groups.items():          # split boxes too (split_overlay)
-            if not g.overlay or not g.cols or not g.rows:
+        for gid in self.gorder:
+            g = sp.groups.get(gid)
+            if g is None or not g.overlay or not g.cols or not g.rows:
                 continue
             (c0, c1), (r0, r1) = [(idx[a], idx[b]) for a, b in (g.cols, g.rows)]
             stray = [n.id for n in sp.nodes.values()
                      if n.id not in g.over and n.xy is None and n.col is not None and n.row is not None
                      and meets(c0, c1, (n.col, n.col2 or n.col)) and meets(r0, r1, (n.row, n.row))]
+            nest = _nest_parts(sp, g.over) if stray else []
+            if len(nest) > 1 and not any(i not in g.over for part in _overlay_parts(sp, idx, g, nest)
+                                         for i in _box_holds(sp, idx, part, g.span_cols, g.span_rows)):
+                self.split_needed.append(gid)      # its boxes hold none: split_overlays draws them
+                continue
             if stray:
-                self.err(g.src if gid in self.graw else f"{g.src} (box {gid})",
+                self.err(self.graw[gid]["loc"],
                          f"over: its box covers {tracks('column', *g.cols)} and {tracks('row', *g.rows)}, "
                          f"so it would also hold {', '.join(stray)} (not members); list them in `over:`, move them "
                          f"off those tracks, or split the overlay")
@@ -1410,7 +1544,6 @@ class _Loader:
                 out += [(a, b) for (_, a), (_, b) in zip(As, Bt)]
             else:
                 out += [(a, b) for _, a in A for _, b in B]
-        out = [(self.overlay_end(loc, a, b), self.overlay_end(loc, b, a)) for a, b in out]
         for a, b in out:
             if a == b:
                 self.err(loc, f"e: {a!r} connects to itself")
