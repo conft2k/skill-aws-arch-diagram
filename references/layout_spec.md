@@ -305,13 +305,19 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   and two edges out of (or into) one port that share its stem — and so are two spec lines
   with a piece each on one line less than 16px apart (24px with a third line crossing the
   gap): read as one straight line, the two flows join through the gap (one out of a
-  port to the left, the other 12px beside it to the right); layout.py's feedback widens
-  the gap along that line where they part, so the fallback can take its planned shape.
+  port to the left, the other 12px beside it to the right; a gap of exactly 16 or 24px
+  is not under the limit); layout.py's feedback widens the gap along that line where
+  they part, so the fallback can take its planned shape, except a gap between two ports
+  of one node, which no track sets. A feedback round that takes a document past the
+  1800px width warning only to redraw a missed shape is not kept.
   For the instances of one `.*` line on one run, write `trunk: true` when they are meant
   to merge. Lines that meet one side of a group at one point (a group end takes the other
   end's coordinate where it faces the side, else the group's row / column center) are
-  split as on a node's side, two ±8 (±10 on top / bottom) apart, more 12px apart; a
-  `to_offset` (`from_offset`) sets an end's own.
+  split as on a node's side, two ±8 (±10 on top / bottom) apart, more 12px apart, in the
+  order of their other ends; on a tie (two other ends on one row) the nearer one takes
+  the point toward the side both come from, and of every order the one whose routes
+  cross least wins, so no two of them cross beside the border; a `to_offset`
+  (`from_offset`) sets an end's own.
 - `label`: protocol and port, 12px squid ink (`"HTTPS :443"`). `verb`: a verb or
   attachment type, 12px grey (`DNS 조회`, `VPC attachment`). The loader rejects either one
   when it names a service with an official icon (SERVICE AS TEXT) — make it a node.

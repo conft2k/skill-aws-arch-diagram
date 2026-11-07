@@ -142,7 +142,7 @@ import find_icon  # noqa: E402  (same directory; reuses the icon search and alia
 import layout_const as K  # noqa: E402  (same directory, stdlib only: every number shared with layout.py)
 from layout_const import (  # noqa: E402
     BORDER_CLEAR, END_REACH, HEADER_CLEAR, HEADER_ICON_CLEAR, HUG_CLEAR, HUG_OVERLAP, ICON_CLEAR,
-    IN_LINE_CROSS_GAP, IN_LINE_GAP, JOIN_REACH, LABEL_CLEAR, LABEL_REACH, LINE_CLEAR, MIN_ARROW, MIN_FONT,
+    IN_LINE_CROSS_GAP, IN_LINE_EPS, IN_LINE_GAP, JOIN_REACH, LABEL_CLEAR, LABEL_REACH, LINE_CLEAR, MIN_ARROW, MIN_FONT,
     NODE_LABEL_DY, ON_LINE_GAP, ON_LINE_RUN, SUB_PITCH, TEXT_GAP,
 )
 
@@ -807,7 +807,15 @@ def lines_on_lines(paths):
 # closer than IN_LINE_GAP read as one straight line through the gap (12px: the port pitch, two
 # fallbacks out of one side); the 16 / 20px two lines into one side are split by read as two,
 # unless a third line crosses the gap, which then reads as two lines crossing (a "+") up to
-# IN_LINE_CROSS_GAP (two port pitches).
+# IN_LINE_CROSS_GAP (two port pitches). A gap at a limit is not under it (IN_LINE_EPS).
+
+
+def in_line_close(d, crossed=False):
+    """Is a gap of d px between two flows' pieces on one line (in_line_gap, more than 0:
+    not touching) close enough to read as one line through it: under IN_LINE_GAP, or
+    under IN_LINE_CROSS_GAP with a third line crossing the gap? (layout_route's
+    _conflicts takes the wider limit with it included: a line drawn later may cross.)"""
+    return d < (IN_LINE_CROSS_GAP if crossed else IN_LINE_GAP) - IN_LINE_EPS
 
 
 def in_line_gap(s, o, gap=ON_LINE_GAP):
@@ -845,7 +853,7 @@ def crosses_gap(s, o, segs):
 def lines_in_line(paths, skip=()):
     """Pairs of connectors of different spec lines by their data-flow (layout.py drafts:
     two_lines) with a piece each on one line, apart along it by less than IN_LINE_GAP px (or IN_LINE_CROSS_GAP
-    with a third line crossing the gap) but not touching (a join: lines_on_lines' rules)
+    with a third line crossing the gap: in_line_close) but not touching (a join: lines_on_lines' rules)
     nor running on top of each other: [(segment, other segment, gap px)], one per pair
     (the closest), leaving out the pairs (id, id) in skip. Read as one straight line, the
     two flows join into one through the gap (x-fork-b: tgw -> enib.1 out to the left and
@@ -860,10 +868,10 @@ def lines_in_line(paths, skip=()):
             for s in paths[a]:
                 for o in paths[b]:
                     d = in_line_gap(s, o)
-                    if d is None or d < 0.5 or d >= IN_LINE_CROSS_GAP or collinear_run(s, o) > ON_LINE_RUN:
+                    if d is None or d < 0.5 or not in_line_close(d, True) or collinear_run(s, o) > ON_LINE_RUN:
                         continue
-                    if d >= IN_LINE_GAP and not crosses_gap(s, o, [g for k, r in paths.items()
-                                                                   if k not in (a, b) for g in r]):
+                    if not in_line_close(d) and not crosses_gap(s, o, [g for k, r in paths.items()
+                                                                    if k not in (a, b) for g in r]):
                         continue
                     if best is None or d < best[2]:
                         best = (s, o, d)

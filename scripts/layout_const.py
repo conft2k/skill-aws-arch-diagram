@@ -150,6 +150,9 @@ IN_LINE_GAP = 2 * PORT_SIDE        # CL LINE ON LINE: two flows' pieces on one l
                                    # than this read as one line through the gap (16: two lines into one
                                    # side ±8 apart read as two; 12 = PORT_PITCH, two fallbacks, as one) …
 IN_LINE_CROSS_GAP = 2 * PORT_PITCH  # … and up to this (24) with a third line crossing the gap (a "+")
+IN_LINE_EPS = 0.25                 # … a gap at a limit is not under it (the commonest is exactly 16: two
+                                   # lines out of one side at ±8 turning apart along one line; float noise
+                                   # must not report it)
 LB_CLEAR = 8              # QR 76: load balancer node ↔ AZ and subnet borders
 MASK_CLEAR = 8            # QR 77: IGW/VGW mask ↔ next container border and canvas edge
 MASK_TEXT_PAD = 8         # QR 110: mask width = max(S, label width + 8)

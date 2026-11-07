@@ -51,15 +51,15 @@ Geometry: icon ends at cx ± (S/2 + 4), top at icon.y − 4, bottom at the last 
 + 8; group ends 4 off the border, at the other end's center when it faces the side, else
 the group's row / column center. Several lines on one node side split ±8 (left/right) /
 ±10 (top/bottom), 12 apart from three on; a straight line keeps the center and the others
-move ±12; lines meeting one side of a group at one point are split the same way
-(_group_ports). A shape other than the chosen one onto a side other lines take gets a port
-of its own on either end of their row (_end_offs); one misread against a line already
-drawn (_conflicts) ranks with the detours, one with no port of its own left is unclean
-(_crowded). A bend goes in the free stretch of its gutter (icons, labels, parallel borders
-+ trunk clearance avoided), preferring a last segment of arrow_target (48 / 20), else the
-middle of the free stretch nearest the target. Every candidate is tested with
-check_layout's own seg_hits_box against icons, labels and borders (LINE OVER ICON/TEXT,
-LINE NEAR TEXT, LINE HUGS BORDER, SHORT ARROW); edges that share a spec line or a node
+move ±12; lines meeting one side of a group at one point are split the same way, in the
+order whose routes cross least (_group_ports). A shape other than the chosen one onto a
+side other lines take gets a port of its own on either end of their row (_end_offs); one
+misread against a line already drawn (_conflicts) ranks with the detours, one with no
+port of its own left is unclean (_crowded). A bend goes in the free stretch of its gutter
+(icons, labels, parallel borders + trunk clearance avoided), preferring a last segment of
+arrow_target (48 / 20), else the middle of the free stretch nearest the target. Every
+candidate is tested with check_layout's own seg_hits_box against icons, labels and
+borders (LINE OVER ICON/TEXT, LINE NEAR TEXT, LINE HUGS BORDER, SHORT ARROW); edges that share a spec line or a node
 side try to share one bend. skip={n: k} takes edge n's k-th clean candidate instead.
 Lanes: members of such a group whose legs would run over each other at the shared bend
 (their spans along the leg overlap by more than K.ON_LINE_RUN; the instances of one
@@ -1458,19 +1458,25 @@ def _crowded(ctx: _Ctx, x: "_Edge", pts: Sequence[Pt]) -> List[str]:
 
 def _conflicts(x: "_Edge", pts: Sequence[Pt], drawn) -> int:
     """How many routes already drawn (drawn: [(data-flow, points, end ids)]) of other flows
-    polyline pts would be misread against: a piece of each on one line two port pitches
-    apart or less (read as one straight line through the gap: x-fork-b's tgw -> enib.1
-    out to the left, tgw -> seni.2 12px beside it out to the right; check_layout reports
-    the closer ones), or, for a route sharing an end with it, a crossing (a fan out of one
-    side whose lines swap over: read as a junction)."""
+    polyline pts would be misread against: a piece of each on one line, touching or with a
+    gap up to the checker's widest limit, at it included (K.IN_LINE_CROSS_GAP: a line
+    drawn later may cross the gap, and one just at the limit still reads nearly as one
+    line; x-fork-b's tgw -> enib.1 out to the left, tgw -> seni.2 12px beside it out to
+    the right, read as one straight line through the gap), unless both are instances
+    of one `.*` spec line (check_layout's two_lines: they read as the one line they are);
+    or, for a route sharing an end with it, a crossing (a fan out of one side whose lines
+    swap over: read as a junction)."""
     flow, mine = _flow(x.e), {x.e.a, x.e.b}
+    line = flow.split(".")[0]
     segs = [{"p": p, "q": q} for p, q in zip(pts, pts[1:])]
     n = 0
     for f, dpts, ends in drawn:
         if f == flow:
             continue
         other = [{"p": p, "q": q} for p, q in zip(dpts, dpts[1:])]
-        hit = any((d := CL.in_line_gap(s, o)) is not None and d <= K.IN_LINE_CROSS_GAP + 0.5 for s in segs for o in other)
+        hit = f.split(".")[0] != line and any(
+            (d := CL.in_line_gap(s, o)) is not None and d <= K.IN_LINE_CROSS_GAP + K.IN_LINE_EPS
+            for s in segs for o in other)
         if not hit and mine & set(ends):
             hit = _crossings([pts, dpts]) > 0
         n += hit
@@ -2171,20 +2177,26 @@ def _assign_ports(ctx: _Ctx, xs: Dict[int, _Edge]) -> Dict[Tuple[int, str], floa
         for it, o in zip(items, offs):
             for key in it[4]:
                 out[key] = o
-    out.update(_group_ports(ctx, xs, ends, count))
+    out.update(_group_ports(ctx, xs, ends, count, dict(out)))
     return out
 
 
 def _group_ports(ctx: _Ctx, xs: Dict[int, _Edge], ends: Dict[Tuple[int, str], set],
-                 count: Dict[int, int]) -> Dict[Tuple[int, str], float]:
+                 count: Dict[int, int], node_ports: Dict[Tuple[int, str], float]) -> Dict[Tuple[int, str], float]:
     """Split the lines that meet one side of a group at one point (_port: the other end's
     coordinate where it faces the side, else the group's row / column center) as a node's
     side is split: two ±PORT_SIDE / ±PORT_TOPBOT apart, more PORT_PITCH apart, in the order
     of their other ends; a straight line facing the side keeps its spot. Two flows into one
     point would share its last run and one arrowhead (a -> vpc and b -> vpc from above and
-    below, into the VPC's row center). The instances of one trunk line share their point,
-    and an end with from_offset / to_offset keeps it."""
-    sides: Dict[Tuple[str, str], List[Tuple[float, float, bool, List[Tuple[int, str]]]]] = {}
+    below, into the VPC's row center). Lines whose other ends tie (one row: a -> vpc and vpc -> s from
+    above) go by how far out their other end lies: the nearer one comes toward the side it
+    approaches from, outside the other's, whose last run then passes under its leg instead
+    of across it (rr-port2 g1: A's run across S's leg 24px from the VPC border); and of
+    every order of a side's lines (up to 6) the one whose estimated routes (_fan_paths)
+    cross least wins, that order first on a tie. The instances of one trunk line share
+    their point, and an end with from_offset / to_offset keeps it."""
+    Item = Tuple[float, float, bool, List[Tuple[int, str]], float]
+    sides: Dict[Tuple[str, str], List[Item]] = {}
     first: Dict[Tuple[int, str], List[Tuple[int, str]]] = {}
     for n, x in xs.items():
         t, e = x.t, x.e
@@ -2204,14 +2216,15 @@ def _group_ports(ctx: _Ctx, xs: Dict[int, _Edge], ends: Dict[Tuple[int, str], se
             p = _port(g, side, toward)
             coord = p[1] if side in HORIZ else p[0]
             facing = abs(coord - toward) < 0.5 and t.shape in (H, V)
+            out_by = abs((other.cx - p[0]) if side in HORIZ else (other.cy - p[1]))
             members = [(n, end)]
             if shared:
                 first[(e.line, end)] = members
-            sides.setdefault((eid, side), []).append((coord, toward, facing, members))
+            sides.setdefault((eid, side), []).append((coord, toward, facing, members, out_by))
     out: Dict[Tuple[int, str], float] = {}
     for (gid, side), items in sides.items():
         items.sort(key=lambda it: (it[0], it[1]))
-        clusters: List[List[Tuple[float, float, bool, List[Tuple[int, str]]]]] = []
+        clusters: List[List[Item]] = []
         for it in items:
             if clusters and it[0] - clusters[-1][-1][0] < K.PORT_PITCH - 0.5:
                 clusters[-1].append(it)
@@ -2220,25 +2233,69 @@ def _group_ports(ctx: _Ctx, xs: Dict[int, _Edge], ends: Dict[Tuple[int, str], se
         for c in clusters:
             if len(c) < 2:
                 continue
-            c.sort(key=lambda it: it[1])
-            base = next((it[0] for it in c if it[2]), None)
-            if base is not None:            # a straight line keeps its spot, the rest fan out round it
-                below = [it for it in c if not it[2] and it[1] < base]
-                above = [it for it in c if not it[2] and it[1] >= base]
-                want = {id(it): base for it in c if it[2]}
-                for k, it in enumerate(reversed(below)):
-                    want[id(it)] = base - K.PORT_PITCH * (k + 1)
-                for k, it in enumerate(above):
-                    want[id(it)] = base + K.PORT_PITCH * (k + 1)
-            else:
-                mid = sum(it[0] for it in c) / len(c)
-                d = (K.PORT_SIDE if side in HORIZ else K.PORT_TOPBOT) if len(c) == 2 else None
-                want = {id(it): mid + ((-d if k == 0 else d) if d is not None else (k - (len(c) - 1) / 2) * K.PORT_PITCH)
-                        for k, it in enumerate(c)}
-            for it in c:
-                for key in it[3]:
-                    out[key] = want[id(it)] - it[0]
+            # by the other end's coordinate; a tie: the nearer other end toward the side it
+            # comes from (before the other from below, after it from above)
+            c.sort(key=lambda it: (it[1], it[4] if it[1] < it[0] else -it[4] if it[1] > it[0] else 0.0))
+            best, seen = None, set()
+            for k, order in enumerate(itertools.permutations(c) if len(c) <= 6 else [tuple(c)]):
+                want = _fan(order, side)
+                spots = frozenset((id(it), v) for it, v in zip(order, want))
+                if spots in seen:           # another order of lines on opposite sides of a straight one
+                    continue
+                seen.add(spots)
+                key = (_crossings(_fan_paths(ctx, xs, order, want, node_ports, out)), k)
+                if best is None or key < best[0]:
+                    best = (key, order, want)
+                if key[0] == 0:
+                    break
+            for it, v in zip(best[1], best[2]):
+                for m in it[3]:
+                    out[m] = v - it[0]
     return out
+
+
+def _fan(order: Sequence[tuple], side: str) -> Tuple[float, ...]:
+    """The points _group_ports gives a group side's lines (items of one cluster) in this
+    order: a straight line keeps its spot and the rest fan out round it, PORT_PITCH apart,
+    on the side their other end lies; else two ±PORT_SIDE / ±PORT_TOPBOT round the middle,
+    more PORT_PITCH apart."""
+    base = next((it[0] for it in order if it[2]), None)
+    if base is not None:
+        below = [it for it in order if not it[2] and it[1] < base]
+        above = [it for it in order if not it[2] and it[1] >= base]
+        want = {id(it): base for it in order if it[2]}
+        for k, it in enumerate(reversed(below)):
+            want[id(it)] = base - K.PORT_PITCH * (k + 1)
+        for k, it in enumerate(above):
+            want[id(it)] = base + K.PORT_PITCH * (k + 1)
+        return tuple(want[id(it)] for it in order)
+    mid = sum(it[0] for it in order) / len(order)
+    if len(order) == 2:
+        d = K.PORT_SIDE if side in HORIZ else K.PORT_TOPBOT
+        return (mid - d, mid + d)
+    return tuple(mid + (k - (len(order) - 1) / 2) * K.PORT_PITCH for k in range(len(order)))
+
+
+def _fan_paths(ctx: _Ctx, xs: Dict[int, _Edge], order: Sequence[tuple], want: Sequence[float],
+               node_ports: Dict[Tuple[int, str], float], group_ports: Dict[Tuple[int, str], float]) -> List[List[Pt]]:
+    """The routes the lines of one group side's cluster would take with these points: the
+    chosen shape at its first bend (_bends), each other end at its port (a trunk's shared
+    point: its first instance)."""
+    paths = []
+    for it, v in zip(order, want):
+        n, end = it[3][0]
+        x = xs[n]
+        e, shape = x.e, x.t.shape
+        offs = {}
+        for k, fixed in (("a", e.from_offset), ("b", e.to_offset)):
+            offs[k] = fixed if fixed is not None else node_ports.get((n, k), group_ports.get((n, k), 0.0))
+        offs[end] = v - it[0]
+        pa, pb = x.ends(shape, offs["a"], offs["b"])
+        bends = _bends(ctx, x, shape, pa, pb)
+        if shape in (HVH, VHV) and not bends:
+            continue
+        paths.append(_simplify(_path(shape, pa, pb, bends[0] if bends else None)))
+    return paths
 
 
 def _crossings(paths: Sequence[Sequence[Pt]]) -> int:

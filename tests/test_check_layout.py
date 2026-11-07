@@ -764,5 +764,17 @@ class DraftNodeGroups(unittest.TestCase):
         texts, _, _, icons, _ = CL.collect(self.label_under_a_label_only_node(groups=False))
         self.assertEqual({t["own"] for t in texts} | {i["own"] for i in icons}, {None})
 
+
+class InLineClose(unittest.TestCase):
+    def test_limits(self):
+        """Under 16px (24 with a crossing) reads as one line; exactly at a limit does not,
+        nor just under it by float noise (the ±8 ports' 16.0)."""
+        self.assertTrue(CL.in_line_close(12))
+        self.assertFalse(CL.in_line_close(16))
+        self.assertFalse(CL.in_line_close(16 - 1e-9))
+        self.assertTrue(CL.in_line_close(20, crossed=True))
+        self.assertFalse(CL.in_line_close(24 - 1e-9, crossed=True))
+
+
 if __name__ == "__main__":
     unittest.main()

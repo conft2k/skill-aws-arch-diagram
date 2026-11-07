@@ -431,6 +431,7 @@ class ShapeMissResolve(unittest.TestCase):
         self.assertNotIn("check: ", text)
 
 
+
 def row_spec(groups=True, **edge):
     """Three nodes in one row (in the AWS Cloud unless groups=False) and a, b, c joined
     a → b → c and a → c: b blocks a → c's straight line, so the router goes round."""
@@ -933,6 +934,22 @@ class Lanes(unittest.TestCase):
         iss = CL.Issue("LINE ON LINE", "LINE ON LINE", [], {"s": seg, "o": dict(seg), "d": 200})
         self.assertEqual(layout.where_to_widen(layout.Problem(iss, ["edge:4", "edge:5"], [seg, seg])), ("x", x))
 
+    def test_no_widening_between_two_ports_of_one_node(self):
+        """Two flows on one line with their gap between two ports of one node both end on
+        (CloudWatch's, 12px apart): no track gap opens it, so no widening; a gap elsewhere
+        along the line still widens."""
+        spec, b = built(lanes_spec())
+        cw = b.geom.nodes["cw"]
+        x = cw.icon.x0 - 40
+        for (lo, hi), want in (((cw.cy - 6, cw.cy + 6), None), ((cw.icon.y1 + 10, cw.icon.y1 + 22), "y")):
+            with self.subTest(gap=(lo, hi)):
+                s, o = {"p": (x, lo - 60), "q": (x, lo)}, {"p": (x, hi), "q": (x, hi + 60)}
+                iss = CL.Issue("LINE ON LINE", "LINE ON LINE", [], {"s": s, "o": o, "d": hi - lo})
+                p = layout.Problem(iss, ["edge:4", "edge:5"], [s, o])
+                w = layout.where_to_widen(p, spec, b.geom)
+                self.assertEqual(w and w[0], want)
+                self.assertEqual(layout.where_to_widen(p), ("y", (lo + hi) / 2))     # without the geometry
+
 class ShortOverlayTitle(unittest.TestCase):
     def test_member_below_a_non_member_or_in_no_box(self):
         """An ASG titled "ASG" over a member below another node of its subnet, or over a
@@ -1369,6 +1386,35 @@ class GroupPorts(unittest.TestCase):
         self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
         a, b = self.ends(root)
         self.assertEqual(b[-1]["q"][1] - a[-1]["q"][1], 12)
+
+    def g1(self, order=(0, 1, 2, 3)):
+        """Review rr-port2 g1: A and S share row r1, so a -> vpc and vpc -> s tie on the
+        VPC's left side; edge order put A's port above S's and A's last run crossed S's leg
+        24px from the border, Layout OK."""
+        edges = [{"e": "a -> vpc"}, {"e": "b -> vpc"}, {"e": "c -> vpc"}, {"e": "vpc -> s"}]
+        return {"name": "g1", "mode": "document", "cols": ["c1", "c2", "c3"], "rows": ["r1", "r2", "r3"],
+                "groups": [{"id": "cloud", "type": "cloud"},
+                           {"id": "vpc", "type": "vpc", "label": "VPC", "in": "cloud"}],
+                "nodes": [{"id": "a", "icon": "service/Amazon-EC2", "label": "A", "in": "cloud", "at": ["c1", "r1"]},
+                          {"id": "b", "icon": "service/Amazon-EC2", "label": "B", "in": "cloud", "at": ["c1", "r2"]},
+                          {"id": "c", "icon": "service/Amazon-EC2", "label": "C", "in": "cloud", "at": ["c1", "r3"]},
+                          {"id": "z", "icon": "service/Amazon-EC2", "label": "Z", "in": "vpc", "at": ["c3", "r2"]},
+                          {"id": "s", "icon": "service/Amazon-Simple-Storage-Service", "label": "S",
+                           "in": "cloud", "at": ["c2", "r1"]}],
+                "edges": [edges[k] for k in order]}
+
+    def test_tied_lines_do_not_cross(self):
+        """The nearer other end (S) takes the port toward the side it comes from (above A's),
+        whatever the edge order: no crossing, one picture."""
+        lines = []
+        for order in ((0, 1, 2, 3), (3, 2, 1, 0), (3, 0, 1, 2), (1, 0, 3, 2)):
+            with self.subTest(order=order):
+                rc, text, root = main_on(self.g1(order))
+                self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+                runs = [[r[0]["p"]] + [sg["q"] for sg in r] for r in connectors(root).values()]
+                self.assertEqual(R._crossings(runs), 0, runs)
+                lines.append(sorted(runs))
+        self.assertTrue(all(ls == lines[0] for ls in lines), lines)
 
 
 class LabelOnLine(unittest.TestCase):

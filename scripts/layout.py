@@ -331,8 +331,30 @@ def _box(it: dict) -> Tuple[float, float, float, float]:
     return CL.seg_box(it)
 
 
-def where_to_widen(p: Problem) -> Optional[Tuple[str, float]]:
-    """(axis, coordinate) of the gap a problem asks to widen, or None."""
+def between_ports(spec: Spec, geom: Geometry, p: Problem, lo: float, hi: float, i: int) -> bool:
+    """Does the gap lo..hi (on axis i) of an in-line LINE ON LINE lie between two ports of
+    one node both its lines end on: inside that node's icon along the line (two lines out
+    of one side at ±8, turning apart along one line at the ports' height)? No track gap
+    opens it: the ports' spacing sets it."""
+    nodes = None
+    for n, part in (e for e in (edge_of(o) for o in p.owners) if e):
+        if part or n >= len(spec.edges):
+            continue
+        e = spec.edges[n]
+        mine = {v for v, kd in ((e.a, e.a_kind), (e.b, e.b_kind)) if kd == "node"}
+        nodes = mine if nodes is None else nodes & mine
+    for nid in nodes or ():
+        b = geom.nodes[nid].icon if nid in geom.nodes else None
+        if b is not None and (b.x0, b.y0)[i] - 0.5 <= lo and hi <= (b.x1, b.y1)[i] + 0.5:
+            return True
+    return False
+
+
+def where_to_widen(p: Problem, spec: Optional[Spec] = None,
+                   geom: Optional[Geometry] = None) -> Optional[Tuple[str, float]]:
+    """(axis, coordinate) of the gap a problem asks to widen, or None (also for an in-line
+    LINE ON LINE whose gap lies between two ports of one node, given spec and geom:
+    between_ports)."""
     k, c = p.iss.kind, p.iss.ctx
     if k == "SHORT ARROW":
         s = c["s"]
@@ -341,12 +363,16 @@ def where_to_widen(p: Problem) -> Optional[Tuple[str, float]]:
         s = c["s"]
         if CL.collinear_run(s, c["o"]) <= K.ON_LINE_RUN:
             # two flows on one line with a gap between them (lines_in_line): the gap along
-            # the line grows where they part, so the one drawn in a fallback out of the
-            # port beside the other's has room for its own shape (ce-tgw: tgw -> seni.2's
-            # HVH out of the TGW's right side, its bend before Firewall RT)
+            # the line grows where they part, so the one drawn in a fallback has room for
+            # its own shape; not when the gap lies between two ports of one node, whose
+            # spacing no track sets (ce-tgw round 0: enib.1 -> tgw and tgw -> seni.2's
+            # VHV fallback turning apart under the TGW's bottom ports 12px apart; the
+            # fallback's miss feedback widens its gaps: drew another shape)
             ax = "y" if _vertical(s) else "x"
             i = 0 if ax == "x" else 1
             ends = sorted(v for seg in (s, c["o"]) for v in (seg["p"][i], seg["q"][i]))
+            if spec is not None and geom is not None and between_ports(spec, geom, p, ends[1], ends[2], i):
+                return None
             return ax, (ends[1] + ends[2]) / 2
         # two flows on one run: the gap the run lies in grows, so the router has room for a
         # lane each (layout_route lane_counts / _lanes)
@@ -451,7 +477,7 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
                 skip[n] = skip.get(n, 0) + 1
                 changed = True
                 continue
-        w = where_to_widen(p)
+        w = where_to_widen(p, b.spec, b.geom)
         if w:
             widen(w[0], w[1], k.lower(), owner, p.owners)
     # an edge the router drew in another shape than plan() reserved space for: widen the
@@ -622,7 +648,7 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
         elif kind == "group" and ref in spec.groups and p.iss.kind in ("TEXT AT BORDER", "HEADER CLEARANCE",
                                                                        "LINE HUGS BORDER"):
             tips.append(f"{spec.groups[ref].src} {ref}: pad / min_w / min_h")
-    w = where_to_widen(p)
+    w = where_to_widen(p, spec, geom)
     st = stack_bracket(spec, geom, p.owners, w[1]) if w and w[0] == "y" else None
     if st:
         al = spec.track(st[3]).align
@@ -737,7 +763,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     extra: Dict[Tuple[str, str, str], Requirement] = {}
     skip: Dict[int, int] = {}
-    best = None                     # ((problems, shape misses), round, build, feedback reqs, skips)
+    best = None                     # ((problems, shape misses + too wide), round, build, feedback reqs, skips)
     place = None
     try:
         for rnd in range(MAX_ROUNDS + 1):
@@ -755,9 +781,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # A clean check with an edge drawn in another shape still re-solves: the router's
             # fallback (a U around the outside) can pass the check and still be a detour.
             # A slide that comes out too small counts as a problem: a round that widened a gap
-            # for a miss alone must not trade a fitting slide for one under 10pt. One text
+            # for a miss alone must not trade a fitting slide for one under 10pt; nor a
+            # document under the width warning (DOC_WIDE) for one over it, which counts as a
+            # miss (the miss feedback widens every gap between an edge's ends). One text
             # clash reported twice counts once (problem_count).
-            score = (problem_count(probs) + (1 if slide_problem(spec, b.geom) else 0), shape_misses(b))
+            wide = spec.mode == "document" and b.geom.canvas_w > K.DOC_WIDE
+            score = (problem_count(probs) + (1 if slide_problem(spec, b.geom) else 0), shape_misses(b) + wide)
             if best is None or score < best[0]:
                 best = (score, rnd, b, list(extra.values()), dict(skip))
             if score == (0, 0) or rnd == MAX_ROUNDS:

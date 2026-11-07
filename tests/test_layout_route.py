@@ -21,6 +21,7 @@ import tempfile
 import unittest
 import unittest.mock
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1005,6 +1006,57 @@ class GroupPorts(unittest.TestCase):
         ports = R._assign_ports(ctx, xs)
         self.assertEqual((ports[(0, "b")], ports[(1, "b")], ports[(2, "b")]),
                          (-K.PORT_PITCH, K.PORT_PITCH, 0.0))
+
+    def tie(self, flip):
+        """p (col a) -> vpc and vpc -> s (col m, nearer the VPC), both on row r1: their
+        other ends tie on the VPC's left side."""
+        spec = M.Spec("t", cols=[M.Track("a", "col", 0), M.Track("m", "col", 1), M.Track("v", "col", 2)],
+                      rows=[M.Track("r1", "row", 0), M.Track("r2", "row", 1)])
+        spec.groups = {"vpc": M.Group("vpc", "vpc", label="VPC", cols=("v", "v"), rows=("r2", "r2"))}
+        spec.nodes = {i: M.Node(i, "service/Amazon-EC2", i.upper(), col=c, row="r1")
+                      for i, c in (("p", "a"), ("s", "m"))}
+        edges = [M.Edge(0, "p", "vpc", "->", line=0, b_kind="group"),
+                 M.Edge(1, "vpc", "s", "->", line=1, a_kind="group")]
+        spec.edges = [replace(e, n=k, line=k) for k, e in enumerate(edges[::-1] if flip else edges)]
+        cols, rows = {"a": 100, "m": 250, "v": 400}, {"r1": 100, "r2": 200}
+        nodes = {}
+        for nid, n in spec.nodes.items():
+            cx, cy = cols[n.col], rows[n.row]
+            icon = M.Box(cx - 24, cy - 24, cx + 24, cy + 24)
+            nodes[nid] = M.NodeGeom(nid, cx, cy, icon, [M.TextLine(n.label, cx, icon.y1 + 18, 14, K.INK, "", "middle")])
+        geom = M.Geometry("document", 48, 600, 400, cols, rows, nodes=nodes,
+                          groups={"vpc": M.GroupGeom("vpc", M.Box(340, 150, 460, 250))})
+        ctx = R._Ctx(spec, geom)
+        topo = R._topology(spec)
+        xs = {e.n: R._Edge(ctx, e, topo[e.n]) for e in spec.edges}
+        return ctx, xs
+
+    def test_a_tie_puts_the_nearer_end_outside(self):
+        """Review rr-port2 g1: on a tie the edge order decided and p's last run crossed
+        s's leg beside the border; the nearer other end (s) takes the port toward the side
+        both come from (above), in either edge order."""
+        for flip in (False, True):
+            with self.subTest(flip=flip):
+                ctx, xs = self.tie(flip)
+                ports = R._assign_ports(ctx, xs)
+                at = {("p" if x.e.a == "p" else "s"): ports[(n, "b" if x.e.a == "p" else "a")] for n, x in xs.items()}
+                self.assertEqual(at, {"s": -K.PORT_SIDE, "p": K.PORT_SIDE})
+                runs = []
+                for n, x in xs.items():
+                    pa, pb = x.ends(x.t.shape, ports.get((n, "a"), 0.0), ports.get((n, "b"), 0.0))
+                    runs.append(R._path(x.t.shape, pa, pb, (R._bends(ctx, x, x.t.shape, pa, pb) or [None])[0]))
+                self.assertEqual(R._crossings(runs), 0, runs)
+
+    def test_fewest_crossings_order_wins(self):
+        """A non-tied order whose estimated routes cross loses to one that does not: s's
+        row a little lower than p's (toward order: p above) still puts s outside."""
+        ctx, xs = self.tie(False)
+        n = ctx.geom.nodes["s"]
+        ctx.geom.nodes["s"] = M.NodeGeom("s", n.cx, n.cy + 4, M.Box(n.icon.x0, n.icon.y0 + 4, n.icon.x1, n.icon.y1 + 4),
+                                         n.lines)
+        xs = {k: R._Edge(ctx, x.e, x.t) for k, x in xs.items()}
+        ports = R._assign_ports(ctx, xs)
+        self.assertEqual((ports[(0, "b")], ports[(1, "a")]), (K.PORT_SIDE, -K.PORT_SIDE))
 
 
 if __name__ == "__main__":
