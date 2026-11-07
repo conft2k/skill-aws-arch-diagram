@@ -93,6 +93,7 @@ nodes:
   - tgw
   - main
 - id: rtfw
+  for: [eni.1, eni.2]
   icon: resource/Amazon-Route-53_Route-Table
   label: Firewall RT
   sub: VPC A · B 전파
@@ -101,6 +102,7 @@ nodes:
   - rtfw
   - main
 - id: rtsp
+  for: [vpca, vpcb]
   icon: resource/Amazon-Route-53_Route-Table
   label: Spoke RT
   in: region

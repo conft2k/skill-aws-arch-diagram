@@ -27,9 +27,9 @@ nodes:
   - {id: enia, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tsna, col: att}
   - {id: ec2b, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: appb, col: ec2}
   - {id: enib, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tsnb, col: att}
-  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: ["연결: App VPC A · B", "0.0.0.0/0 → Security VPC"], in: region, at: [rtsp, main]}   # between the spoke VPCs and the TGW, where both spoke attachments reach it
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: ["연결: App VPC A · B", "0.0.0.0/0 → Security VPC"], in: region, at: [rtsp, main], for: [enia.1, enia.2, enib.1, enib.2]}   # between the spoke VPCs and the TGW, where both spoke attachments reach it
   - {id: tgw,  icon: service/AWS-Transit-Gateway, label: Transit Gateway, in: region, at: [tgw, main]}
-  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: ["연결: Security VPC", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"], in: region, at: [rtfw, main]}   # between the TGW and the Security VPC, beside its attachment lines
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: ["연결: Security VPC", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"], in: region, at: [rtfw, main], for: [seni.1, seni.2]}   # between the TGW and the Security VPC, beside its attachment lines
   - {id: seni, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, sub: "0.0.0.0/0 → 방화벽", in: tsns, col: seni}
   - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, sub: ["0.0.0.0/0 → NAT", "10.0.0.0/8 → TGW"], in: fwsn, col: fw}
   - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, sub: ["0.0.0.0/0 → IGW", "10.0.0.0/8 → 방화벽"], in: pubsn, col: nat}

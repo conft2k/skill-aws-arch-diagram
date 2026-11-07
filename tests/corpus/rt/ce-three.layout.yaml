@@ -141,6 +141,7 @@ nodes:
   in: tsnc
   col: att
 - id: rtsp
+  for: [enia.1, enia.2, enib.1, enib.2, enic.1, enic.2]
   icon: resource/Amazon-Route-53_Route-Table
   label: Spoke RT
   sub:
@@ -158,6 +159,7 @@ nodes:
   - tgw
   - main
 - id: rtfw
+  for: [seni.1, seni.2]
   icon: resource/Amazon-Route-53_Route-Table
   label: Firewall RT
   sub:

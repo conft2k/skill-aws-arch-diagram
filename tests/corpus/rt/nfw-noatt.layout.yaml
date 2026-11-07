@@ -21,8 +21,8 @@ nodes:
   - {id: ec2a, icon: service/Amazon-EC2, label: EC2, in: sna, at: [spoke, az1]}
   - {id: ec2b, icon: service/Amazon-EC2, label: EC2, in: snb, at: [spoke, az2]}
   - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
-  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: "VPC A · B 전파", in: region, at: [tgw, az1]}
-  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: "0.0.0.0/0 → 검사 VPC", in: region, at: [tgw, az2]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: "VPC A · B 전파", in: region, at: [tgw, az1], for: [eni.1, eni.2]}
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: "0.0.0.0/0 → 검사 VPC", in: region, at: [tgw, az2], for: [vpca, vpcb]}
   - {id: eni,  icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tgwsn, col: eni}
   - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, in: fwsn, col: fw}
   - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubsn, col: nat}

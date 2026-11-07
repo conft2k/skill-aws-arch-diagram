@@ -27,8 +27,8 @@ nodes:
   - {id: ec2b, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: appb, col: ec2}
   - {id: enib, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tgwb, col: seni}
   - {id: tgw,  icon: service/AWS-Transit-Gateway, label: Transit Gateway, in: region, at: [tgw, main]}
-  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: ["연결: App VPC A · B", "0.0.0.0/0 → Security VPC"], in: region, at: [tgw, a1]}
-  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: ["연결: Security VPC (appliance mode)", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"], in: region, at: [tgw, b2]}
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: ["연결: App VPC A · B", "0.0.0.0/0 → Security VPC"], in: region, at: [tgw, a1], for: [enia.1, enia.2, enib.1, enib.2]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: ["연결: Security VPC (appliance mode)", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"], in: region, at: [tgw, b2], for: [eni.1, eni.2]}
   - {id: eni,  icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, sub: "0.0.0.0/0 → 같은 AZ 방화벽", in: tgwsn, col: eni}
   - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, sub: ["0.0.0.0/0 → 같은 AZ NAT", "10.0.0.0/8 → TGW"], in: fwsn, col: fw}
   - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, sub: ["0.0.0.0/0 → IGW", "10.0.0.0/8 → 같은 AZ 방화벽"], in: pubsn, col: nat}
