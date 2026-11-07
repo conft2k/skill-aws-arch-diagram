@@ -26,8 +26,10 @@ precision (the standard hook rounded them to 0.01); `comparison.precision` state
 limit. A new drawn run records `rule_checked`, distinguishing an empty verdict from a
 checker that never ran. In legacy reports, any recorded violation proves the old runner
 used a checker on all drawn runs; an entirely empty legacy report is unjudged.
-Missing or failed checker results are unjudged, with no rule deltas. Expected load /
-reject / refuse behaviour is compared before drawing scores. Added runs are explicitly
+Missing or failed checker results are unjudged, with no rule deltas. Losing expected
+load / reject / refuse behaviour is worse; restoring it is better. When both runs meet
+or miss their expectations, their drawing scores or unchanged undrawn results decide.
+Added runs are explicitly
 un-compared. Filters compare only the selected runs; the summed ratio uses
 matching runs, and the wall ratio is unavailable when the run sets differ. No baseline
 keeps the existing summary and exit status; drawn records additionally identify whether
@@ -519,7 +521,7 @@ def compare_reports(current: Dict[str, Any], baseline: Dict[str, Any],
         want = EXPECT.get(r.get("expect", "load"))
         old_want = EXPECT.get(b.get("expect", "load"))
         reason = None
-        if r["result"] != want:
+        if r["result"] != want and b["result"] == old_want:
             verdict = "worse"
             reason = f"expected {r.get('expect', 'load')} ({want}), got {r['result']}"
         elif r["result"] == b["result"] == "drawn" and not rules_judged:

@@ -308,10 +308,33 @@ def test_legacy_report_checker_evidence_covers_empty_drawn_runs(tmp_path):
     assert got["counts"]["unjudged"] == 0
 
 
-def test_current_result_outside_expect_is_worse_even_if_baseline_also_missed(tmp_path):
-    before = report(run(expect="reject", result="drawn"))
+@pytest.mark.parametrize("expect,result", [
+    ("load", "crash"), ("refuse", "crash"), ("reject", "drawn"),
+])
+def test_same_existing_expect_failure_is_same(tmp_path, expect, result):
+    before = report(run(expect=expect, result=result))
     got = compare(tmp_path, copy.deepcopy(before), before)
-    assert got["counts"]["worse"] == 1
+    assert got["counts"]["same"] == 1
+    assert got["counts"]["worse"] == got["counts"]["better"] == 0
+    assert got["changed_drafts"] == []
+
+
+@pytest.mark.parametrize("expect,old_result,new_result", [
+    ("load", "crash", "drawn"), ("reject", "drawn", "rejected"),
+    ("refuse", "drawn", "layout-error"),
+])
+def test_restored_expected_result_is_better(tmp_path, expect, old_result, new_result):
+    before = report(run(expect=expect, result=old_result))
+    now = report(run(expect=expect, result=new_result))
+    got = compare(tmp_path, now, before)
+    assert got["counts"]["better"] == 1
+    assert got["counts"]["worse"] == 0
+
+
+def test_both_expect_misses_still_compare_the_drawing_verdict(tmp_path):
+    before = report(run(expect="reject", codes=["LINE OVER TEXT"]))
+    got = compare(tmp_path, report(run(expect="reject")), before)
+    assert got["counts"]["better"] == 1
 
 
 def test_cli_missing_checker_is_unjudged_even_with_byte_identical_draft(tmp_path, capsys):
