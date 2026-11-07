@@ -999,7 +999,7 @@ def _map_req(m: _Model, r: Requirement) -> Requirement:
             if nid not in m.spec.nodes:
                 raise KeyError(v)
             return m.nref(nid, r.axis, side)
-        if v == "origin" or v.startswith("group:"):
+        if v in ("origin", "drawing") or v.startswith("group:"):
             if v.startswith("group:"):
                 gid, _, e = v[6:].rpartition(".")
                 if gid not in m.spec.groups or e not in (("L", "R") if r.axis == "x" else ("T", "B")):
@@ -1377,8 +1377,11 @@ def _geometry(m: _Model, xv, yv, note_block) -> Geometry:
         c = geom.rows[t.id]
         geom.row_extent[t.id] = (min([b.y0 for b in fs] + [c]), max([b.y1 for b in fs] + [c]))
     boxes = [g.rect for g in geom.groups.values()] + [n.footprint() for n in geom.nodes.values()]
-    geom.drawing = union_all(boxes) or Box(0, 0, 0, 0)
-    d, margin = geom.drawing, mc.canvas_margin
+    d = union_all(boxes) or Box(0, 0, 0, 0)
+    # "drawing": a route the caller kept inside the canvas past everything drawn (an
+    # out-and-back right of / below the outermost items) extends the drawing to it
+    geom.drawing = d = Box(d.x0, d.y0, max(d.x1, xv.get("drawing", d.x1)), max(d.y1, yv.get("drawing", d.y1)))
+    margin = mc.canvas_margin
     w = d.x1
     h = d.y1 + margin
     if note_block is not None:

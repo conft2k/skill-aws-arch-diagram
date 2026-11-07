@@ -126,6 +126,10 @@ is two Requirements). Variable names (strings):
   "node:<nid>"                   the node's icon center on that axis (track center + dx/dy,
                                  a flow-row node's solved x, a flow-column node's solved y,
                                  a border node's border).
+  "drawing"                      only as `b`: the drawing's far edge (right on x, bottom on
+                                 y); W2 extends Geometry.drawing to it, so the canvas (and a
+                                 panel note below) follows — W3's room for an out-and-back
+                                 leg right of / below the outermost items (decision n).
 W2 maps "node:<nid>" of a colspan node (center between X_b1 and X_b2) to its center: for
 an assumed span s it takes X_b1 + s/2 (as `b`) / X_b2 − s/2 (as `a`); s = 0 is the
 conservative first solve (any center in the span). The span g(s) a solve gives back grows
@@ -140,7 +144,8 @@ Canvas (W2): every drawn thing ≥ canvas_margin from "origin" on both axes, and
   canvas_w = max(drawing.x1, pane rect x1) + canvas_margin
   canvas_h = max(drawing.y1 + canvas_margin, drawing.y1 + note_block.below(),
                  pane: cloud.y0 + note_block.h + canvas_margin)
-  drawing = union of every group rect and node footprint (no edges, no note).
+  drawing = union of every group rect and node footprint (no edges, no note), extended
+            to the "drawing" variable when a Requirement names it.
 Note rects (W4 computes them; W2 needs only place/w/h):
   panel  Box(PANEL_X, drawing.y1 + PANEL_GAP, canvas_w − PANEL_X, … + h); below() = 16 + h + 16
   pane   Box(PANE_X, cloud.y0, PANE_X + w, cloud.y0 + h); below() = 0. Width (auto):
@@ -307,6 +312,11 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     + 8 from the box + 4 to the bend, then the arrow; nfw "VPC attachment"); an overlay
     (ASG) a line leaves sideways keeps 16 to its member subnets' parallel border (alb
     816 → 836, nlb). `points` routes get no route warnings (check_layout judges them).
+    A same-side HVH / VHV (out-and-back, from_side = to_side along the shape's end
+    pieces) gets none of the between-ends gutter / label run / footprint reqs: each end
+    instead keeps port + end segment (+ the labels its leg runs past) + max(HUG_CLEAR, the
+    line's label beside the leg + 8) from the innermost common box's border on that side
+    ("origin" / "drawing" − canvas margin when the ends share no box).
  o. Note auto rule (DESIGN 4.7) also picks the pane for a document when top-level items sit
     left of the Cloud and the pane fits above them without a push (bedrock-dx 1040 <
     0.7 × 1498 and nlb-mtls 764 vs 763 drew panes; the specs no longer force `place`).

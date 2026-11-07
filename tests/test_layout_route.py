@@ -709,10 +709,35 @@ class Synthetic(unittest.TestCase):
         self.assertGreaterEqual(bend, geom.nodes["x"].lines[0].box(conservative=True).x1 + 4)
         self.assertLessEqual(bend, 220 - K.HUG_CLEAR)
         self.assertFalse(any("instead of" in w for w in warns), warns)
-        # with no room inside the box the bend still stays HUG_CLEAR off its border
+        # a box edge 196: the leg still fits past the label, HUG_CLEAR off the border
         geom.groups["sn"] = M.GroupGeom("sn", M.Box(40, 150, 196, 470))
         pts = points(lines_of(R.draw(spec, geom)[0], 0)[0])
-        self.assertTrue(all(abs(p[0] - 196) >= K.HUG_CLEAR for p in pts[1:3]), pts)
+        self.assertEqual(pts[1][0], bend)
+        self.assertLessEqual(bend, 196 - K.HUG_CLEAR)
+        # 180: no spot past the label 12 inside the border, so no out-and-back is drawn
+        # (not one hugging the border or crossing the label); the warning says which pad
+        # gives the leg room, not "widen the gap between the ends"
+        geom.groups["sn"] = M.GroupGeom("sn", M.Box(40, 150, 180, 470))
+        els, warns = R.draw(spec, geom)
+        pts = points(lines_of(els, 0)[0])
+        self.assertTrue(all(p[0] <= 180 - K.HUG_CLEAR for p in pts), pts)
+        self.assertNotEqual(len(pts), 4, pts)
+        w, = [w for w in warns if "instead of HVH" in w]
+        self.assertIn("no room right of both ends inside sn", w)
+        self.assertIn("give sn pad_right", w)
+        self.assertNotIn("between the ends", w)
+
+    def test_same_side_needs_a_side_along_the_shape(self):
+        """An out-and-back only on a side the shape's end pieces leave along: HVH top / top
+        is no out-and-back (the loader rejects it; a Spec built by hand gets the plain HVH
+        search, no horizontal piece off a top port)."""
+        spec, _ = self.setup(blocker=False)
+        spec.nodes["y"].col, spec.nodes["y"].row = "a", "s"
+        spec.edges = [M.Edge(0, "x", "y", "->", shape="HVH", from_side="top", to_side="top")]
+        self.assertFalse(R._same_side("HVH", "top", "top"))
+        self.assertFalse(R._same_side("VHV", "left", "left"))
+        self.assertTrue(R._same_side("VHV", "bottom", "bottom"))
+        self.assertEqual([r for r in R.plan(spec) if "out-and-back" in r.why], [])
 
 
 if __name__ == "__main__":

@@ -487,6 +487,62 @@ class ShortOverlayTitle(unittest.TestCase):
                         self.assertGreater(rects["asg"], icons[other][1])
 
 
+class OutAndBack(unittest.TestCase):
+    @staticmethod
+    def spec(mode, cols, at, edge, boxed=True, **vpc):
+        groups = [{"id": "cloud", "type": "cloud"}, dict({"id": "vpc", "type": "vpc", "label": "VPC", "in": "cloud"}, **vpc),
+                  {"id": "sn", "type": "private", "label": "DB subnet", "in": "vpc"}] if boxed else []
+        nodes = [dict({"id": i, "icon": "resource/Amazon-Aurora_Amazon-RDS-Instance", "label": lab, "at": a},
+                      **({"in": "sn"} if boxed else {})) for i, lab, a in zip(("p", "s"), ("Primary", "Standby"), at)]
+        return {"name": "oab", "mode": mode, "cols": cols, "rows": ["r1", "r2"], "groups": groups, "nodes": nodes,
+                "edges": [dict({"e": "p -> s"}, **edge)] if edge else []}
+
+    def drawn(self, d):
+        spec, b = built(d)
+        self.assertFalse([w for w in b.warnings if "instead of" in w], b.warnings)
+        self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg))], [])
+        g = next(e for e in ET.fromstring(b.svg).iter(NS + "g") if e.get("id") == "edge:0")
+        pl, = [c for c in g if c.tag == NS + "polyline"]
+        pts = [tuple(map(float, p.split(","))) for p in pl.get("points").split()]
+        return b.geom, pts
+
+    def test_plan_reserves_the_leg_not_a_gutter(self):
+        """Same side at both ends: plan() reserves the leg from each end to the innermost
+        box holding both (or the canvas) on that side, and no bend gutter, label run or
+        footprint gap between the ends (gsame2: column b no longer pushed right for
+        nothing; t4 left / left in a subnet, t2 top-level ends at the canvas right edge,
+        a slide VHV bottom / bottom: each drawn as the out-and-back, inside, Layout OK)."""
+        # gsame2: VPC pad_right 80 already holds the leg, so the canvas is what the nodes alone take
+        def gsame2(edge):
+            d = self.spec("document", ["a", "b"], [["a", "r1"], ["b", "r2"]], edge, pad_right=80)
+            d["groups"] = d["groups"][:2]
+            for n in d["nodes"]:
+                n["in"] = "vpc"
+            return built(d)[1].geom
+        self.assertEqual(gsame2({"shape": "HVH", "from_side": "right", "to_side": "right"}).canvas_w,
+                         gsame2(None).canvas_w)
+        for mode in ("document", "slide"):
+            for side, boxed in (("left", True), ("right", True), ("right", False), ("left", False)):
+                with self.subTest(mode=mode, side=side, boxed=boxed):
+                    geom, pts = self.drawn(self.spec(mode, ["c"], [["c", "r1"], ["c", "r2"]],
+                                                     {"label": "sync", "shape": "HVH", "from_side": side,
+                                                      "to_side": side}, boxed=boxed))
+                    self.assertEqual(len(pts), 4, pts)
+                    cx, leg = geom.nodes["p"].cx, pts[1][0]
+                    self.assertTrue(leg > cx if side == "right" else leg < cx, pts)
+                    wall = geom.groups["sn"].rect if boxed else M.Box(0, 0, geom.canvas_w, geom.canvas_h)
+                    self.assertTrue(wall.x0 + K.HUG_CLEAR <= leg <= wall.x1 - K.HUG_CLEAR, (pts, wall))
+            for side in ("top", "bottom"):
+                with self.subTest(mode=mode, side=side, shape="VHV"):
+                    geom, pts = self.drawn(self.spec(mode, ["a", "b"], [["a", "r1"], ["b", "r1"]],
+                                                     {"label": "sync", "shape": "VHV", "from_side": side,
+                                                      "to_side": side}))
+                    self.assertEqual(len(pts), 4, pts)
+                    cy, leg, sn = geom.nodes["p"].cy, pts[1][1], geom.groups["sn"].rect
+                    self.assertTrue(leg > cy if side == "bottom" else leg < cy, pts)
+                    self.assertTrue(sn.y0 + K.HUG_CLEAR <= leg <= sn.y1 - K.HUG_CLEAR, (pts, sn))
+
+
 class LabelOnLine(unittest.TestCase):
     def test_no_room_above_or_below_puts_the_label_on_its_line(self):
         """No room above (a sub-caption) nor below (an icon): the label sits on its line over

@@ -213,10 +213,14 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   `shape: H|V|HVH|VHV|HV|VH`, `bend_x` / `bend_y` (an expression or `gap`), `from_side` /
   `to_side` (`left|right|top|bottom`), `from_offset` / `to_offset` (px along the side),
   `points: [[x, y], …]` (the whole polyline, ends included; `e:` still names the ends).
+  A side must leave along the shape's end piece (`HVH`: `left` / `right`, `VHV`: `top` /
+  `bottom`, `HV`: horizontal then vertical); the loader rejects a mismatch.
   The same side at both ends of a `HVH` / `VHV` (`from_side: right, to_side: right`)
   draws an out-and-back on that side without `bend_x`: the leg sits at the nearest spot
   past both end segments that clears the labels along it, ≥ 12 from parallel borders and
-  inside the box holding both ends — give that box room (`pad_right`) for the line's label.
+  inside the box holding both ends (or the canvas). The engine reserves that room, and the
+  line's label beside the leg, between each end and that box's border on that side —
+  nothing between the two ends; a refused one says which `pad_<side>` to give the box.
 
 ```yaml
 # from: nfw-reference-architecture.layout.yaml
@@ -279,7 +283,8 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   which tracks coincide, then separate them with `min_gap_before`; when Y was your own
   `shape` / `from_side` / `to_side`, the line goes on with `refusing the requested …`, what
   blocked it (`bend_y tgwa.y0-60 = 148: LINE OVER TEXT '10.1.0.0/16' of svcs`) and what to
-  try — a clean `bend_y: 181`, or widening the gap between the ends).
+  try — a clean `bend_y: 181`, widening the gap between the ends, or for a same-side
+  out-and-back `give <box> pad_right`).
 - `check: …` lines: what the engine already widened or repaired on its own.
 - **Problems**: `check_layout.py`'s message, then up to three lines — `fix:` the draft
   coordinate correction (spec path: ignore it; it applies only once you edit the draft),

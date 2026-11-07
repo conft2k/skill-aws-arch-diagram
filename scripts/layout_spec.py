@@ -40,6 +40,9 @@ OPS = ("<..>", "<->", "..>", "->", "--", "..")       # longest first
 EDGE_RE = re.compile(r"^\s*(\S+)\s+(<\.\.>|<->|\.\.>|->|--|\.\.)\s+(\S.*?)\s*$")
 SHAPES = ("H", "V", "HVH", "VHV", "HV", "VH")
 SIDES = ("left", "right", "top", "bottom")
+HSIDES, VSIDES = ("left", "right"), ("top", "bottom")
+SHAPE_SIDES = {"H": (HSIDES, HSIDES), "HVH": (HSIDES, HSIDES), "V": (VSIDES, VSIDES), "VHV": (VSIDES, VSIDES),
+               "HV": (HSIDES, VSIDES), "VH": (VSIDES, HSIDES)}   # from_side / to_side each shape takes
 STEP_AT = ("mid", "start", "end", "gap", "stem", "branch")
 LABEL_AT = ("above", "below", "left", "right")
 ANCHORS = ("start", "middle", "end")
@@ -1287,6 +1290,15 @@ class _Loader:
                     self.err(loc, f"{k}: expected one of {' | '.join(SIDES)}, got {d[k]!r}")
                 else:
                     o[k] = d[k]
+        if o.get("shape") in SHAPE_SIDES:
+            # a side must leave along the shape's end piece: HVH's first and last pieces
+            # are horizontal, so from_side: top would start a horizontal piece off a top port
+            for k, want in zip(("from_side", "to_side"), SHAPE_SIDES[o["shape"]]):
+                if o.get(k) is not None and o[k] not in want:
+                    piece = "first" if k == "from_side" else "last"
+                    axis = "horizontal" if want == HSIDES else "vertical"
+                    self.err(loc, f"{k}: {o[k]} does not fit shape {o['shape']}, whose {piece} piece is {axis}; "
+                                  f"use {' or '.join(want)}, or drop shape and let the sides pick it")
         for k in ("from_offset", "to_offset"):
             if d.get(k) is not None:
                 if not _num(d[k]):

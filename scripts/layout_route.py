@@ -452,6 +452,9 @@ def plan(spec: Spec) -> List[Requirement]:
         def seg(head, soft):
             return (m.arrow_target if soft else m.arrow_min) if head else MIN_SEG
 
+        oab = _same_side(shape, t.side_a, t.side_b)
+        if oab:
+            _out_and_back_reqs(spec, e, t, shape, hs, he, add)
         for axis, d in (("x", t.dx), ("y", t.dy)):
             if d not in (1, -1):
                 continue
@@ -473,6 +476,8 @@ def plan(spec: Spec) -> List[Requirement]:
                     req(va, vb, need, f"arrow {need - oa - ob:g} + ends {e.a}→{e.b}", soft)
                 if hor:
                     _label_req(spec, e, d, na, nb, ae, be, outer, req, va, vb, oa, ob)
+            elif oab and ((shape == HVH and hor) or (shape == VHV and not hor)):
+                continue                # no bend between the ends: _out_and_back_reqs
             elif (shape == HVH and hor) or (shape == VHV and not hor):
                 ga, gb = outer(na, be, axis, d, True), outer(nb, ae, axis, d, False)
                 if t.trunk == "fork" and not ga:
@@ -549,7 +554,7 @@ def plan(spec: Spec) -> List[Requirement]:
                         add("x", f"group:{gid}.R", f"group:{sub}.R", OVERLAY_EXIT, f"line out of {gid} clear of {sub}", owner)
                     else:
                         add("x", f"group:{sub}.L", f"group:{gid}.L", OVERLAY_EXIT, f"line out of {gid} clear of {sub}", owner)
-        if shape == HVH and t.dx in (1, -1):
+        if shape == HVH and t.dx in (1, -1) and not oab:
             # the vertical leg drops past the labels of an end it leaves sideways: the
             # stack's widest line, not just the lines beside a neighbour (bedrock-dx PC)
             if e.a_kind == "node" and t.dy == 1:
@@ -574,6 +579,47 @@ def plan(spec: Spec) -> List[Requirement]:
     for (nid, side), ns in ports.items():
         _port_reqs(spec, nid, side, len(ns), M.edge_eid(ns[0]), add)
     return reqs
+
+
+def _same_side(shape: str, sa: Optional[str], sb: Optional[str]) -> bool:
+    """A HVH (VHV) whose ends leave one left / right (top / bottom) side: drawn as an
+    out-and-back on that side (draw: _out_and_back), with no bend between the ends."""
+    return sa is not None and sa == sb and ((shape == HVH and sa in HORIZ) or (shape == VHV and sa in VERT))
+
+
+def _out_and_back_reqs(spec: Spec, e: Edge, t: _Topo, shape: str, hs: bool, he: bool, add) -> None:
+    """Room for an out-and-back's leg (draw: _out_and_back) between each end and the
+    innermost box holding both on that side (no such box: the canvas): the port, the end
+    segment (or arrow) and the end's labels the leg runs past, then HUG_CLEAR to the
+    border, or the line's label beside the leg + LABEL_CLEAR when wider."""
+    m, side = spec.const, t.side_a
+    axis = "x" if shape == HVH else "y"
+    far = side in ("right", "bottom")
+    common = _nonshared(spec, e)[2]
+    e_ = {"right": "R", "left": "L", "bottom": "B", "top": "T"}[side]
+    if common:
+        wall, margin = f"group:{common[0]}.{e_}", 0.0
+    else:
+        wall, margin = ("drawing", m.canvas_margin) if far else ("origin", 0.0)
+    texts = [s for s in (e.label, e.verb) if s]
+    room = 0.0
+    if texts and axis == "x":
+        room = m.vlabel_dx + max(M.layout_text_width(s, K.TEXT_PROTO.size) for s in texts) + K.LABEL_CLEAR
+    elif texts:
+        sz = K.TEXT_PROTO.size
+        room = (m.label_below + K.GLYPH_DESCENT * sz if far else m.label_above + sz) + K.LABEL_CLEAR
+    owner = M.edge_eid(e.n)
+    upper = {1: "a", -1: "b"}.get(t.dy if axis == "x" else None)
+    for end, eid, kind, head in (("a", e.a, e.a_kind, hs), ("b", e.b, e.b_kind, he)):
+        for soft in ((False, True) if head else (False,)):     # soft: the arrow at its target length
+            reach = _off(spec, eid, kind, side) + ((m.arrow_target if soft else m.arrow_min) if head else MIN_SEG)
+            if kind == "node" and axis == "x" and upper in (None, end):
+                reach = max(reach, _half(spec, spec.nodes[eid]) + OBST_CLEAR)   # past its labels
+            need = reach + max(K.HUG_CLEAR, room) - margin
+            v = f"group:{eid}.{e_}" if kind == "group" else f"node:{eid}"
+            a, b = (v, wall) if far else (wall, v)
+            add(axis, a, b, need, f"out-and-back {side} of {eid} inside {common[0] if common else 'the canvas'}",
+                owner, soft)
 
 
 def _half(spec: Spec, n) -> float:
@@ -1018,7 +1064,7 @@ def _bends(ctx: _Ctx, x: _Edge, shape: str, pa: Pt, pb: Pt) -> List[float]:
             pass
     if shape in (HVH, VHV):
         sa, sb = x.sides(shape)
-        if sa == sb:
+        if sa == sb and sa in (HORIZ if leg_x else VERT):
             return _out_and_back(ctx, x, leg_x, i, pa, pb, sa)
     a, b = pa[i], pb[i]
     d = 1 if b >= a else -1
@@ -1829,14 +1875,23 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         hint = getattr(e, leg) if leg else None
         hint = hint if isinstance(hint, M.Expr) else None
         mine = [build(x, c) for c in _candidates(ctx, x, ports) if c[0] == want]
-        if not mine:
+        side = x.sides(want)[0] if _same_side(want, *x.sides(want)) else None
+        box = (_nonshared(ctx.spec, e)[2] or [None])[0]
+        if not mine and side:
+            why = f"no room {side} of both ends {f'inside {box}' if box else 'on the canvas'} for its out-and-back leg"
+        elif not mine:
             why = f"no {want} fits between the two ends (no free stretch for its bend)"
         else:
             probs = list(dict.fromkeys(mine[0].probs))[:3]
             why = "; ".join(_name_prob(ctx, p) for p in probs) or "a cleaner candidate won"
             if hint is not None:
                 why = f"{leg} {_expr_text(hint)} = {M.fmt_num(mine[0].bend)}: {why}"
-        if hint is not None:
+        if side:
+            # an out-and-back: its leg needs room on that side, not a gap between the ends
+            room = f"give {box} pad_{side}" if box else f"move the ends off the canvas {side} edge"
+            fix = (f"{room} (room {side} of both ends for the leg"
+                   f"{' and its label' if e.label or e.verb else ''}), or drop {leg} / shape")
+        elif hint is not None:
             x2 = _Edge(ctx, replace(e, **{leg: None}), x.t)
             clean = [c for c in _candidates(ctx, x2, ports) if c[0] == want and c[3] is not None
                      and not build(x2, c).probs]

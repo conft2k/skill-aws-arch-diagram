@@ -393,6 +393,25 @@ class ExampleSpecs(unittest.TestCase):
         self.assertEqual(p.step_at, M.Place(M.Expr("group", "sn.1", "cx"), M.Expr("group", "vpc", "y0", offset=52)))
         self.assertEqual((p.from_side, p.to_offset), ("right", -8.0))
 
+    def test_side_must_fit_the_shape(self):
+        """from_side / to_side must leave along the shape's end pieces (HVH top / top would
+        start a horizontal piece off a top port); points, or no shape, take any side."""
+        d = base()
+        d["edges"] = [{"e": "inet -> igw", "shape": "HVH", "from_side": "top", "to_side": "right"},
+                      {"e": "inet -> igw", "shape": "VH", "from_side": "bottom", "to_side": "top"}]
+        with self.assertRaises(SpecError) as cm:
+            L.load(d)
+        self.assertEqual(cm.exception.problems, [
+            "edges[0] inet -> igw: from_side: top does not fit shape HVH, whose first piece is horizontal; use left or right, "
+            "or drop shape and let the sides pick it",
+            "edges[1] inet -> igw: to_side: top does not fit shape VH, whose last piece is horizontal; use left or right, "
+            "or drop shape and let the sides pick it"])
+        d["edges"] = [{"e": "igw -> ec2.*", "step": 1},
+                      {"e": "inet -> igw", "shape": "VHV", "from_side": "top", "to_side": "top"},
+                      {"e": "inet -> igw", "from_side": "top", "to_side": "top"},
+                      {"e": "inet -> igw", "shape": "HV", "from_side": "left", "to_side": "bottom"}]
+        self.assertEqual(len(L.load(d).edges), 5)
+
     def test_pad_bottom(self):
         d = base()
         d["groups"][2]["pad_bottom"] = 6
