@@ -277,6 +277,29 @@ class PadTop(unittest.TestCase):
 
 
 class Feedback(unittest.TestCase):
+    def test_clipped_note_is_reported_and_sizing_clears_it(self):
+        for name in ("gwlb", "nfw", "tgw"):
+            for title in (True, False):
+                with self.subTest(name=name, title=title):
+                    spec = layout_spec.load(spec_dict(f"slides/{name}-reference-architecture"), title=title)
+                    b = layout.build(spec, [], {}, None, "x.layout.yaml")
+                    self.assertEqual(layout.problems_of(b.svg)[0], [])
+                    self.assertIsNone(layout.slide_problem(spec, b.svg))
+                    # Recreate the old sizing/placement mismatch without changing text.
+                    root = ET.fromstring(b.svg)
+                    for el in root.find(NS + "g[@id='note']"):
+                        key = "cy" if el.tag == NS + "circle" else "y"
+                        el.set(key, str(float(el.get(key)) + 2))
+                    probs, _, _ = layout.problems_of(ET.tostring(root), hints=True)
+                    clipped = [p for p in probs if p.iss.kind == "BADGE OFF CANVAS"]
+                    self.assertEqual(len(clipped), len(spec.note.steps))
+                    self.assertTrue(all(p.owners == ["note"] for p in clipped))
+                    # Track widening cannot repair a note that moves with the drawing.
+                    # The note's own bounds must be fixed before solving the canvas.
+                    extra = {}
+                    self.assertFalse(layout.feedback(b, clipped, extra, {}))
+                    self.assertEqual(extra, {})
+
     def test_bracket(self):
         spec, b = built("nfw-reference-architecture")
         g = b.geom

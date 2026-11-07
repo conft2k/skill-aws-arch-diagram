@@ -179,7 +179,9 @@ Note rects (W4 computes them; W2 needs only place/w/h):
          300, 320 when a description would wrap past 4 lines at 300, or — when top-level
          items sit left of the Cloud — the left column floor(cloud.x0 − PANE_GAP − PANE_X)
          measured on geom0, if wider (ex bedrock-dx 456)
-  lines  h = canvas bottom − drawing.y1 (first badge cy = drawing.y1 + 18 … last baseline + 4); below() = h;
+  lines  h = canvas bottom − drawing.y1; below() = h. First badge cy prefers drawing.y1 + 18;
+         fit its radius and half-stroke below the last baseline + 4 by reusing empty top
+         space (keep ≥ 4 px clear of the drawing), then grow h for any remaining excess.
          rect = Box(cloud.x0, drawing.y1, rightmost text end, drawing.y1 + h), w its width.
          Items: a step = badge + "{hop} {desc}" as one grey 12px line; text-only notes:
          the summary, then each row as "{label} {text}" (W6's slide specs follow this)

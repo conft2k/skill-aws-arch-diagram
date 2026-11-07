@@ -423,7 +423,27 @@ def _lines(spec: Spec, geom: Geometry, cloud: Optional[Box]) -> NoteBlock:
     if n_lines > K.LINES_MAX:
         warns.append(f"{note.src}: {n_lines} note lines on a slide (≤ {K.LINES_MAX}); drop the route line "
                      f"or shorten the items")
-    h = last_b + K.LINES_END - bottom
+    # A badge extends below its digit's baseline by r - BADGE_TEXT_DY, which can
+    # exceed the text's bottom allowance. Reuse the empty space above the legend
+    # before growing the canvas: slides already at 10pt must not shrink their text
+    # just to exchange unused top space for the missing bottom of a circle.
+    text_end = last_b + K.LINES_END
+    badges = [e for e in els if e.kind == "circle"]
+    if badges:
+        def radius(e):
+            a = e.attrs
+            return float(a["r"]) + (float(a.get("stroke-width", 1)) / 2
+                                   if a.get("stroke", "none") != "none" else 0)
+
+        top = min(float(e.attrs["cy"]) - radius(e) for e in badges)
+        end = max(float(e.attrs["cy"]) + radius(e) for e in badges)
+        shift = min(max(0, end - text_end), max(0, top - bottom - K.LINES_END))
+        if shift:
+            for e in els:
+                key = "cy" if e.kind == "circle" else "y"
+                e.attrs[key] = float(e.attrs[key]) - shift
+        text_end = max(text_end, end - shift)
+    h = text_end - bottom
     rect = Box(x0, bottom, right, bottom + h)
     return NoteBlock("lines", w=rect.w, h=h, rect=rect, elements=els, warnings=warns)
 

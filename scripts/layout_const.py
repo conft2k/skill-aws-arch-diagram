@@ -422,13 +422,13 @@ PANE_OUTER_GAP = 24       # a top-level group below the pane: its top ≥ pane b
 # slide plain lines (QR 183; ex slides gwlb, nfw, tgw)
 LINES_BADGE_DX = 10       # badge cx = Cloud.x + 10
 LINES_TEXT_DX = 28        # its text at Cloud.x + 28 (= cx + 18), plain 12px #545B64
-LINES_FIRST_CY = 18       # first badge cy ≥ Cloud bottom + 18
+LINES_FIRST_CY = 18       # preferred first badge cy; reuse top space to fit the whole badge (≥ LINES_END clear)
 LINES_TEXT_ONLY_DY = 17   # a text-only line: baseline ≥ Cloud bottom + 17, x = Cloud.x
 LINES_ITEM_GAP = 20       # text end (text_width, 0.55 em) → next badge's left edge (ex: next cx = end + 30)
 LINES_ROW_PITCH = 24      # a second row of badge items 24 below (DESIGN 4.7)
 LINES_TEXT_PITCH = 16     # text-only lines 16 apart
 LINES_MAX = 3
-LINES_END = 4             # canvas ends last baseline + 4 (ex gwlb 540 + 4 = 544; QR "3–4")
+LINES_END = 4             # text bottom allowance and minimum legend top clearance; include the whole badge too
 
 # --------------------------------------------------------------------------------------
 # Canvas and slide fit (QR 185-192; svg2pptx MARGIN 0.25 in, TITLE_H 0.75 in, 13.333 × 7.5 in)

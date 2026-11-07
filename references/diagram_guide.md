@@ -686,10 +686,13 @@ draft path copies an example, or start from `docs/examples/specs/example.layout.
 - **Plain lines on a slide.** Left-aligned with the **AWS Cloud box's left edge** (badge
   `cx = cloud.x + 10`, its text at `cloud.x + 28`, text-only lines at `cloud.x`) — the
   same x on every slide, even when Users or an on-premises box sit left of the Cloud.
-  The first line's badge top is ≥ 8px below the Cloud's bottom border (badge
-  `cy ≥ bottom + 18`, baseline cy + 4; a text-only first line: baseline ≥ bottom + 17).
-  At most three 12px lines, 16px apart; a flowed legend row counts as one line. The
-  canvas ends 3–4px below the last baseline and must stay ≤ 540 with every label
+  Prefer 8px between the first badge's top and the drawing's bottom (badge
+  `cy = drawing bottom + 18`, baseline cy + 4); a text-only first line has baseline
+  ≥ bottom + 17.
+  At most three 12px lines, 16px apart; a flowed legend row counts as one line.
+  Reserve 4px below the last baseline and fit the whole badge, including half its
+  stroke width. Reuse empty space above the legend (keep ≥ 4px clear of the drawing)
+  before growing the canvas. The canvas must stay ≤ 540 with every label
   ≥ 10pt — the Region's bottom padding may shrink to 8px to make room; if it still
   doesn't fit, drop the route line (the document version's step descriptions carry the
   routes) before shrinking anything. A qualifier shared by several routes may be said

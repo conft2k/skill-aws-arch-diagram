@@ -58,6 +58,38 @@ def line_off(r):
     return [i.msg for i in kinds(r, "LINE OFF CANVAS")]
 
 
+class BadgeOnCanvas(unittest.TestCase):
+    def badge(self, x=50, y=92, **attrs):
+        values = {"cx": str(x), "cy": str(y), "r": "10", "fill": "#232F3E", **attrs}
+        return ET.tostring(ET.Element("circle", values), encoding="unicode")
+
+    def test_bottom_clipping_with_digit_inside(self):
+        r = root("0 0 200 100", self.badge(),
+                 '<text x="50" y="96" text-anchor="middle" font-size="12" fill="#FFFFFF">1</text>')
+        self.assertEqual(off_canvas(r), [])
+        iss, = kinds(r, "BADGE OFF CANVAS")
+        self.assertIn("(50,92)", iss.msg)
+        self.assertIn("height 100→102", CL.Advisor(r).hint(iss).text)
+
+    def test_each_edge_and_translated_nonzero_origin(self):
+        for x, y in ((109, 150), (291, 150), (150, 109), (150, 191)):
+            with self.subTest(x=x, y=y):
+                r = root("100 100 200 100",
+                         '<g transform="translate(100,100)">' + self.badge(x - 100, y - 100) + '</g>')
+                self.assertEqual(len(kinds(r, "BADGE OFF CANVAS")), 1)
+
+    def test_stroke_and_exact_fit(self):
+        for y, stroke, count in ((90, "none", 0), (90, "#232F3E", 1), (89, "#232F3E", 0)):
+            with self.subTest(y=y, stroke=stroke):
+                r = root("0 0 200 100", self.badge(y=y, stroke=stroke, **{"stroke-width": "2"}))
+                self.assertEqual(len(kinds(r, "BADGE OFF CANVAS")), count)
+
+    def test_unusable_viewbox_skips_badges(self):
+        for view in (None, "0 0 200"):
+            with self.subTest(view=view):
+                self.assertEqual(kinds(root(view, self.badge()), "BADGE OFF CANVAS"), [])
+
+
 class ParseViewBox(unittest.TestCase):
     def test_space_and_comma_separators(self):
         for view in ("100 100 200 100", "100,100,200,100", "100, 100 200,100", " 100 ,100\t200\n100 ",

@@ -17,6 +17,7 @@ Known deviations of the examples from the rule are listed in KNOWN with the reas
 """
 import sys
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -427,6 +428,53 @@ class WrapTest(unittest.TestCase):
 
 
 class SlideLinesTest(unittest.TestCase):
+    def test_badges_fit_without_reducing_slide_text_size(self):
+        for name in ("gwlb", "nfw", "tgw"):
+            spec, geom = SLIDES[name].build()
+            with self.subTest(example=name):
+                nb = N.block(spec, geom)
+                _, circles, texts = elements(nb)
+                end = geom.drawing.y1 + nb.below()
+                self.assertTrue(all(c["cy"] + c["r"] <= end for c in circles))
+                self.assertTrue(all(c["cy"] - c["r"] >= geom.drawing.y1 + K.LINES_END for c in circles))
+                # Preserve the original text-based height by redistributing spare space.
+                self.assertEqual(end, geom.drawing.y1 + K.LINES_FIRST_CY + K.BADGE_TEXT_DY + K.LINES_END)
+                for c in circles:
+                    digit = next(t for t in texts if t["fill"] == K.WHITE and t["x"] == c["cx"])
+                    self.assertEqual(digit["y"], c["cy"] + K.BADGE_TEXT_DY)
+
+    def test_radius_and_stroke_can_require_a_taller_block(self):
+        spec, geom = SLIDES["tgw"].build()
+        spec.note = M.NoteSpec(steps=[("Hop", "")])
+        factory = N._badge
+        for radius, stroke in ((8, 0), (10, 0), (12, 0), (14, 0), (10, 4)):
+            with self.subTest(radius=radius, stroke=stroke):
+                def badge(cx, cy, n):
+                    els = factory(cx, cy, n)
+                    els[0].attrs["r"] = radius
+                    if stroke:
+                        els[0].attrs.update(stroke=K.BADGE_FILL, **{"stroke-width": stroke})
+                    return els
+
+                with mock.patch.object(N, "_badge", side_effect=badge):
+                    nb = N.block(spec, geom)
+                circle = next(e.attrs for e in nb.elements if e.kind == "circle")
+                ink_r = radius + stroke / 2
+                self.assertGreaterEqual(circle["cy"] - ink_r, geom.drawing.y1 + K.LINES_END)
+                self.assertLessEqual(circle["cy"] + ink_r, geom.drawing.y1 + nb.below())
+                if radius == 14 or stroke:
+                    self.assertGreater(nb.h, K.LINES_FIRST_CY + K.BADGE_TEXT_DY + K.LINES_END)
+
+    def test_wrapped_badge_rows_fit_and_keep_their_pitch(self):
+        spec, geom = SLIDES["tgw"].build()
+        spec.note = M.NoteSpec(steps=[("Hop " * 35, "")] * 3)
+        nb = N.block(spec, geom)
+        circles = [e.attrs for e in nb.elements if e.kind == "circle"]
+        cys = sorted({c["cy"] for c in circles})
+        self.assertGreater(len(cys), 1)
+        self.assertTrue(all(b - a == K.LINES_ROW_PITCH for a, b in zip(cys, cys[1:])))
+        self.assertLessEqual(max(c["cy"] + c["r"] for c in circles), geom.drawing.y1 + nb.h)
+
     def test_lines(self):
         for name in ("gwlb", "nfw", "tgw"):
             d = SLIDES[name]

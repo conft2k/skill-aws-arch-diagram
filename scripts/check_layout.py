@@ -14,6 +14,7 @@ Reports, and exits with status 1 on any of them:
                    label: 4px)
   OFF CANVAS       a label runs past the edge of the viewBox (min-x min-y width height,
                    separated by spaces and/or commas: the canvas starts at its min-x, min-y)
+  BADGE OFF CANVAS a circular badge, including its stroke, runs past the viewBox
   LINE NEAR TEXT   a connector skims a node or header label (< 4px) without crossing it, or
                    the top or a side of a connector label (another connector's line)
   BADGE NEAR ICON  a group badge (e.g. an ASG's) is within 8px of a node icon
@@ -362,8 +363,11 @@ def collect(svg_root):
                           "el": el, "off": (ox, oy), "own": own})
         elif tag == "circle":
             cx, cy, r = num(el.get("cx")) + ox, num(el.get("cy")) + oy, num(el.get("r"))
+            ink_r = r + (num(el.get("stroke-width"), 1) / 2
+                         if el.get("stroke", "none").lower() != "none" else 0)
             # r <= JUNCTION_DOT_R: a junction dot drawn on a connector on purpose (e.g. segment membership)
             icons.append({"box": (cx - r, cy - r, cx + r, cy + r), "o": order, "badge": True,
+                          "ink_box": (cx - ink_r, cy - ink_r, cx + ink_r, cy + ink_r),
                           "dot": (cx, cy) if r <= K.JUNCTION_DOT_R else None, "el": el, "off": (ox, oy),
                           "own": own})
         for child in el:
@@ -1026,6 +1030,14 @@ def run_checks(root):
     bad_view = viewbox(root)[1]
     if bad_view:
         add("BAD VIEWBOX", f"BAD VIEWBOX     {bad_view} — the canvas checks are skipped", [])
+    for i in icons:
+        ink = i.get("ink_box")
+        if ink is not None and i.get("dot") is None and cw and ch \
+                and not contains(canvas_box(canvas), ink, 0) and not masked(ink, i["o"], masks):
+            add("BADGE OFF CANVAS", f"BADGE OFF CANVAS circle at "
+                f"({num(i['el'].get('cx')) + i['off'][0]:g},"
+                f"{num(i['el'].get('cy')) + i['off'][1]:g}), including its stroke, "
+                f"runs past {canvas_desc(canvas)}", [i], i=i)
     # A container title sits in its box's header row: x = box.x + 32 (with a badge) or
     # + 12 (label only), baseline box.y + 18. A title that drifted when content was moved
     # reads as belonging to nothing.
@@ -2292,6 +2304,18 @@ class Advisor:
         alt = f" — or grow the viewBox {' and '.join(grow)} (and the white background rect)" if grow else ""
         edits, text = self.move_text(t, dx, dy)
         return self.pick(iss.key, [(abs(dx) + abs(dy), edits, text + alt)])
+
+    def h_badge_off_canvas(self, iss, i):
+        x0, y0, x1, y1 = i["ink_box"]
+        vx, vy, cw, ch = self.canvas
+        grow = []
+        if x1 > vx + cw:
+            grow.append(f"width {fnum(cw)}→{math.ceil(x1 - vx)}")
+        if y1 > vy + ch:
+            grow.append(f"height {fnum(ch)}→{math.ceil(y1 - vy)}")
+        if grow:
+            return f"grow the viewBox {' and '.join(grow)} and the white background rect to contain the whole badge"
+        return "move the whole badge and its digit inside the viewBox, including half its stroke width"
 
     def h_bad_viewbox(self, iss):
         return ('write the root <svg> viewBox as 4 numbers "min-x min-y width height" (spaces and/or '
