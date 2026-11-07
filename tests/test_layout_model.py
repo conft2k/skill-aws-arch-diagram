@@ -22,6 +22,7 @@ import check_layout as CL  # noqa: E402
 import embed  # noqa: E402
 import layout_const as K  # noqa: E402
 import layout_model as M  # noqa: E402
+import layout_solve  # noqa: E402
 import layout_spec  # noqa: E402
 from layout_text import font_context, svg_factor, svg_steps  # noqa: E402
 
@@ -311,9 +312,30 @@ class InsetTest(unittest.TestCase):
                     if not between:
                         self.assertGreaterEqual(b["y"] - a["y1"], 8)
                     elif d.mode == "slide":
-                        self.assertEqual(b["y"] - a["y1"], K.SLIDE.az_gap)
+                        # az_gap is a minimum; route/label constraints and feedback
+                        # may require more room even on a slide.
+                        self.assertGreaterEqual(b["y"] - a["y1"], K.SLIDE.az_gap)
                     elif "example" not in d.name and "bedrock" not in d.name:
                         self.assertGreaterEqual(b["y"] - a["y1"], K.DOCUMENT.az_gap)
+
+    def test_slide_az_gap_without_extra_requirements(self):
+        """An unconstrained slide uses the minimum, keeping the default compact."""
+        spec = layout_spec.load({
+            "name": "az-gap", "mode": "slide", "cols": ["app"], "rows": ["az1", "main", "az2"],
+            "groups": [
+                {"id": "vpc", "type": "vpc"},
+                {"id": "az", "type": "az", "in": "vpc", "per": ["az1", "az2"]},
+                {"id": "sn", "type": "private", "in": "az"},
+            ],
+            "nodes": [
+                {"id": "app", "icon": "service/Amazon-EC2", "label": "EC2", "in": "sn", "col": "app"},
+                {"id": "nlb", "icon": "resource/Elastic-Load-Balancing_Network-Load-Balancer",
+                 "label": "NLB", "in": "vpc", "at": ["app", "main"]},
+            ],
+        })
+        geom = layout_solve.solve(spec, [])
+        gap = geom.groups["az.2"].rect.y0 - geom.groups["az.1"].rect.y1
+        self.assertEqual(gap, K.SLIDE.az_gap)
 
 
 class EdgeTest(unittest.TestCase):
