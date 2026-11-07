@@ -11,20 +11,24 @@
 
 **Blocked by:** 01, 02, 03
 
-**Status:** ready-for-agent
+**Status:** implemented; identical runtime parallelism remains unverified
 
-- [ ] Verdict order: tier-0 count, tier-0 cost, check problems, effective text shortfall, shape misses, canvas area. Tier-0 counts only R-border and R-flow, and R-fit always counts.
-- [ ] Budget: at most 12 candidates for documents and 16 for slides, not counting the default drawing and not counting text scale tries.
-- [ ] Determinism: the same spec gives byte-identical drafts on repeated runs.
-- [ ] Corpus (ticket 01 report against the baseline of the starting main commit):
+Evidence: [ticket 04 validation](../results/04-select-by-flow-and-border.md).
+The supplied baseline used `-j 6`; the requested full run used `-j 4`. Every measured
+runtime limit passes, but identical parallelism has not been measured.
+
+- [x] Verdict order: tier-0 count, tier-0 cost, check problems, effective text shortfall, shape misses, canvas area. Tier-0 counts only R-border and R-flow, and R-fit always counts.
+- [x] Budget: at most 12 candidates for documents and 16 for slides, not counting the default drawing and not counting text scale tries.
+- [x] Determinism: the same spec gives byte-identical drafts on repeated runs.
+- [x] Corpus (ticket 01 report against the baseline of the starting main commit):
   - 0 cases worse.
   - Each R-border and R-flow bad-tagged case is listed with its before and after violation counts, and the group's bad-tagged cases have fewer violations in total.
   - Tags the evidence fixes move from bad to good, each with its reason.
   - Check problems not higher.
   - Each changed draft has a better verdict.
 - [ ] Runtime is measured on this machine with the full corpus at `-j 4`, one run, under the same conditions as the baseline. Per diagram it is at most 3× and never over 30 s; corpus wall time is at most 3×.
-- [ ] Tags change only on evidence. A bad tag becomes good only when every tagged mode passes. A case improved in some modes only gets a per-mode tag.
-- [ ] Command-line tests on small specs:
+- [x] Tags change only on evidence. A bad tag becomes good only when every tagged mode passes. A case improved in some modes only gets a per-mode tag.
+- [x] Command-line tests on small specs:
   - The summary names the winner's index and differing decisions, and the final line still counts remaining violations.
   - A spec whose default is already best is unchanged.
   - A hard placement is kept and warned about.

@@ -466,8 +466,7 @@ def _verdict(run: Dict[str, Any], draft: Optional[bytes], judged: bool) -> Optio
     if misses is None:
         misses = layout.shape_misses(SimpleNamespace(warnings=run["warnings"]))
     score = list(rules.score(viol, run["codes"], geom, None, misses))
-    # score() rounds fit to three decimals for engine selection. Corpus comparison
-    # retains the draft's full precision so even smaller shortfalls precede area.
+    # Recompute from both drafts, retaining even smaller shortfalls before area.
     score[3] = short
     return score
 

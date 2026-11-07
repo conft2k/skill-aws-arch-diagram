@@ -577,6 +577,20 @@ class Score(unittest.TestCase):
         self.assertLess(rules.score([fit], [1, 2, 3], geom, None, 0), rules.score([hard], [], geom, None, 0))
         self.assertEqual(rules.score([hard, fit], [], geom, None, 1), (1, 2.0, 0, 1.5, 1, 10000.0))
 
+    def test_enabled_group_keeps_fit_and_the_verdict_order(self):
+        geom = M.Geometry(mode="document", S=48, canvas_w=100, canvas_h=100, cols={}, rows={})
+        violations = [
+            rules.Violation("R-flow", ("edge:0",), "F3", 2),
+            rules.Violation("R-border", ("edge:1",), "B2", 3),
+            rules.Violation("R-rt", ("node:rt",), "RT1", 100),
+            rules.Violation("R-fit", ("canvas",), "FIT", 0.00001, rules.TIER_FIT),
+        ]
+        enabled = {"R-border", "R-flow"}
+        score = rules.score(violations, [1], geom, None, 2, enabled_rules=enabled)
+        self.assertEqual(score, (2, 5, 1, 0.00001, 2, 10000))
+        self.assertEqual(rules.score(violations, [], geom, None, 0, enabled_rules=())[0], 0)
+        self.assertGreater(rules.score(violations, [], geom, None, 0, enabled_rules=())[3], 0)
+
 
 class CorpusTags(unittest.TestCase):
     """tests/run_corpus.py tag_misses: a run whose checker failed leaves its tags unjudged

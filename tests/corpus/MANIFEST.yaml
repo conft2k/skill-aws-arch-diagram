@@ -246,12 +246,12 @@ cases:
     rules: [R-flow]
     what: "3 per-row AZs: ALB forks to 3 EC2s that merge dashed into CloudWatch on a bottom-aligned flow column"
     from: "r3-merge/v3az.layout.json"
-    bad: {R-flow: edge:3}   # ALB fan: edge:4 crosses edge:3's vertical 12px below its bend (the fan's lines swap)
+    bad: {R-flow: {slide: edge:3, slide-no-title: edge:3}}   # ticket 04 removes document F3 (1→0); both slide modes still have the fan crossing
   - path: trunk/merge-v3az-top.layout.yaml
     rules: [R-flow]
     what: "merge-v3az with the CloudWatch flow column set to align: top: 3 EC2s merge dashed into a top-pinned node"
     from: "r3-merge/v3az_top.layout.json"
-    bad: {R-flow: edge:3}   # same fan crossing as merge-v3az
+    bad: {R-flow: {slide: edge:3, slide-no-title: edge:3}}   # ticket 04 removes document F3 (1→0); same remaining slide fan crossing as merge-v3az
   - path: trunk/merge-vfan.layout.yaml
     rules: [R-flow]
     what: "2 per-row AZs: EC2s merge dashed into CloudWatch (bottom flow column); S3 on a top row fans dashed to them"
@@ -398,7 +398,7 @@ cases:
     rules: [R-flow]
     what: "per-AZ template node (Lambda in app subnet) placed on the flow column"
     from: "r4-port/rf/t9_tmpl_on_flowcol.layout.json"
-    bad: {R-flow: edge:4}   # edge:4 runs on top of edge:5 (check_layout LINE ON LINE too)
+    good: [R-flow]   # ticket 04 takes the next distinct route: F1 edge:4/edge:5 and LINE ON LINE disappear in all three modes (1→0 each)
   - path: ports/io.layout.yaml
     rules: [R-flow]
     what: "HVH edges into and out of T on the same side (y -> t, t -> x) must not merge into one stem"
@@ -1094,14 +1094,14 @@ cases:
   - path: qa/t1-multiregion-dr.layout.yaml
     rules: [R-flow, R-fit]
     what: "Original DR: replication badge touches NLB traffic; slide DNS control and app paths read as one line; page/slide text is below target; no equivalent reduction"
+    good: [R-flow]   # ticket 04 removes document F3/F5 (3→0); both slide modes remain at 0, so every mode passes
     bad:
-      R-flow: {document: edge:10}   # F5 badge in document; the slide F2 DNS/app gap is gone since ticket 03 (cc17a2d) rejects repairs that add a rule violation
       R-fit: canvas
   # DLQ의 "5회 실패 후 이동" 라벨이 자기 선보다 다른 선에 더 가깝습니다(T4 shared_lane_5nodes).
   - path: qa/t4-shared-lane.layout.yaml
     rules: [R-flow]
     what: "5-node reduction: DLQ label reads as another flow while the engine reports Layout OK / exit 0"
-    bad: {R-flow: edge:3}
+    good: [R-flow]   # ticket 04 reroutes the DLQ flow so its label is attributed to its own line: F5 1→0 in all three modes
   # bend 옆 8–12px 교차가 있습니다(T3 원본 remote-access, hybrid-dns. 축소본에는 F3가 남지 않습니다).
   # Smallest submitted F3 reproduction: hybrid-dns has 15 nodes, versus remote-access's 16.
   - path: qa/t3-hybrid-dns.layout.yaml

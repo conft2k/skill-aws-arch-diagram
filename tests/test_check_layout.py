@@ -35,6 +35,22 @@ LINE = '<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="#232F3E" stroke-wi
 TEXT = '<text x="{x}" y="{y}" font-size="12" text-anchor="{a}" fill="#545B64">{s}</text>'
 
 
+class AutomaticRepairs(unittest.TestCase):
+    def test_automatic_plan_keeps_fixed_answers_and_manual_problems(self):
+        parts = (
+            '<text x="40" y="40" font-size="8">Small annotation</text>',
+            LINE.format(x1=100, y1=180, x2=500, y2=180).replace("/>", ' data-flow="0"/>'),
+            LINE.format(x1=200, y1=180, x2=450, y2=180).replace("/>", ' data-flow="1"/>'),
+        )
+        full = CL.Advisor(svg(*parts))
+        full.plan()
+        automatic = CL.Advisor(svg(*parts))
+        _, accepted = automatic.plan(auto_only=True)
+        self.assertEqual([iss.kind for iss, _ in accepted], ["SMALL TEXT"])
+        self.assertEqual(ET.tostring(automatic.root), ET.tostring(full.root))
+        self.assertTrue(any(i.kind == "LINE ON LINE" for i in CL.run_checks(automatic.root)))
+
+
 def near(root):
     return [i.msg for i in CL.run_checks(root) if i.msg.startswith("LINE NEAR TEXT")]
 

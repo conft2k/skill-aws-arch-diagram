@@ -1582,6 +1582,7 @@ class Advisor:
     def __init__(self, root, engine=False):
         self.root = root
         self.engine = engine                    # a layout.py draft: its spec, not the draft, is edited
+        self.auto_only = False
         self.order = {id(el): k for k, el in enumerate(root.iter())}
         self.refresh()
 
@@ -1646,6 +1647,10 @@ class Advisor:
         problem — preferring one that also clears the other problems of the element it
         moves, so one move settles them all; else the smallest that clears it, saying
         what it breaks."""
+        if self.auto_only:
+            # Positional suggestions never carry automatic edits. Candidate judging
+            # only needs fixed answers; the final CLI report still computes hints.
+            return Hint("")
         cands = sorted(cands, key=lambda c: c[0])
         clean = dirty = None
         seen = set()
@@ -2585,11 +2590,16 @@ class Advisor:
         return self.pick(iss.key, self.text_cands(a, b["box"], TEXT_GAP) + self.text_cands(b, a["box"], TEXT_GAP))
 
     # --- the fixed-answer pass ------------------------------------------------------------
-    def plan(self):
+    def plan(self, auto_only=False):
         """Hints for every problem, then the auto fixes that hold up, applied one by one to the
         tree (each re-checked against the state the earlier ones left). Returns
         [(issue, hint)], [(issue, hint)] accepted."""
-        hints = [(iss, self.hint(iss)) for iss in self.issues]
+        previous = self.auto_only
+        self.auto_only = auto_only
+        try:
+            hints = [(iss, self.hint(iss)) for iss in self.issues]
+        finally:
+            self.auto_only = previous
         accepted = []
         for iss, h in hints:
             if not h.auto:

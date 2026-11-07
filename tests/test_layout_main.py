@@ -530,7 +530,7 @@ class Feedback(unittest.TestCase):
             layout.main([str(path), "--mode", "slide", "-o", str(out)])
             self.assertEqual(out.read_bytes(), first)
         kinds = [i.kind for i in CL.run_checks(ET.fromstring(first))]
-        self.assertEqual(sorted(kinds), ["TEXT NEAR ICON", "TEXT OVERLAP"])
+        self.assertEqual(sorted(kinds), ["TEXT OVERLAP"])
 
     def test_bracket(self):
         spec, b = built("nfw-reference-architecture")
@@ -1229,17 +1229,20 @@ class SlideTextSize(unittest.TestCase):
             return rc, buf.getvalue(), self.deck_min_pt(out)
 
     def test_judged_on_the_draft_after_its_fixes(self):
-        """The summary, SLIDE TOO SMALL and R-fit weigh the draft as written, after fix_pass:
-        a 20px bold 'VPC 10.0.0.0/16' has its CIDR moved onto a 12px line (CIDR IN TITLE), so
-        356 × 578 takes it to 9.3pt (14px before the fix would be 10.9pt) — warned, exit 1;
-        a 6px text raised to 12px (SMALL TEXT) on 356 × 378 comes out at 14.3pt (6px before
-        the fix would be 7.1pt) — no warning, exit 0. The deck agrees both times."""
+        """Report the written draft, whether the Verdict retains or rejects a fix.
+
+        Splitting the CIDR would replace its one check problem with SLIDE TOO SMALL
+        and add R-fit, so selection keeps the 14px minimum and reports CIDR IN TITLE.
+        Raising a 6px annotation clears SMALL TEXT and improves fit, so it is retained.
+        The exported deck agrees with both summaries.
+        """
         rc, text, deck_pt = self.run_raw(self.raw_spec(500, 'font-size="20" font-weight="bold"', "VPC 10.0.0.0/16"))
         self.assertEqual(rc, 1, text)
-        self.assertIn("the smallest text (12px) → 9.3pt (< 10pt)", text)
-        self.assertIn("SLIDE TOO SMALL smallest text (12px, '10.0.0.0/16') comes out at 9.3pt", text)
-        self.assertIn("rule: R-fit FIT smallest text (12px, '10.0.0.0/16') comes out at 9.34pt", text)
-        self.assertAlmostEqual(deck_pt, 12 * 450 / 578, delta=0.01)
+        self.assertIn("the smallest text (14px) → 10.9pt (OK ≥ 10)", text)
+        self.assertIn("CIDR IN TITLE", text)
+        self.assertNotIn("SLIDE TOO SMALL", text)
+        self.assertNotIn("rule: R-fit", text)
+        self.assertAlmostEqual(deck_pt, 14 * 450 / 578, delta=0.01)
         rc, text, deck_pt = self.run_raw(self.raw_spec(300, 'font-size="6"', "tiny note"))
         self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
         self.assertIn("the smallest text (12px) → 14.3pt (OK ≥ 10)", text)
@@ -2129,7 +2132,7 @@ class ResultSummary(unittest.TestCase):
         self.assertNotIn("rule:", text)
 
     def test_flow_rule_remains_visible_with_exit_zero(self):
-        path = ROOT / "tests/corpus/trunk/merge-v3az.layout.yaml"
+        path = ROOT / "tests/corpus/ports/u3.layout.yaml"
         with tempfile.TemporaryDirectory() as tmp:
             buf = io.StringIO()
             with redirect_stdout(buf):
@@ -2199,7 +2202,9 @@ class CLI(unittest.TestCase):
     # the layout.py process, which a parallel test run or a busy machine barely changes
     # (where wall time can more than double); wall time, with twice the room, is used
     # only where the resource module is missing (Windows).
-    CPU_LIMIT = 6.0       # typography retries: at most twice the original 3s CLI budget
+    # Ticket 04 allows 3× the previous 6s CLI budget. The full corpus checks the
+    # stricter per-diagram baseline ratios and 30s wall limit on the same machine.
+    CPU_LIMIT = 18.0
 
     @staticmethod
     def child_cpu():

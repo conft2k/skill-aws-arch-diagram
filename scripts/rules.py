@@ -871,12 +871,17 @@ def check(spec, geom, draft: bytes, drawn: Optional[Drawn] = None) -> List[Viola
     return list(out)
 
 
-def score(viol: Sequence[Violation], probs: Sequence, geom, spec, misses: int) -> tuple:
-    """A candidate draft's rank, lower is better: (hard violations, their cost, check problems,
-    slide points short, shapes drawn other than planned, canvas area)."""
-    hard = [v for v in viol if v.tier == TIER_HARD]
+def score(viol: Sequence[Violation], probs: Sequence, geom, spec, misses: int,
+          enabled_rules=None) -> tuple:
+    """Verdict: tier-0 count and cost, checks, effective text shortfall, misses, area.
+
+    Only enabled rules count in tier 0 during selection. R-fit always counts, at
+    full precision so a larger canvas cannot hide even a small text regression.
+    """
+    hard = [v for v in viol if v.tier == TIER_HARD
+            and (enabled_rules is None or v.rule in enabled_rules)]
     fit = sum(v.cost for v in viol if v.rule == "R-fit")
-    return (len(hard), round(sum(v.cost for v in hard), 3), len(probs), round(fit, 3), misses,
+    return (len(hard), round(sum(v.cost for v in hard), 3), len(probs), fit, misses,
             round(geom.canvas_w * geom.canvas_h, 1))
 
 

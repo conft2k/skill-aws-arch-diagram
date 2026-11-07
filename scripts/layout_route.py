@@ -2423,7 +2423,7 @@ def _bend_groups(xs: Dict[int, _Edge]) -> List[List[int]]:
 # draw()
 
 def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
-         avoid_headers=None, alternatives=None) -> Tuple[List[Element], List[str]]:
+         avoid_headers=None, alternatives=None, alternative_edges=None) -> Tuple[List[Element], List[str]]:
     skip = dict(skip or {})
     ctx = _Ctx(spec, geom)
     ctx.avoid_headers = set(avoid_headers or ())
@@ -2496,7 +2496,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
                   for i, (c, r) in enumerate((c, build(x, c)) for c in _candidates(ctx, x, ports))]
         ranked.sort(key=lambda it: (it[0], it[1]))
         clean = [r for q, _, r in ranked if not q[0]]
-        if alternatives is not None and skippable(x.e) and not (t.trunk and t.first != x.e.n):
+        if (alternatives is not None and (alternative_edges is None or x.e.n in alternative_edges)
+                and skippable(x.e) and not (t.trunk and t.first != x.e.n)):
             moves = tuple(RoutingAlternative(i, r.shape, tuple(r.pts))
                           for i, r in enumerate(clean) if i > skip.get(x.e.n, 0))
             if moves:
@@ -2592,7 +2593,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         if len(todo) >= 2:
             chosen = shared(todo)
             for n, r in (chosen or {}).items():
-                if alternatives is not None and skippable(xs[n].e):
+                if (alternatives is not None and (alternative_edges is None or n in alternative_edges)
+                        and skippable(xs[n].e)):
                     ranked_routes(xs[n])
                 commit(xs[n], r)
         for x in members:
