@@ -263,9 +263,10 @@ Go through this checklist:
       attachment lines — no separate flow lines.
 - [ ] Every route table sits beside what it is associated with, so its owner is plain
       without the legend: a subnet's by that subnet (or as its node's sub-caption); a
-      TGW's beside its associated attachment lines where they reach the TGW (Spoke RT
-      between the spoke VPCs and the TGW, Firewall RT between the TGW and the inspection
-      VPC) — next to the TGW only when it is the TGW's only table.
+      TGW's between the TGW and the VPCs whose attachments use it, inside the bracket
+      their lines draw (Spoke RT between the spoke VPCs and the TGW, Firewall RT between
+      the TGW and the inspection VPC) — next to the TGW only when it is the TGW's only
+      table.
 - [ ] A Site-to-Site VPN path is CGW → Internet → Site-to-Site VPN → TGW/VGW, with the
       Internet and VPN icons outside the AWS Cloud; a Direct Connect path is customer
       router → Direct Connect (the DX location, outside the AWS Cloud) → DX gateway

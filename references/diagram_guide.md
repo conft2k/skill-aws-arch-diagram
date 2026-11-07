@@ -204,7 +204,7 @@ set. Draw every one of them as its icon — never as a text chip, pill or labele
 | Gateway Load Balancer endpoint | `resource/Amazon-VPC_Endpoints` (no dedicated icon) | one per AZ in its GWLBe subnet, labeled "GWLBe"; the GWLB itself is one node in the appliance VPC |
 | Virtual private gateway (VGW) / customer gateway | `resource/Amazon-VPC_VPN-Gateway` / `_Customer-Gateway` | on the VPC border / on-prem side |
 | VPC peering connection / TGW peering attachment | `resource/Amazon-VPC_Peering-Connection` (AWS uses it for both) | on the link between the two VPCs or the two TGWs, the line broken at the icon; across Regions or accounts, in the gap between their boxes (it belongs to neither); label "VPC peering" / "TGW peering" |
-| Route table (VPC subnet route table, TGW route table) | `resource/Amazon-Route-53_Route-Table` (the package's only route table icon; filed under Route 53 but used for every route table) | beside what it is associated with (see below): a subnet route table inside the VPC, outside the subnets, right next to the subnet(s) it serves — or only its routes, as that subnet node's sub-caption; a TGW route table beside the attachment lines associated with it where they reach the TGW (a TGW's only table: next to the TGW). The table name as label and the key route as a 12px sub-caption ("10.0.0.0/8 → TGW"); never a text chip |
+| Route table (VPC subnet route table, TGW route table) | `resource/Amazon-Route-53_Route-Table` (the package's only route table icon; filed under Route 53 but used for every route table) | beside what it is associated with (see below): a subnet route table inside the VPC, outside the subnets, right next to the subnet(s) it serves — or only its routes, as that subnet node's sub-caption; a TGW route table between the TGW and the VPCs whose attachments use it, inside the bracket their lines draw (a TGW's only table: next to the TGW). The table name as label and the key route as a 12px sub-caption ("10.0.0.0/8 → TGW"); never a text chip |
 | Router, NACL, ENI, Flow Logs | `resource/Amazon-VPC_Router`, `_Network-Access-Control-List`, `_Elastic-Network-Interface`, `_Flow-Logs` | as needed |
 
 #### A route table sits beside what it is attached to
@@ -221,10 +221,10 @@ legend. Its position is the association: no line ties a route-table node to anyt
   several subnets between them). The IGW edge route table goes inside the VPC beside the
   IGW.
 - **TGW route table: beside its associated attachments, not just beside the TGW.** Put
-  it where the attachment lines associated with it reach the TGW, on their side of the
-  TGW, and keep it out of the reach of attachments it is not associated with. A table
-  above or below the TGW, between one table's attachment lines and another's, reads as
-  belonging to either — that is the mistake to avoid.
+  it between the TGW and the VPCs whose attachments use it, inside the bracket their
+  lines draw, and keep it out of the reach of attachments it is not associated with. A
+  table above or below the TGW, between one table's attachment lines and another's,
+  reads as belonging to either — that is the mistake to avoid.
   - **Hub and spoke with centralized inspection** (nfw): the spoke VPCs left of the TGW,
     the inspection VPC right of it. The Spoke RT (associated with the spoke VPC
     attachments, `0.0.0.0/0 → inspection attachment`) goes between the spoke VPCs and
