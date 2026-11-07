@@ -152,14 +152,16 @@ class FlowRules(unittest.TestCase):
         far = self.run_flow(sp, *parts, label(0, 270, 60))
         self.assertEqual([v.owners for v in codes(far, "F5")], [("edge:0",)])
 
-    def test_f5_spec_placed_label_judged_too(self):
-        # label_at / step_at a point exempts only L1: F5 judges where it ended up
+    def test_f5_spec_placed_label_and_badge_exempt_user_decision(self):
+        # user decision 2026-11-07 (rules-design §6): label_at / step_at at a point exempts
+        # them from F5 as from L1; the router's own placements stay judged
         sp = spec(edges=[("a", "b")], nodes="ab")
+        parts = [node("a", 50, 100), node("b", 450, 100), edge(0, [(102, 124), (446, 124)]),
+                 label(0, 270, 60), badge(0, 200, 60, 1)]
+        self.assertEqual([v.owners for v in codes(self.run_flow(sp, *parts), "F5")], [("edge:0",), ("edge:0",)])
         sp.edges[0].label_at = M.Place(M.Expr("num", offset=270), M.Expr("num", offset=60))
         sp.edges[0].step_at = M.Place(M.Expr("num", offset=200), M.Expr("num", offset=60))
-        out = self.run_flow(sp, node("a", 50, 100), node("b", 450, 100), edge(0, [(102, 124), (446, 124)]),
-                            label(0, 270, 60), badge(0, 200, 60, 1))
-        self.assertEqual([v.owners for v in codes(out, "F5")], [("edge:0",), ("edge:0",)])
+        self.assertEqual(codes(self.run_flow(sp, *parts), "F5"), [])
 
     def test_f5_tie_names_the_other_line(self):
         # review repro: edge 0's label 7px from both lines names edge 1, not edge 0 twice
@@ -193,16 +195,16 @@ class LabelRules(unittest.TestCase):
         self.assertEqual([v.owners for v in codes(self.run_label(sp, *parts, label(0, 270, 140),
                                                                  label(1, 110, 430)), "L1")], [])
 
-    def test_l1_judges_the_own_nearest_piece(self):
-        # latest2-egress edge:8: above the horizontal piece but nearer the vertical one it
-        # turns up into, and left of that one
+    def test_l1_corner_any_nearby_piece_user_decision(self):
+        # user decision 2026-11-07 (rules-design §6), latest2-egress edge:8: above the
+        # horizontal piece, 5.15px left of the vertical one it turns up into (nearer than the
+        # horizontal's 6px) — on the rule side of one of the pieces it sits by: passes
         sp = spec(edges=[("a", "b")], nodes="ab")
         parts = [node("a", 50, 533), node("b", 860, 384), edge(0, [(102, 557), (717.5, 557), (717.5, 408), (856, 408)])]
-        out = self.run_label(sp, *parts, label(0, 666.15, 548, s="appliance mode"))
-        self.assertEqual([v.owners for v in codes(out, "L1")], [("edge:0",)])
-        # an exact tie between two pieces: the one it spans along
-        tie = self.run_label(sp, *parts, label(0, 600, 551, s="appliance mode"))
-        self.assertEqual(codes(tie, "L1"), [])
+        self.assertEqual(codes(self.run_label(sp, *parts, label(0, 666.15, 548, s="appliance mode")), "L1"), [])
+        # below the horizontal piece and left of the vertical one: on the rule side of neither
+        bad = self.run_label(sp, *parts, label(0, 666.15, 572, s="appliance mode"))
+        self.assertEqual([v.owners for v in codes(bad, "L1")], [("edge:0",)])
 
     def test_l1_on_line_over_background(self):
         sp = spec(edges=[("a", "b")], nodes="ab")
@@ -260,12 +262,18 @@ class RouteTableRules(unittest.TestCase):
         bad = self.run_rt(sp, *self.bracket_parts(520, 200))
         self.assertIn(("node:rt", "node:tgw"), [v.owners for v in codes(bad, "RT1")])
 
-    def test_rt1_hub_only_table_still_needs_its_bracket(self):
-        # every line at the hub associated (its only table): no exception, the bracket holds
-        sp = self.rt_spec(["a", "b", "c"], [("tgw", "a"), ("tgw", "b"), ("tgw", "c")], "abc")
-        self.assertEqual(codes(self.run_rt(sp, *self.bracket_parts(200, 300)), "RT1"), [])
-        out = self.run_rt(sp, *self.bracket_parts(600, 150))      # up-right, past the c-a wedge's chord
-        self.assertEqual([v.owners for v in codes(out, "RT1")], [("node:rt", "node:tgw")])
+    def test_rt1_hub_only_table_beside_hub_passes_user_decision(self):
+        # user decision 2026-11-07 (rules-design §6): every line at the hub associated (its
+        # only table) passes within S + sibling_gap of the hub, bracket or not
+        sp = self.rt_spec(["a", "b"], [("tgw", "a"), ("tgw", "b")], "ab")
+        parts = lambda x, y: [p for p in self.bracket_parts(x, y) if 'id="edge:2"' not in p and 'id="node:c"' not in p]
+        self.assertEqual(codes(self.run_rt(sp, *parts(480, 300)), "RT1"), [])       # right of the hub: no bracket
+        far = self.run_rt(sp, *parts(700, 300))
+        self.assertEqual([v.owners for v in codes(far, "RT1")], [("node:rt", "node:tgw")])
+        # with a line at the hub that is not its own, the bracket is needed again
+        sp3 = self.rt_spec(["a", "b"], [("tgw", "a"), ("tgw", "b"), ("tgw", "c")], "abc")
+        self.assertEqual([v.owners for v in codes(self.run_rt(sp3, *self.bracket_parts(400, 220)), "RT1")],
+                         [("node:rt", "node:tgw")])
 
     def test_rt2_single_line(self):
         sp = self.rt_spec(["c"], [("tgw", "a"), ("tgw", "b"), ("tgw", "c")], "abc")
@@ -315,11 +323,9 @@ class Goldens(unittest.TestCase):
                 with self.subTest(path=path.name, dir=path.parent.name):
                     sp, b = build(path)
                     got = [v for v in rules.check(sp, b.geom, b.svg) if v.rule == "R-rt"]
-                    # TGW B RT sits under TGW B, below every line its three associations draw
-                    # (outside the bracket: RT1, no exception for a hub's only table)
-                    self.assertEqual([v for v in got if v.owners[0] != "node:rtb"], [])
-                    if name.startswith("tgw"):
-                        self.assertEqual([(v.code, v.owners) for v in got], [("RT1", ("node:rtb", "node:tgwb"))])
+                    # TGW B RT, under TGW B outside its lines' bracket, is the hub's only table
+                    # right beside it: passes (user decision 2026-11-07)
+                    self.assertEqual(got, [])
 
     def test_nfw_spoke_rt_moved_out_of_its_bracket(self):
         sp, b = build(SPECS / "nfw-reference-architecture.layout.yaml")
@@ -329,6 +335,34 @@ class Goldens(unittest.TestCase):
         self.assertNotEqual(moved, svg_text)
         got = [v for v in rules.check(sp, b.geom, moved.encode()) if v.rule == "R-rt"]
         self.assertTrue(any(v.code == "RT1" and v.owners[0] == "node:rtsp" for v in got), got)
+
+
+class UserDecisionCases(unittest.TestCase):
+    """The cases the user decided on (2026-11-07, rules-design §6), as layout.py draws them
+    (its `rule:` lines judge the written draft): each passes its rule."""
+
+    def rule_lines(self, path, mode):
+        import io
+        import tempfile
+        from contextlib import redirect_stdout
+        with tempfile.TemporaryDirectory() as tmp:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                layout.main([str(path), "-o", str(Path(tmp) / "d.svg"), "--mode", mode])
+        return [ln for ln in buf.getvalue().splitlines() if ln.startswith("rule: ")]
+
+    def test_decided_cases_pass(self):
+        corpus = ROOT / "tests" / "corpus"
+        cases = [(SPECS / "tgw-reference-architecture.layout.yaml", "document", "R-rt", "rtb"),
+                 (SPECS / "slides" / "tgw-reference-architecture.layout.yaml", "slide", "R-rt", "rtb"),
+                 (SPECS / "nlb-mtls-reference-architecture.layout.yaml", "document", "R-flow", "edge:3"),
+                 (corpus / "bench" / "latest2-egress.layout.yaml", "document", "R-label", "edge:8"),
+                 (corpus / "bench" / "v2-1-egress.layout.yaml", "document", "R-label", "edge:8"),
+                 (corpus / "lanes" / "j.layout.yaml", "document", "R-label", "edge:23")]
+        for path, mode, rule, who in cases:
+            with self.subTest(case=f"{path.parent.name}/{path.name}", mode=mode):
+                got = [ln for ln in self.rule_lines(path, mode) if ln.startswith(f"rule: {rule} ") and who in ln]
+                self.assertEqual(got, [])
 
 
 TWIN = {
