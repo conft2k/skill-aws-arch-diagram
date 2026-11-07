@@ -514,6 +514,22 @@ class ExampleSpecs(unittest.TestCase):
         self.assertEqual(cm.exception.problems, [
             "nodes[3] e2: xy[1]: expression 'ec2.cy': ec2 has no instance 2 (left out by `only:`), so e2.2 has "
             "nothing to follow there"])
+        # one y for every instance (a node or box outside the template, a row not in its
+        # `per`, a number) puts them on one row: rejected unless one instance is drawn
+        tail = (", so it puts all 2 instances of e2 on one y, a row away from every instance but one; follow "
+                "each instance's own (another item of the template by its id, <item>.cy, or row.<az1|az2>), "
+                "or keep e2 in one instance (only: [n])")
+        for y, what in (("inet.cy", "inet.cy is outside the per template 'az'"),
+                        ("vpc.y0+40", "vpc.y0 is outside the per template 'az'"),
+                        ("row.main", "row.main is not a row of the per template 'az' (az1, az2)"),
+                        (300, "300 is a fixed y")):
+            with self.assertRaises(SpecError) as cm:
+                L.load(tmpl(["col.c", y]))
+            self.assertEqual(cm.exception.problems, [f"nodes[3] e2: xy[1]: {what}{tail}"], y)
+        s = L.load(tmpl(["col.c", "inet.cy"], only=[2]))                # one instance: fine
+        self.assertEqual(s.nodes["e2.2"].xy, (M.Expr("col", "c"), M.Expr("node", "inet", "cy")))
+        s = L.load(tmpl(["inet.cx", "ec2.cy"]))                          # x outside the template: fine
+        self.assertEqual(s.nodes["e2.1"].xy, (M.Expr("node", "inet", "cx"), M.Expr("node", "ec2.1", "cy")))
         # outside the template the base id still names nothing
         d = base()
         d["nodes"].append({"id": "q", "icon": "service/AWS-Lambda", "label": "Q", "in": "region",

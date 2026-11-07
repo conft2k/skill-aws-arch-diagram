@@ -217,7 +217,9 @@ of a node that is not a colspan (x0/x1, y0/y1 = icon edges), <group>.(x0|x1|y0|y
 no chain of node references back to itself on one axis; W2 pins "node:<nid>" to it with two
 Requirements, so the node follows the solved tracks. A `per` template node's xy is resolved
 per instance n: a template item's base id names its instance n, `row.<per row>` the
-instance's row; a y reference to another instance of the template is rejected.
+instance's row; a y reference to another instance of the template is rejected, and so is
+a y that is one for every instance of a node drawn in two or more (a number, a node or group
+outside the template, a row not in its `per`).
 
 =========================================================================================
 7. Text width

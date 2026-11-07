@@ -175,7 +175,10 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   another item of the template named by its own id means the same instance's
   (`xy: [col.b, e1.cy]` puts each `e2.n` level with `e1.n`) and `row.<a per row>` means the
   instance's own row; an explicit instance (`e1.1.cx`) stays as written, on x only — another
-  instance's y sits a row away.
+  instance's y sits a row away. For the same reason a template node drawn in two or more
+  instances can't take one y for all of them on `xy[1]`: a number, a node or box outside
+  the template, or a row not in its `per` is rejected; follow an item of the template or
+  `row.<per row>`, or keep the node in one instance (`only: [n]`).
 
 ## edges
 

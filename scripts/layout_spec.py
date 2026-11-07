@@ -32,7 +32,7 @@ import check_layout  # noqa: E402  (services_in_label, OUTSIDE_CLOUD)
 import find_icon  # noqa: E402  (search, SETS: the icon bundle assets/icons.json)
 import layout_const as K  # noqa: E402
 from layout_model import (Edge, Expr, Group, Node, NoteSpec, Place, RawSpec, Spec,  # noqa: E402
-                          SpecError, Track)
+                          SpecError, Track, fmt_num)
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 ATTRS = ("x0", "x1", "cx", "y0", "y1", "cy")
@@ -1559,14 +1559,46 @@ class _Loader:
                     loop = " → ".join(path + [nid])
                     yield sp.nodes[nid], i, f"{c.ref}.{c.attr} refers back to {nid} ({loop}); {self.xy_hint(i)}"
 
+    def xy_one_y(self, node: Node, e) -> Optional[str]:
+        """A template node's xy[1] that is the same y for every instance (a number, a node or
+        group outside its template, a row not in the template's `per`), while the template
+        draws it in two or more instances, each on its own row: no solve can hold them all."""
+        sp, tmpl = self.spec, node.template
+        k = sum(1 for n in sp.nodes.values() if n.src == node.src)
+        if k < 2:
+            return None
+        per = self.graw[tmpl]["per"] or []
+        if isinstance(e, Expr):
+            if e.kind == "row" and e.ref not in per:
+                what = f"row.{e.ref} is not a row of the per template {tmpl!r} ({', '.join(per)})"
+            elif e.kind in ("node", "group"):
+                t = sp.nodes.get(e.ref) if e.kind == "node" else sp.groups.get(e.ref)
+                if t is None or t.template == tmpl:
+                    return None
+                what = f"{e.ref}.{e.attr} is outside the per template {tmpl!r}"
+            else:
+                return None
+        elif isinstance(e, (int, float)):
+            what = f"{fmt_num(e)} is a fixed y"
+        else:
+            return None
+        base = node.id.rsplit(".", 1)[0]
+        return (f"{what}, so it puts all {k} instances of {base} on one y, a row away from every instance "
+                f"but one; follow each instance's own (another item of the template by its id, <item>.cy, "
+                f"or row.<{'|'.join(per)}>), or keep {base} in one instance (only: [n])")
+
     def xy_problem(self, node: Node, i: int, e) -> Optional[str]:
         """Why an `xy` expression cannot be tied to the solve, or None. A difference
         constraint can hold a node to a track, another node's icon edge / center, or a
         group's edge — not a group's center, a label stack or a gap() corridor. (A loop of
         references is xy_cycles'.)"""
+        sp = self.spec
+        if i == 1 and node.template is not None:
+            why = self.xy_one_y(node, e)
+            if why:
+                return why
         if not isinstance(e, Expr):
             return None
-        sp = self.spec
         axis, attrs = ("col", ("x0", "cx", "x1")) if i == 0 else ("row", ("y0", "cy", "y1"))
         hint = self.xy_hint(i)
         if e.kind in ("col", "row"):
