@@ -29,6 +29,7 @@ import embed  # noqa: E402
 import layout_const as K  # noqa: E402
 import layout_model as M  # noqa: E402
 import layout_note as N  # noqa: E402
+from layout_text import font_context, svg_factor, svg_steps  # noqa: E402
 
 NS = "{http://www.w3.org/2000/svg}"
 TOL = 2.0
@@ -60,7 +61,7 @@ class Draft:
         out, _, problems = embed.unembed(p.read_text(encoding="utf-8"))
         assert not problems, problems
         self.name, self.mode = name, mode
-        root = ET.fromstring(out)
+        self.root = root = ET.fromstring(out)
         vb = [num(v) for v in root.get("viewBox").split()]
         self.w, self.h = vb[2], vb[3]
         self.rects, self.images, self.texts, self.circles = [], [], [], []
@@ -214,7 +215,7 @@ def elements(nb):
 class AutoPlaceTest(unittest.TestCase):
     def test_auto_matches_examples(self):
         for mode, d in ALL:
-            with self.subTest(example=f"{mode}/{d.name}"):
+            with font_context(svg_factor(d.root), svg_steps(d.root)), self.subTest(example=f"{mode}/{d.name}"):
                 spec, geom = d.build()
                 nb = N.block(spec, geom)
                 self.assertEqual(nb.place, EXPECT_PLACE[(mode, d.name)], nb.warnings)
@@ -261,7 +262,7 @@ class PanelTest(unittest.TestCase):
         for name in ("nfw", "alb", "gwlb", "tgw", "nlb"):
             d = DOCS[name]
             known = KNOWN.get(("document", name), {})
-            with self.subTest(example=name):
+            with font_context(svg_factor(d.root), svg_steps(d.root)), self.subTest(example=name):
                 spec, geom = d.build()
                 self.assertLessEqual(abs(geom.drawing.y1 - d.cloud["y1"]), TOL)
                 nb = N.block(spec, geom)
