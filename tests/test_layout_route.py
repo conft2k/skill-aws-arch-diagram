@@ -270,7 +270,7 @@ def routed(name):
 EXPECTED_SHAPES = {
     # one entry per expanded edge instance, in Edge.n order
     "alb": ["H", "H", "H", "H", "VH", "H", "H", "V"],
-    "nfw": ["HVH", "HVH", "HVH", "HVH", "H", "H", "H", "H", "HVH", "HVH", "H"],
+    "nfw": ["HVH", "HVH", "VH", "VH", "H", "H", "H", "H", "HVH", "HVH", "H"],
     "tgw": ["H", "H", "H", "VHV", "VHV", "VHV", "VHV", "H", "H", "V", "V"],
     "nlb": ["H", "H", "H", "VH", "H", "H"],
     "gwlb": ["H", "HVH", "HVH", "HV", "HV", "H", "H", "H"],
@@ -375,15 +375,15 @@ class Reproduce(unittest.TestCase):
     def test_nfw_badges(self):
         spec, geom, d, boxes, els, warns = routed("nfw")
         b = badges_of(els)
-        for n, x in ((3, 645), (4, 929), (5, 1059)):
+        for n, x in ((3, 793), (4, 1077), (5, 1207)):
             self.near(b[n][0], x, f"nfw badge {n} x")
             self.near(b[n][1], 208, f"nfw badge {n} cy")
 
     def test_nfw_trunk_and_ports(self):
         spec, geom, d, boxes, els, warns = routed("nfw")
         first, second = points(lines_of(els, 8)[0]), points(lines_of(els, 9)[0])
-        self.assertEqual(first[-1], (1184, 382))                 # one arrow on the IGW's center line
-        self.near(first[1][0], 1136, "trunk x")
+        self.assertEqual(first[-1], (1332, 382))                 # one arrow on the IGW's center line
+        self.near(first[1][0], 1284, "trunk x")
         self.assertEqual(second[-1], (first[1][0], 382))         # the AZ 2 line stops at the junction
         self.assertNotIn("marker-end", lines_of(els, 9)[0].attrs)
         spokes = [points(lines_of(els, n)[0])[-1][1] for n in (0, 1)]

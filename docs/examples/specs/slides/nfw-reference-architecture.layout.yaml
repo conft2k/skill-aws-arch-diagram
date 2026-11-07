@@ -1,16 +1,15 @@
-# Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet
+# Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with
+# Room for the two tables on a 1108 × 540 slide: the spoke VPCs drop their subnet boxes, the Spoke RT its route (legend step 2 has it), and "VPC attachment" moves to the inspection line
 name: nfw-reference-architecture
 mode: slide
-cols: [spoke, att, tgw, eni, fw, nat, igw, inet]   # att: an empty column so VPC B (az2, spoke) and the TGW (main, tgw) are two columns apart and separate on x, not on y
+cols: [spoke, att, rtsp, tgw, rtfw, eni, fw, nat, igw, inet]   # att: an empty column so VPC B (az2, spoke) and the Spoke RT (main, rtsp) are two columns apart and separate on x, not on y; rtsp / rtfw: each TGW route table beside the attachments it is associated with, Spoke RT between the spoke VPCs and the TGW, Firewall RT between the TGW and the Inspection VPC
 rows: [az1, main, az2]
 
 groups:
   - {id: cloud,  type: cloud}
   - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
   - {id: vpca,   type: vpc, label: VPC A, cidr: 10.1.0.0/16, in: region}
-  - {id: sna,    type: private, label: App subnet, in: vpca}
   - {id: vpcb,   type: vpc, label: VPC B, cidr: 10.2.0.0/16, in: region}
-  - {id: snb,    type: private, label: App subnet, in: vpcb}
   - {id: insp,   type: vpc, label: Inspection VPC, cidr: 100.64.0.0/16, in: region}
   - {id: az,     type: az, in: insp, per: [az1, az2]}
   - {id: tgwsn,  type: private, label: TGW subnet, in: az}
@@ -18,11 +17,11 @@ groups:
   - {id: pubsn,  type: public, label: Public subnet, in: az}
 
 nodes:
-  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, in: sna, at: [spoke, az1]}
-  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, in: snb, at: [spoke, az2]}
+  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, in: vpca, at: [spoke, az1]}
+  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, in: vpcb, at: [spoke, az2]}
   - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
-  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: "VPC A · B 전파", in: region, at: [tgw, az1]}
-  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: "0.0.0.0/0 → 검사 VPC", in: region, at: [tgw, az2]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: "VPC A · B 전파", in: region, at: [rtfw, main]}   # associated with the inspection VPC attachment: inside the bracket the two inspection lines draw right of the TGW
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, in: region, at: [rtsp, main]}   # associated with the spoke VPC attachments: inside the bracket the two spoke lines draw left of the TGW; no sub, legend step 2 gives its route
   - {id: eni,  icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tgwsn, col: eni}
   - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, in: fwsn, col: fw}
   - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubsn, col: nat}
@@ -31,9 +30,10 @@ nodes:
   - {id: inet, icon: resource/Internet, label: Internet, at: [inet, main]}
 
 edges:
-  - {e: "vpca <-> tgw", verb: VPC attachment, step: 1}
+  - {e: "vpca <-> tgw", step: 1}
   - {e: "vpcb <-> tgw"}
-  - {e: "tgw <-> eni.*", step: 2, step_at: start}   # step_at: badge 2 on the TGW-side piece left of the Inspection VPC, not the longer piece inside the TGW subnet
+  - {e: "tgw <-> eni.1", shape: VH, verb: VPC attachment, step: 2, step_at: start}   # shape: up out of the TGW and across to the ENI, around the Firewall RT; verb: named once, here, where the piece left of the Inspection VPC has room (a verb on VPC A's spoke would widen the slide past 1108); step_at: badge 2 on that piece
+  - {e: "tgw <-> eni.2", shape: VH}   # its own edge so the verb is drawn once
   - {e: "eni.* <-> fwe.*", step: 3}
   - {e: "fwe.* -> nat.*", step: 4}
   - {e: "nat.* -> igw", trunk: true, step: 5}
