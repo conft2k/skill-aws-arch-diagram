@@ -152,12 +152,29 @@ class FlowRules(unittest.TestCase):
         far = self.run_flow(sp, *parts, label(0, 270, 60))
         self.assertEqual([v.owners for v in codes(far, "F5")], [("edge:0",)])
 
-    def test_f5_spec_placed_label_exempt(self):
+    def test_f5_spec_placed_label_judged_too(self):
+        # label_at / step_at a point exempts only L1: F5 judges where it ended up
         sp = spec(edges=[("a", "b")], nodes="ab")
         sp.edges[0].label_at = M.Place(M.Expr("num", offset=270), M.Expr("num", offset=60))
+        sp.edges[0].step_at = M.Place(M.Expr("num", offset=200), M.Expr("num", offset=60))
         out = self.run_flow(sp, node("a", 50, 100), node("b", 450, 100), edge(0, [(102, 124), (446, 124)]),
-                            label(0, 270, 60))
-        self.assertEqual(codes(out, "F5"), [])
+                            label(0, 270, 60), badge(0, 200, 60, 1))
+        self.assertEqual([v.owners for v in codes(out, "F5")], [("edge:0",), ("edge:0",)])
+
+    def test_f5_tie_names_the_other_line(self):
+        # review repro: edge 0's label 7px from both lines names edge 1, not edge 0 twice
+        sp = spec(edges=[("a", "b"), ("c", "d")], nodes="abcd")
+        out = self.run_flow(sp, edge(0, [(100, 200), (500, 200)], end=False),
+                            edge(1, [(100, 174), (500, 174)], end=False), label(0, 300, 190, s="X"))
+        self.assertEqual([v.owners for v in codes(out, "F5")], [("edge:0", "edge:1")])
+
+    def test_f3_measures_to_the_icon_not_its_caption(self):
+        # review repro: the crossing is 22 / 30px from the end icons; only the right node's
+        # long caption comes within 12px of it
+        sp = spec(edges=[("a", "b"), ("c", "d")], nodes="abcd")
+        parts = [node("a", 0, 100), node("b", 100, 100, label="a very long caption under b"),
+                 edge(0, [(52, 124), (96, 124)]), edge(1, [(70, 52), (70, 141)])]
+        self.assertEqual(codes(self.run_flow(sp, *parts), "F3"), [])
 
 
 class LabelRules(unittest.TestCase):
@@ -175,6 +192,17 @@ class LabelRules(unittest.TestCase):
         sp.edges[0].label_at = "below"          # asked for: not judged
         self.assertEqual([v.owners for v in codes(self.run_label(sp, *parts, label(0, 270, 140),
                                                                  label(1, 110, 430)), "L1")], [])
+
+    def test_l1_judges_the_own_nearest_piece(self):
+        # latest2-egress edge:8: above the horizontal piece but nearer the vertical one it
+        # turns up into, and left of that one
+        sp = spec(edges=[("a", "b")], nodes="ab")
+        parts = [node("a", 50, 533), node("b", 860, 384), edge(0, [(102, 557), (717.5, 557), (717.5, 408), (856, 408)])]
+        out = self.run_label(sp, *parts, label(0, 666.15, 548, s="appliance mode"))
+        self.assertEqual([v.owners for v in codes(out, "L1")], [("edge:0",)])
+        # an exact tie between two pieces: the one it spans along
+        tie = self.run_label(sp, *parts, label(0, 600, 551, s="appliance mode"))
+        self.assertEqual(codes(tie, "L1"), [])
 
     def test_l1_on_line_over_background(self):
         sp = spec(edges=[("a", "b")], nodes="ab")
@@ -232,12 +260,12 @@ class RouteTableRules(unittest.TestCase):
         bad = self.run_rt(sp, *self.bracket_parts(520, 200))
         self.assertIn(("node:rt", "node:tgw"), [v.owners for v in codes(bad, "RT1")])
 
-    def test_rt1_hub_only_table(self):
-        # every line at the hub associated: beside the hub is enough, anywhere around it
+    def test_rt1_hub_only_table_still_needs_its_bracket(self):
+        # every line at the hub associated (its only table): no exception, the bracket holds
         sp = self.rt_spec(["a", "b", "c"], [("tgw", "a"), ("tgw", "b"), ("tgw", "c")], "abc")
-        self.assertEqual(codes(self.run_rt(sp, *self.bracket_parts(400, 400)), "RT1"), [])
-        far = self.run_rt(sp, *self.bracket_parts(560, 520))
-        self.assertEqual([v.owners for v in codes(far, "RT1")], [("node:rt", "node:tgw")])
+        self.assertEqual(codes(self.run_rt(sp, *self.bracket_parts(200, 300)), "RT1"), [])
+        out = self.run_rt(sp, *self.bracket_parts(600, 150))      # up-right, past the c-a wedge's chord
+        self.assertEqual([v.owners for v in codes(out, "RT1")], [("node:rt", "node:tgw")])
 
     def test_rt2_single_line(self):
         sp = self.rt_spec(["c"], [("tgw", "a"), ("tgw", "b"), ("tgw", "c")], "abc")
@@ -287,7 +315,11 @@ class Goldens(unittest.TestCase):
                 with self.subTest(path=path.name, dir=path.parent.name):
                     sp, b = build(path)
                     got = [v for v in rules.check(sp, b.geom, b.svg) if v.rule == "R-rt"]
-                    self.assertEqual(got, [])
+                    # TGW B RT sits under TGW B, below every line its three associations draw
+                    # (outside the bracket: RT1, no exception for a hub's only table)
+                    self.assertEqual([v for v in got if v.owners[0] != "node:rtb"], [])
+                    if name.startswith("tgw"):
+                        self.assertEqual([(v.code, v.owners) for v in got], [("RT1", ("node:rtb", "node:tgwb"))])
 
     def test_nfw_spoke_rt_moved_out_of_its_bracket(self):
         sp, b = build(SPECS / "nfw-reference-architecture.layout.yaml")
@@ -339,6 +371,24 @@ class Score(unittest.TestCase):
         fit = rules.Violation("R-fit", ("canvas",), "y", 1.5, rules.TIER_FIT)
         self.assertLess(rules.score([fit], [1, 2, 3], geom, None, 0), rules.score([hard], [], geom, None, 0))
         self.assertEqual(rules.score([hard, fit], [], geom, None, 1), (1, 2.0, 0, 1.5, 1, 10000.0))
+
+
+class CorpusTags(unittest.TestCase):
+    """tests/run_corpus.py tag_misses: a run whose checker failed leaves its tags unjudged
+    (reported as such), never as kept."""
+
+    def test_checker_failure_is_not_a_pass(self):
+        sys.path.insert(0, str(ROOT / "tests"))
+        import run_corpus
+        entry = {"good": ["R-rt"], "bad": {"R-flow": "edge:3"}}
+        ok = {"mode": "document", "result": "drawn",
+              "violations": [{"rule": "R-flow", "owners": "edge:3,edge:4", "msg": "F1"}]}
+        self.assertEqual(run_corpus.tag_misses(entry, [ok]), [])
+        broke = {"mode": "slide", "result": "drawn", "violations": [{"rule": "checker-error", "msg": "boom"}]}
+        got = run_corpus.tag_misses(entry, [broke])
+        self.assertEqual(len(got), 1)
+        self.assertIn("not judged", got[0])
+        self.assertIn("good R-rt", got[0])
 
 
 if __name__ == "__main__":

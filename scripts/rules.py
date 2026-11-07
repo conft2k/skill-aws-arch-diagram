@@ -18,26 +18,25 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            other footprint within ICON_CLEAR, or a group's border within END_REACH with no
            other border nearer than BORDER_CLEAR. F5 an edge's label set and each badge sit
            within LABEL_REACH of its net (check_layout.joined: a trunk, a bus and its drops),
-           and no other line is within TEXT_GAP of as close; a label or badge the spec places
-           (label_at / step_at a point) is not judged.
+           and no other line is within TEXT_GAP of as close — wherever it was placed (the
+           router, or label_at / step_at). F3 measures to the end nodes' icon boxes.
   R-rt     a route table with `for:` (Node.assoc) sits beside what it is associated with.
            With a hub (the TGW) and associated lines A, the others at the hub N: RT1 (|A| ≥
-           2) its centre is inside the bracket A's lines draw (bracket()) — or, when every
-           line at the hub is associated (N empty: its only table), within S + sibling_gap
-           of the hub; RT2 (|A| = 1) its footprint is within S + sibling_gap of that line,
-           reached without crossing another line; RT3 the segment from its centre to the
-           hub's crosses no line of N nor of another hub (except within RT_HUB_CLEAR of the
-           hub's icon); RT4 it is nearer the hub than any other hub and any far end of N. A
-           subnet association (no hub, every end a subnet box): RT5 nearer each associated
-           subnet than any other subnet by RT_SUBNET_MARGIN, and inside none of the others.
-           A table without `for:`, or without a hub and with other ends, is not judged.
+           2) its centre is inside the bracket A's lines draw (bracket()); RT2 (|A| = 1) its
+           footprint is within S + sibling_gap of that line, reached without crossing another
+           line; RT3 the segment from its centre to the hub's crosses no line of N nor of
+           another hub (except within RT_HUB_CLEAR of the hub's icon); RT4 it is nearer the
+           hub than any other hub and any far end of N. A subnet association (no hub, every
+           end a subnet box): RT5 nearer each associated subnet than any other subnet by
+           RT_SUBNET_MARGIN, and inside none of the others. A table without `for:`, or
+           without a hub and with other ends, is not judged.
   R-twin   twins (layout_solve.twin_classes: boxes of one structure) are drawn alike: each
            measure, and each node centre from the twin's left / top edge, within TWIN_TOL.
-  R-label  L1 a connector label set (auto-placed: no label_at) sits above a horizontal or
-           right of a vertical piece of its line that it is within LABEL_REACH of (else the
-           nearest), or on one over a background; L2 the step badges drawn are the edges'
-           resolved steps (each note row once, or on each instance with step_each / steps),
-           and every note row has one.
+  R-label  L1 a connector label set (auto-placed: no label_at) sits above its own nearest
+           piece when that is horizontal, right of it when vertical (an exact tie between two
+           pieces: the one it spans along), or on it over a background; L2 the step badges
+           drawn are the edges' resolved steps (each note row once, or on each instance with
+           step_each / steps), and every note row has one.
   R-fit    a slide's 12px text comes out at ≥ K.SLIDE_MIN_PT (cost: the points short).
 
 The hug of a connector along a container border (read as the border) is check_layout's
@@ -60,7 +59,6 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_layout as CL  # noqa: E402
 import layout_const as K  # noqa: E402
-import layout_model as M  # noqa: E402
 import layout_solve  # noqa: E402
 from layout_spec import SUBNET_TYPES  # noqa: E402
 
@@ -336,13 +334,14 @@ def _masked(d: Drawn, s: dict, o: dict) -> bool:
 
 
 def _end_boxes(d: Drawn, pid: int) -> List[BoxT]:
-    """The footprints of the nodes a connector ends at."""
+    """The icon boxes of the nodes a connector ends at (found by end_icon on the footprints;
+    F3 measures to the icon, not its caption)."""
     pts = d.points(pid)
     out = []
     for pt in (pts[0], pts[-1]):
         i = CL.end_icon(pt, d.feet)
         if i is not None:
-            out.append(next(b for j, b in d.feet if j is i))
+            out.append(i["box"])
     return out
 
 
@@ -456,32 +455,29 @@ def _label_box(texts: Sequence[dict]) -> BoxT:
 
 
 def _attribution(spec, d: Drawn) -> List[Violation]:
-    """F5: an edge's labels and badges sit by its own net, nearer it than any other line.
-    A label or badge the spec places (label_at / step_at a point) is where the author put it."""
+    """F5: an edge's labels and badges — wherever they were placed, by the router or by
+    label_at / step_at — sit by its own net, nearer it than any other line."""
     out = []
-    placed = {e.n: (isinstance(e.label_at, M.Place), isinstance(e.step_at, M.Place)) for e in spec.edges}
     for n in sorted(set(d.labels) | set(d.on_line) | set(d.badges)):
         own, other = net_and_other(d, n)
         if not own:
             continue
-        fixed_label, fixed_badge = placed.get(n, (False, False))
         items = []
-        if d.labels.get(n) and not fixed_label:
+        if d.labels.get(n):
             items.append(("label", _label_box(d.labels[n]), d.labels[n][0]["s"]))
-        if d.on_line.get(n) and not fixed_label:
+        if d.on_line.get(n):
             items.append(("label", _label_box(d.on_line[n]), d.on_line[n][0]["s"]))
-        if not fixed_badge:
-            items += [("badge", box, digit) for box, digit in d.badges.get(n, ())]
+        items += [("badge", box, digit) for box, digit in d.badges.get(n, ())]
         for what, box, s in items:
             d_own = min(_box_seg(box, g) for g in own)
-            d_other = min((_box_seg(box, g) for g in other), default=math.inf)
+            # the nearest other line with its segment kept, so its owner is the one reported
+            d_other, near = min(((_box_seg(box, g), g) for g in other), key=lambda t: t[0], default=(math.inf, None))
             eid = f"edge:{n}"
             if d_own > CL.LABEL_REACH:
                 out.append(Violation("R-flow", (eid,), f"F5 {eid}'s {what} {s!r} is {_f(d_own)}px from its line "
                                      f"(> {CL.LABEL_REACH})", d_own - CL.LABEL_REACH, code="F5"))
             elif d_other <= d_own + CL.TEXT_GAP:
-                pid = next(pid for pid, run in d.paths.items() for g in run if _box_seg(box, g) == d_other)
-                o = d.eid(pid)
+                o = d.eid(id(near["el"]))
                 out.append(Violation("R-flow", (eid, o), f"F5 {eid}'s {what} {s!r} is {_f(d_other)}px from {o}'s line, "
                                      f"{_f(d_own)}px from its own line: it reads as {o}'s",
                                      d_own + CL.TEXT_GAP - d_other + 1, code="F5"))
@@ -576,10 +572,7 @@ def rt_rules(spec, d: Drawn) -> List[Violation]:
         lim = spec.S + spec.const.sibling_gap
         if len(A) >= 2:
             polys = bracket(spec, d, hub, A)
-            # the hub's only table (every line at it associated): no bracket to tell it from
-            # another, so beside the hub is enough
-            alone = not N and _box_box(foot, d.foot[hub]) <= lim
-            if not alone and not any(inside(rc, p) for p in polys):
+            if not any(inside(rc, p) for p in polys):
                 out.append(Violation("R-rt", (me, hn), f"RT1 {rid} at ({_f(rc[0])},{_f(rc[1])}) is outside the bracket "
                                      f"its {len(A)} associated lines at {hub} draw "
                                      f"(edges {', '.join(map(str, A))})", 1.0, code="RT1"))
@@ -690,6 +683,13 @@ def twin_rules(spec, geom) -> List[Violation]:
 # =======================================================================================
 # R-label
 
+def _along(box: BoxT, s: dict) -> float:
+    """How far a label's extent overlaps a straight piece along it."""
+    i = 0 if _horiz(s) else 1
+    lo, hi = sorted((s["p"][i], s["q"][i]))
+    return max(0.0, min(hi, box[i + 2]) - max(lo, box[i]))
+
+
 def _rule_side(box: BoxT, s: dict) -> bool:
     """Is a label box on the rule side of a straight piece: above a horizontal one (bottom
     at or over its y, overlapping it on x), right of a vertical one (overlapping it on y)?"""
@@ -712,20 +712,18 @@ def label_rules(spec, d: Drawn) -> List[Violation]:
         if not own:
             continue
         box = _label_box(texts or on)
-        # the pieces it sits by (a label near a corner sits by two): within LABEL_REACH, else
-        # the nearest
-        gaps = [(_box_seg(box, g), g) for g in own]
-        by = [g for dd, g in gaps if dd <= CL.LABEL_REACH] or [min(gaps, key=lambda t: t[0])[1]]
+        # its own nearest piece (an exact tie: the one it spans along), judged by its direction
+        s = min(own, key=lambda g: (_box_seg(box, g), -_along(box, g)))
         eid = f"edge:{e.n}"
         if on and not texts:
-            if not any(CL.seg_hits_box(g["p"], g["q"], CL.expand(box, 0.5)) for g in by):
+            if not CL.seg_hits_box(s["p"], s["q"], CL.expand(box, 0.5)):
                 out.append(Violation("R-label", (eid,), f"L1 {eid}'s label {on[0]['s']!r} over a background is not on "
-                                     f"its line {CL.fmt(by[0])}", 1.0, code="L1"))
+                                     f"its nearest piece {CL.fmt(s)}", 1.0, code="L1"))
             continue
-        if not any(_rule_side(box, g) for g in by):
-            out.append(Violation("R-label", (eid,), f"L1 {eid}'s label {texts[0]['s']!r} is neither above a horizontal "
-                                 f"nor right of a vertical piece of its line it sits by "
-                                 f"({', '.join(CL.fmt(g) for g in by)})", 1.0, code="L1"))
+        if not _rule_side(box, s):
+            out.append(Violation("R-label", (eid,), f"L1 {eid}'s label {texts[0]['s']!r} is not "
+                                 f"{'above' if _horiz(s) else 'right of'} its nearest piece {CL.fmt(s)}",
+                                 1.0, code="L1"))
     # L2: the badges drawn are the note's steps — each once, or on each instance the spec
     # gives it to (step_each / steps): the edges' resolved steps
     steps = len(spec.note.steps) if spec.note is not None else 0
