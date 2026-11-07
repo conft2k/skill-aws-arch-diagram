@@ -66,6 +66,8 @@ SHAPE_MISS = re.compile(r"drew (\S+) instead of")
 REFUSED = "refusing the requested"
 # check_layout's detour problems: the room on that side of the box (or canvas) grows.
 DETOURS = ("LINE OFF CANVAS", "LINE LEAVES BOX")
+# check_layout's text clashes: one set of owners clashing counts once in a round's score.
+TEXT_CLASH = ("TEXT NEAR ICON", "TEXT OVERLAP")
 SIDE_VAR = {"left": "L", "right": "R", "top": "T", "bottom": "B"}
 SVG_NS = "http://www.w3.org/2000/svg"
 # The tags, and the <g> attributes, svg2pptx.collect accepts (DRAWN / its <g> rule).
@@ -480,6 +482,22 @@ def feedback(b: Build, probs: List[Problem], extra: Dict[Tuple[str, str, str], R
     return changed
 
 
+def problem_count(probs: List[Problem]) -> int:
+    """The problems a round is scored by: check_layout's count, with the text clashes
+    (TEXT_CLASH) between one set of owners counted once — two nodes drawn on top of each
+    other report a TEXT NEAR ICON and a TEXT OVERLAP for one collision, which must not tie
+    that round with one that leaves a line on a border instead."""
+    seen, n = set(), 0
+    for p in probs:
+        if p.iss.kind in TEXT_CLASH and p.owners:
+            key = frozenset(p.owners)
+            if key in seen:
+                continue
+            seen.add(key)
+        n += 1
+    return n
+
+
 def shape_misses(b: Build) -> int:
     """How many edges the router drew in another shape than planned (each asks a re-solve);
     a shape the spec asked for and the router refused is left out (widening the gaps the
@@ -737,8 +755,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # A clean check with an edge drawn in another shape still re-solves: the router's
             # fallback (a U around the outside) can pass the check and still be a detour.
             # A slide that comes out too small counts as a problem: a round that widened a gap
-            # for a miss alone must not trade a fitting slide for one under 10pt.
-            score = (len(probs) + (1 if slide_problem(spec, b.geom) else 0), shape_misses(b))
+            # for a miss alone must not trade a fitting slide for one under 10pt. One text
+            # clash reported twice counts once (problem_count).
+            score = (problem_count(probs) + (1 if slide_problem(spec, b.geom) else 0), shape_misses(b))
             if best is None or score < best[0]:
                 best = (score, rnd, b, list(extra.values()), dict(skip))
             if score == (0, 0) or rnd == MAX_ROUNDS:

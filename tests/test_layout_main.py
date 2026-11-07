@@ -300,6 +300,40 @@ class Feedback(unittest.TestCase):
         self.assertEqual((extra, skip), ({}, {2: 1}))
 
 
+class OneClashOneProblem(unittest.TestCase):
+    """Two nodes drawn on top of each other report a TEXT NEAR ICON and a TEXT OVERLAP (each
+    label belongs to its own node now); the round score counts that clash once, so a round
+    that moved a line off a border is not tied with — and lost to — round 0 that left it there."""
+    SPEC = ROOT / "tests" / "corpus" / "flowcol" / "t7-xyref.layout.yaml"   # KMS xy'd onto Users
+
+    @staticmethod
+    def prob(kind, owners):
+        return layout.Problem(CL.Issue(kind, kind, [], {}), list(owners), [])
+
+    def test_count(self):
+        p = self.prob
+        self.assertEqual(layout.problem_count([p("TEXT NEAR ICON", ["node:kms", "node:users"]),
+                                               p("TEXT OVERLAP", ["node:users", "node:kms"])]), 1)
+        self.assertEqual(layout.problem_count([p("TEXT OVERLAP", ["node:a", "node:b"]),
+                                               p("TEXT OVERLAP", ["node:a", "node:c"])]), 2)
+        self.assertEqual(layout.problem_count([p("LINE HUGS BORDER", ["edge:2", "group:appsn.2"]),
+                                               p("LINE OVER ICON", ["edge:2", "group:appsn.2"])]), 2)
+        self.assertEqual(layout.problem_count([p("TEXT OVERLAP", []), p("TEXT OVERLAP", [])]), 2)
+
+    def test_no_line_on_a_border(self):
+        for mode in ("slide", "document"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "t.svg"
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    layout.main([str(self.SPEC), "--mode", mode, "-o", str(out)])
+                text = buf.getvalue()
+                self.assertNotIn("LINE HUGS BORDER", text)
+                self.assertNotIn("LINE OVER ICON", text)
+                kinds = {i.kind for i in CL.run_checks(ET.fromstring(out.read_bytes()))}
+                self.assertFalse(kinds - {"TEXT NEAR ICON", "TEXT OVERLAP"}, (mode, kinds, text))
+
+
 class ShapeMissResolve(unittest.TestCase):
     """An edge the router drew in another shape than planned ("drew X instead of Y") asks a
     re-solve even when the check is clean: its fallback route may pass the check and still
