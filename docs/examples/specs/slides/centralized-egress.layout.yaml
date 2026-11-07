@@ -1,0 +1,59 @@
+# Centralized egress, with each VPC's identical AZ 1/2 paths folded into one representative path.
+# App VPC headers identify the two AZs instead of repeating their AZ container boxes.
+# No services, connections, directions or routes are omitted. Subnet route captions use
+# "기본" = 0.0.0.0/0 and "앱" = 10.0.0.0/8; A/B in Firewall RT mean the App VPC CIDRs.
+# The App subnet default route is stated once in the note, rather than below each EC2.
+# The six document steps are condensed into three note lines; policy inspection, source NAT,
+# attachment association, same-AZ steering and appliance-mode symmetry remain explicit.
+name: centralized-egress
+mode: slide
+title: true
+cols: [ec2, att, rtsp, tgw, rtfw, seni, fw, nat, igw, inet]
+rows: [a, main, b]
+
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: ap-northeast-2, in: cloud}
+  - {id: vpca, type: vpc, label: App VPC A · 2 AZ, cidr: 10.1.0.0/16, in: region}
+  - {id: appa, type: private, label: App, in: vpca}
+  - {id: tsna, type: private, label: TGW, in: vpca}
+  - {id: vpcb, type: vpc, label: App VPC B · 2 AZ, cidr: 10.2.0.0/16, in: region}
+  - {id: appb, type: private, label: App, in: vpcb}
+  - {id: tsnb, type: private, label: TGW, in: vpcb}
+  - {id: sec, type: vpc, label: Security VPC, cidr: 10.100.0.0/16, in: region}
+  - {id: azs, type: az, label: "AZ 1 · 2 (각 AZ)", in: sec}
+  - {id: tsns, type: private, label: TGW, in: azs}
+  - {id: fwsn, type: private, label: FW, in: azs}
+  - {id: pubsn, type: public, label: Public, in: azs}
+
+nodes:
+  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, in: appa, at: [ec2, a]}
+  - {id: enia, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tsna, at: [att, a]}
+  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, in: appb, at: [ec2, b]}
+  - {id: enib, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tsnb, at: [att, b]}
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: "기본 → 검사 VPC", in: region, at: [rtsp, main], for: [enia, enib]}
+  - {id: tgw, icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: ["A → VPC A", "B → VPC B"], in: region, at: [rtfw, main], for: [seni], via: tgw}
+  - {id: seni, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, sub: "기본 → FW", in: tsns, at: [seni, a]}
+  - {id: fwe, icon: resource/AWS-Network-Firewall_Endpoints, label: FW endpoint, sub: ["기본 → NAT", "앱 → TGW"], in: fwsn, at: [fw, a]}
+  - {id: nat, icon: resource/Amazon-VPC_NAT-Gateway, label: NAT, sub: ["기본 → IGW", "앱 → FW"], in: pubsn, at: [nat, a]}
+  - {id: nfw, icon: service/AWS-Network-Firewall, label: AWS Network Firewall, in: sec, at: [fw, main]}
+  - {id: igw, icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: sec, at: [igw, a]}
+  - {id: inet, icon: resource/Internet, label: Internet, at: [inet, a]}
+
+edges:
+  - {e: "ec2a -> enia"}
+  - {e: "enia -> tgw"}
+  - {e: "ec2b -> enib"}
+  - {e: "enib -> tgw", shape: HV}
+  - {e: "tgw -> seni", shape: VH}
+  - {e: "seni -> fwe"}
+  - {e: "fwe -> nat"}
+  - {e: "nat -> igw"}
+  - {e: "igw -> inet"}
+
+note:
+  rows:
+    - ["경로", "각 VPC는 2 AZ 동일 구성·같은 AZ 경로; App에 IGW 없음. App subnet RT: 기본 → TGW; TGW 연결선은 VPC attachment."]
+    - ["라우팅", "기본 = 0.0.0.0/0; 앱 = 10.0.0.0/8; A/B = App VPC CIDR; 검사 VPC = Security VPC."]
+    - ["동작", "FW 정책 검사 → NAT 출발지 주소 변환; 응답은 FW → TGW → App. Security attachment의 appliance mode가 양방향 AZ 유지."]

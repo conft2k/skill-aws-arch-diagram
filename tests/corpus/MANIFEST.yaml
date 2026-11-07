@@ -1086,6 +1086,11 @@ examples:
   - path: ../../docs/examples/specs/slides/alb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "ALB 3-tier slide: Users → IGW → internet-facing ALB → one ASG / target group over two AZs → RDS Multi-AZ, with Route 53 and the regional services (ACM, WAF, CloudWatch, S3) in one column right of the VPC"
+  - path: ../../docs/examples/specs/slides/centralized-egress.layout.yaml
+    modes: [slide, slide-no-title]
+    rules: [R-flow, R-label, R-rt, R-twin, R-border, R-fit]
+    what: "Centralized egress slide with each VPC's two identical AZ paths folded: App VPC A/B → TGW → Security VPC firewall → NAT → IGW → Internet, with both TGW tables and all outbound/return routes"
+    good: [R-flow, R-label, R-rt, R-twin, R-border, R-fit]
   - path: ../../docs/examples/specs/slides/gwlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "GWLB inspection slide: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs"
