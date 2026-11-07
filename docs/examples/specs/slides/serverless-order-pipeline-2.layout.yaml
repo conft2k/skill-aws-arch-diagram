@@ -1,0 +1,45 @@
+# Slide 2 of 2: continues slide 1's Fulfillment workflow and retains every document
+# fulfillment/DB service, connection and two-AZ instance. No technical facts omitted
+# across the pair; prose is condensed into captions and two note lines for >=10pt.
+name: serverless-order-pipeline-2
+mode: slide
+cols: [{id: notify, flow: 110}, {id: workflow, flow: 110}, app, proxycol, db1, db2, {id: secrets, flow: true}]
+rows: [az1, vmain, az2]
+
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+  - {id: vpc, type: vpc, label: VPC · NAT 없음, in: region}
+  - {id: az, type: az, label: "AZ {n}", in: vpc, per: [az1, az2]}
+  - {id: appsn, type: private, label: App subnet, in: az}
+  - {id: dbsn, type: private, label: DB subnet, in: az, span: {cols: [db1, db2]}}
+
+nodes:
+  - {id: rule, icon: resource/Amazon-EventBridge_Rule, label: EB rule, sub: OrderCreated, in: region, col: workflow}
+  - {id: sfn, icon: service/AWS-Step-Functions, label: Step Functions, sub: Fulfillment, in: region, col: workflow}
+  - {id: pay, icon: service/AWS-Lambda, label: Charge payment, in: region, col: workflow}
+  - {id: sns, icon: service/Amazon-Simple-Notification-Service, label: SNS, sub: order-status, in: region, col: notify}
+  - {id: mail, icon: service/AWS-Lambda, label: Send email, sub: SNS 구독, in: region, col: notify}
+  - {id: ses, icon: service/Amazon-Simple-Email-Service, label: SES, in: region, col: notify}
+  - {id: sm, icon: service/AWS-Secrets-Manager, label: Secrets Mgr, sub: DB 자격 증명, in: region, col: secrets}
+  - {id: reserve, icon: service/AWS-Lambda, label: Reserve stock, in: appsn, col: app}
+  - {id: vpce, icon: resource/Amazon-VPC_Endpoints, label: SM endpoint, in: appsn, col: proxycol}
+  - {id: proxy, icon: resource/Amazon-RDS-Proxy-Instance, label: RDS Proxy, in: vpc, at: [proxycol, vmain]}
+  - {id: writer, icon: resource/Amazon-Aurora-PostgreSQL-Instance, label: Aurora writer, in: dbsn, col: db1, only: [1]}
+  - {id: reader, icon: resource/Amazon-Aurora-PostgreSQL-Instance, label: Aurora reader, in: dbsn, col: db2}
+
+edges:
+  - {e: "rule -> sfn"}
+  - {e: "sfn -> pay"}
+  - {e: "sfn -> reserve.*", trunk: true, shape: HVH, from_side: right, to_side: left}
+  - {e: "sfn -> sns", verb: Publish}
+  - {e: "sns -> mail"}
+  - {e: "mail -> ses"}
+  - {e: "reserve.* -> proxy", trunk: true, verb: IAM 인증}
+  - {e: "proxy -> writer.1", label: "PostgreSQL :5432", shape: HV}
+  - {e: "proxy ..> vpce.*"}
+
+note:
+  rows:
+    - ["실행", "결제 → 재고 예약 → 결과; 결제 실패 시 재고 생략 · SNS 구독 Lambda가 SES SendEmail로 확정/실패 통지"]
+    - ["DB", "SM = Secrets Manager · Lambda는 비밀 없이 IAM 인증; 프록시만 인터페이스 endpoint로 DB 비밀 조회 · Aurora는 같은 클러스터"]

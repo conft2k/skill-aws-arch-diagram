@@ -1,0 +1,55 @@
+# Slide 1 of 2: request and analytics; slide 2 continues the same Fulfillment workflow
+# and expands its two-AZ VPC. No services, directed connections or technical facts
+# are omitted across the pair. The document's nine prose steps are condensed into
+# node/edge captions and two note lines to keep titled-slide text at least 10pt.
+name: serverless-order-pipeline-1
+mode: slide
+cols: [users, edge, x0, x1, x2, x3, x4, x5]
+rows: [web, sync, ana]
+
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}
+
+nodes:
+  - {id: users, icon: resource/Users, label: Users, at: [users, sync]}
+  - {id: cf, icon: service/Amazon-CloudFront, label: CloudFront, in: cloud, at: [edge, sync]}
+  - {id: waf, icon: service/AWS-WAF, label: AWS WAF, sub: CloudFront ACL, in: cloud, at: [edge, ana]}
+  - {id: web, icon: service/Amazon-Simple-Storage-Service, label: S3 static web, sub: OAC만 허용, in: region, at: [x0, web]}
+  - {id: cog, icon: service/Amazon-Cognito, label: Cognito, sub: user pool · ID 토큰, in: region, at: [x1, web]}
+  - {id: cw, icon: service/Amazon-CloudWatch, label: CloudWatch, sub: 로그 · 지표 · 경보, in: region, at: [x2, web]}
+  - {id: xray, icon: service/AWS-X-Ray, label: X-Ray, sub: 요청 · 워크플로 추적, in: region, at: [x3, web]}
+  - {id: api, icon: service/Amazon-API-Gateway, label: API Gateway, sub: REST · /orders, in: region, at: [x0, sync]}
+  - {id: create, icon: service/AWS-Lambda, label: Create order, sub: 프록시 통합, in: region, at: [x1, sync]}
+  - {id: ddb, icon: service/Amazon-DynamoDB, label: DynamoDB, sub: Orders · PENDING, in: region, at: [x2, sync]}
+  - {id: stream, icon: resource/Amazon-DynamoDB_Stream, label: DDB Streams, in: region, at: [x3, sync]}
+  - {id: pipe, icon: resource/Amazon-EventBridge_Pipes, label: EB Pipes, sub: INSERT 필터, in: region, at: [x4, sync]}
+  - {id: bus, icon: resource/Amazon-EventBridge_Custom-Event-Bus, label: Event bus, sub: orders, in: region, at: [x5, sync]}
+  - {id: rule, icon: resource/Amazon-EventBridge_Rule, label: EB rule, sub: OrderCreated, in: region, at: [x0, ana]}
+  - {id: sqs, icon: service/Amazon-Simple-Queue-Service, label: SQS, sub: analytics, in: region, at: [x1, ana]}
+  - {id: ingest, icon: service/AWS-Lambda, label: Ingest, in: region, at: [x2, ana]}
+  - {id: fh, icon: service/Amazon-Data-Firehose, label: Data Firehose, in: region, at: [x3, ana]}
+  - {id: lake, icon: service/Amazon-Simple-Storage-Service, label: S3 data lake, in: region, at: [x4, ana]}
+  - {id: sfn, icon: service/AWS-Step-Functions, label: Step Functions, sub: Fulfillment · 2장, in: region, at: [x5, ana]}
+
+edges:
+  - {e: "users -> cf", label: "HTTPS :443"}
+  - {e: "cf -> web", verb: "* · OAC", shape: VH}
+  - {e: "cf -> api", label: "HTTPS :443", verb: "/orders*"}
+  - {e: "api ..> cog", verb: 토큰 검증}
+  - {e: "api -> create"}
+  - {e: "create -> ddb", verb: PutItem}
+  - {e: "ddb -> stream"}
+  - {e: "stream -> pipe"}
+  - {e: "pipe -> bus", verb: OrderCreated}
+  - {e: "bus -> rule", shape: VHV, from_side: bottom, to_side: top}
+  - {e: "rule -> sqs"}
+  - {e: "sqs -> ingest"}
+  - {e: "ingest -> fh"}
+  - {e: "fh -> lake"}
+  - {e: "rule -> sfn", shape: VHV, from_side: bottom, to_side: bottom, verb: StartExecution}
+
+note:
+  rows:
+    - ["웹·동기", "기본(*) → S3(OAC 서명·버킷 정책), /orders* → API 오리진; Cognito user pool authorizer로 ID 토큰 검증·PENDING 기록 후 즉시 응답"]
+    - ["비동기", "EB = EventBridge · 동일 OrderCreated 규칙의 두 대상: analytics 큐와 Fulfillment(2장)"]

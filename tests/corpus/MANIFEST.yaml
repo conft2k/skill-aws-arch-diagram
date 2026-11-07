@@ -1106,6 +1106,16 @@ examples:
   - path: ../../docs/examples/specs/slides/nlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "Slide: internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and a regional ACM / CloudWatch / S3 column"
+  - path: ../../docs/examples/specs/slides/serverless-order-pipeline-1.layout.yaml
+    modes: [slide, slide-no-title]
+    rules: [R-flow, R-label, R-twin, R-border, R-fit]
+    good: [R-flow, R-label, R-twin, R-border, R-fit]
+    what: "Serverless order slide 1: CloudFront/WAF, REST API with Cognito, order write and Streams/Pipes to the event bus; one rule targets analytics and Fulfillment"
+  - path: ../../docs/examples/specs/slides/serverless-order-pipeline-2.layout.yaml
+    modes: [slide, slide-no-title]
+    rules: [R-flow, R-label, R-twin, R-border, R-fit]
+    good: [R-flow, R-label, R-twin, R-border, R-fit]
+    what: "Serverless order slide 2: Fulfillment payment, two-AZ stock reservation through IAM-authenticated RDS Proxy to the Aurora writer, private Secrets Manager endpoints, SNS/Lambda/SES notifications"
   - path: ../../docs/examples/specs/slides/tgw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt, R-fit]
     what: "TGW reference slide: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it"
