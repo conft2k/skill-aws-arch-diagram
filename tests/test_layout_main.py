@@ -962,6 +962,37 @@ class TrunkFollowsItsLead(unittest.TestCase):
         self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg))], [])
 
 
+class LooseEndUnderALabelStack(unittest.TestCase):
+    """A node with a label and two sub lines: its third line sits more than 44px under the
+    icon, and the line out of its bottom starts under that line — at the node, not loose."""
+    SPEC = {
+        "name": "stack", "mode": "document", "cols": ["a", "b"], "rows": ["r1", "r2"],
+        "groups": [{"id": "cloud", "type": "cloud"},
+                   {"id": "region", "type": "region", "label": "Region ap-northeast-2", "in": "cloud"}],
+        "nodes": [
+            {"id": "q", "icon": "service/Amazon-Simple-Queue-Service", "label": "SQS",
+             "sub": ["orders queue", "DLQ after 3"], "in": "region", "at": ["a", "r1"]},
+            {"id": "f", "icon": "service/AWS-Lambda", "label": "Lambda", "in": "region", "at": ["a", "r2"]},
+            {"id": "g", "icon": "service/AWS-Lambda", "label": "Worker", "in": "region", "at": ["b", "r2"]}],
+        "edges": [{"e": "q -> f"}, {"e": "q -- g"}]}
+
+    def test_layout_ok(self):
+        rc, text, _ = run_main(copy.deepcopy(self.SPEC))
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+
+    def test_trunk_tip_only_for_a_trunk_line(self):
+        """A LOOSE END's try: line says to drop `trunk: true` only on a trunk line's instance."""
+        d = copy.deepcopy(TrunkFollowsItsLead.SPEC)
+        spec, b = built(d)
+        iss = CL.Issue("LOOSE END", "LOOSE END ...", [], {})
+        trunk = next(e for e in spec.edges if e.trunk)
+        plain = next(e for e in spec.edges if not e.trunk)
+        tip = layout.spec_fix(spec, b.geom, layout.Problem(iss, [f"edge:{trunk.n}"], []))
+        self.assertIn(f"{trunk.src}: drop `trunk: true`", tip)
+        tip = layout.spec_fix(spec, b.geom, layout.Problem(iss, [f"edge:{plain.n}"], []))
+        self.assertNotIn("trunk", tip)
+
+
 class TrunkFork(unittest.TestCase):
     def test_fork_shares_one_port_whatever_its_shape(self):
         """A `trunk: true` fork whose source's facing side is taken (rule 5: VH) leaves one

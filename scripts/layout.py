@@ -543,6 +543,11 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
                         + ("step_at: start|end|gap|[x, y]" if part == "badge" else "label_at: above|below|left|right"))
         elif kind == "edge":
             tips.append(f"{spec_item(spec, o).split(' ')[0]}: shape / bend_x / bend_y / from_side / to_side")
+            if p.iss.kind == "LOOSE END" and ref.isdigit() and int(ref) < len(spec.edges) \
+                    and spec.edges[int(ref)].trunk:
+                # a trunk follower that stops short of its lead
+                tips.append(f"{spec_item(spec, o).split(' ')[0]}: drop `trunk: true` so each instance has its "
+                            "own arrow")
         elif kind == "node" and ref in stacked:
             # a flow-column node takes no dy: the stack sets its y
             tips.append(f"{spec.nodes[ref].src} {ref}: dx (its y: flow / align on column {stacked[ref]})")

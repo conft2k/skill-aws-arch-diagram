@@ -31,7 +31,7 @@ MODES_ORDER = ("document", "slide")
 
 S_DEFAULT = 48            # QR 84: every node icon 48x48
 NODE_LABEL_DY = 18        # QR 91: label baseline = icon.y + S + 18 (= icon.y + 66, every example); CL NODE_LABEL_DY
-SUB_PITCH = 16            # QR 92: each sub-caption line 16 below the previous line (every example)
+SUB_PITCH = 16            # QR 92: each sub-caption line 16 below the previous line (every example); CL SUB_PITCH
 LINE_PITCH = 16           # QR 110: +16 mask height per extra label line; pane description pitch
 END_GAP = 4               # QR 142: a connector stops 4px from an icon (cx ± (S/2 + 4)) or a box border
 EMPHASIS = 64             # QR 87: E = 64, phase 2

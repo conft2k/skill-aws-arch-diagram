@@ -435,7 +435,8 @@ class ConstTest(unittest.TestCase):
 
     def test_mirrors_check_layout(self):
         for name in ("LABEL_CLEAR", "ICON_CLEAR", "HEADER_ICON_CLEAR", "LINE_CLEAR", "TEXT_GAP",
-                     "HEADER_CLEAR", "MIN_ARROW", "HUG_CLEAR", "MIN_FONT", "NODE_LABEL_DY"):
+                     "HEADER_CLEAR", "MIN_ARROW", "HUG_CLEAR", "MIN_FONT", "NODE_LABEL_DY",
+                     "SUB_PITCH"):
             self.assertEqual(getattr(K, name), getattr(CL, name), name)
         self.assertEqual(K.TEXT_CIDR.fill.lower(), CL.CIDR_COLOR)
         self.assertEqual(K.DOCUMENT.arrow_min, CL.MIN_ARROW)

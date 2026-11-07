@@ -300,8 +300,10 @@ CIDR_COLOR = "#232f3e"
 # Internet, and a Site-to-Site VPN's IPsec runs over it). Checked on drafts (bundle: refs).
 OUTSIDE_CLOUD = ("service/AWS-Direct-Connect", "resource/Internet", "service/AWS-Site-to-Site-VPN")
 ICON_SETS = ("service", "resource")
-# A node label's baseline sits this far below its icon's bottom (the guide's skeleton).
+# A node label's baseline sits this far below its icon's bottom (the guide's skeleton), and
+# each sub line this far below the line before it.
 NODE_LABEL_DY = 18
+SUB_PITCH = 16
 # A label this close to an icon's center line (but not within 3px) is that icon's label, off-center.
 OFF_CENTER = 24
 
@@ -394,17 +396,31 @@ def beyond(run, box, strict):
     return best[:3] if best else None
 
 
+def label_stack(box, texts):
+    """The labels centered under an icon box: the lines with a baseline within 44px of its
+    bottom (a label and its first sub line), then each next centered line while it sits a
+    SUB_PITCH (+ 4) under the one before (a label with two or more sub lines)."""
+    x0, _, x1, y1 = box
+    under = sorted((t for t in texts if abs(t["cx"] - (x0 + x1) / 2) <= 3 and t["y"] > y1), key=lambda t: t["y"])
+    out = []
+    for t in under:
+        if t["y"] <= y1 + 44 or (out and t["y"] - out[-1]["y"] <= SUB_PITCH + 4):
+            out.append(t)
+        else:
+            break
+    return out
+
+
 def footprints(icons, texts):
     """Each node icon (badges and junction dots aside) with its box grown over the labels
-    centered under it — the stack a connector end attaches to: [(icon, box)]."""
+    centered under it (label_stack) — the stack a connector end attaches to: [(icon, box)]."""
     out = []
     for i in icons:
         if i["badge"]:
             continue
-        x0, y0, x1, y1 = b = i["box"]
-        for t in texts:
-            if abs(t["cx"] - (x0 + x1) / 2) <= 3 and y1 < t["y"] <= y1 + 44:
-                b = union(b, t["box"])
+        b = i["box"]
+        for t in label_stack(b, texts):
+            b = union(b, t["box"])
         out.append((i, b))
     return out
 
@@ -629,16 +645,10 @@ def lines_on_lines(paths):
     return out
 
 
-def loose_ends(root):
-    """The connector ends that touch nothing — no node, no other line, no container border,
-    no label its arrowhead points into — as {(id(element), 0 | 1): point}: a move that adds
-    one cut a line off."""
-    texts, segs, _, icons, _ = collect(root)
-    feet, rects = footprints(icons, texts), container_rects(root)
-    paths = {}
-    for s in segs:
-        if s["kind"] == "connector":
-            paths.setdefault(id(s["el"]), []).append(s)
+def open_ends(paths, feet, rects, texts):
+    """The connector ends (paths: id(element) -> its segments) that touch nothing — no node,
+    no other line, no container border, no label its arrowhead points into — as
+    {(id(element), 0 | 1): point}."""
     out = {}
     for eid, run in paths.items():
         for k, pt in ((0, run[0]["p"]), (1, run[-1]["q"])):
@@ -646,6 +656,16 @@ def loose_ends(root):
                     on_seg(pt, s) for o, other in paths.items() if o != eid for s in other):
                 out[(eid, k)] = pt
     return out
+
+
+def loose_ends(root):
+    """open_ends of a drawing: a move that adds one cut a line off."""
+    texts, segs, _, icons, _ = collect(root)
+    paths = {}
+    for s in segs:
+        if s["kind"] == "connector":
+            paths.setdefault(id(s["el"]), []).append(s)
+    return open_ends(paths, footprints(icons, texts), container_rects(root), texts)
 
 
 def stray_dots(root):
@@ -780,20 +800,17 @@ def run_checks(root):
     feet = footprints(icons, texts)
     # A line alone in its net (no other line's end on it, its ends on no other line) with an
     # end on nothing leads nowhere: a merge branch left short of its trunk, a fork stem off
-    # its branches. A net of several lines (a bus and its drops) may keep an open end.
-    for eid, run in paths.items():
-        others = [o for k, o in paths.items() if k != eid]
-        if any(on_seg(pt, seg) for o in others for pt in (o[0]["p"], o[-1]["q"]) for seg in run):
+    # its branches. A net of several lines (a bus and its drops) may keep an open end, and an
+    # arrowhead end points at what it means (END_REACH may miss a label).
+    for (eid, k), pt in open_ends(paths, feet, rects, texts).items():
+        run = paths[eid]
+        if _head_at(run, k) or any(on_seg(p, seg) for e2, o in paths.items() if e2 != eid
+                                   for p in (o[0]["p"], o[-1]["q"]) for seg in run):
             continue
-        for k, pt in ((0, run[0]["p"]), (1, run[-1]["q"])):
-            seg = run[0] if k == 0 else run[-1]
-            if seg["el"].get("marker-start" if k == 0 else "marker-end"):
-                continue                # an arrowhead points at what it means (END_REACH may miss a label)
-            if anchored(pt, feet, rects, texts, run, k) or any(on_seg(pt, o_s) for o in others for o_s in o):
-                continue
-            add("LOOSE END", f"LOOSE END       connector {fmt(seg)} ends at ({fnum(pt[0])},{fnum(pt[1])}) on nothing — "
-                "no node, line or border: a branch cut off the line it merges into reads as a flow that stops "
-                "short; draw it on to that line or its node", [seg], s=seg, pt=pt)
+        seg = run[0] if k == 0 else run[-1]
+        add("LOOSE END", f"LOOSE END       connector {fmt(seg)} ends at ({fnum(pt[0])},{fnum(pt[1])}) on nothing — "
+            "no node, line or border: a branch cut off the line it merges into reads as a flow that stops "
+            "short; draw it on to that line or its node", [seg], s=seg, pt=pt)
     leaves, boxed = [], {}
     for runs, ends in nets(paths, feet, rects, texts):
         r = shared_box(ends, rects, feet) if ends else None
@@ -1303,8 +1320,7 @@ class Advisor:
         return edits, f"move {self.tdesc(t)}{extra} {direction(dx, dy)}: {', '.join(parts)}{self.local(t)}"
 
     def own_labels(self, i):
-        x0, _, x1, y1 = i["box"]
-        return [t for t in self.texts if abs(t["cx"] - (x0 + x1) / 2) <= 3 and y1 < t["y"] <= y1 + 44]
+        return label_stack(i["box"], self.texts)
 
     def move_icon(self, i, dx, dy):
         el = i["el"]
@@ -1666,9 +1682,9 @@ class Advisor:
         return self.pick(iss.key, cands)
 
     def h_loose_end(self, iss, s, pt):
-        return ("draw the line on until it reaches the node it goes to or the line it merges into (in a layout "
-                "spec: the edge's shape / from_side / to_side, or drop `trunk: true` so each instance has its own "
-                "arrow)")
+        # layout.py's try: line adds "drop `trunk: true`" when the line is a trunk instance
+        return ("draw the line on until it reaches the node it goes to or the line it merges into"
+                + (" (in a layout spec: the edge's shape / from_side / to_side)" if self.engine else ""))
 
     def h_line_on_line(self, iss, s, o, d):
         """Give one of the two runs its own lane: shift it sideways off the other."""

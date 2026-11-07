@@ -513,6 +513,32 @@ class LooseEnd(unittest.TestCase):
                    POLY.format(pts="404,150 404,176"), POLY.format(pts="504,150 504,176"))
         self.assertEqual(kinds(root, "LOOSE END"), [])
 
+    # a's label and two sub lines, centered under its icon (80,40)–(128,88): baselines 106,
+    # 122, 138 (the third more than 44px under the icon), as layout.py stacks them
+    STACK = ('<text x="104" y="106" font-size="14" text-anchor="middle">SQS</text>'
+             '<text x="104" y="122" font-size="12" text-anchor="middle">orders queue</text>'
+             '<text x="104" y="138" font-size="12" text-anchor="middle">DLQ after 3</text>')
+
+    def test_stem_under_a_label_stack(self):
+        """A line leaving the bottom of a node with a label and two sub lines starts just
+        under the third line: it starts at the node, nothing flagged."""
+        root = svg(ICON.format(x=80, y=40), self.STACK, ICON.format(x=80, y=200),
+                   POLY.format(pts="104,146 104,196"))
+        self.assertEqual(kinds(root, "LOOSE END"), [])
+
+    def test_follower_stem_short_of_its_lead(self):
+        """The same stem stopping 20px above the lead (b → T under it): its far end is
+        flagged, its start under the label stack is not."""
+        root = svg(ICON.format(x=80, y=40), self.STACK, ICON.format(x=200, y=196), ICON.format(x=480, y=196),
+                   POLY.format(pts="248,220 476,220"),
+                   self.BARE.format(pts="104,146 104,200"))
+        iss = kinds(root, "LOOSE END")
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+        self.assertIn("ends at (104,200)", iss[0].msg)
+        hint = CL.Advisor(root).hint(iss[0]).text
+        self.assertIn("draw the line on", hint)
+        self.assertNotIn("trunk", hint)             # a hand-drawn line: no layout spec, no trunk
+
 
 if __name__ == "__main__":
     unittest.main()
