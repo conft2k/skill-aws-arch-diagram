@@ -309,6 +309,7 @@ class _Loader:
         self.expand_nodes()
         self.overlays()
         self.ranges()
+        self.overlay_strays()
         self.border_sides()
         self.edges(d.get("edges"))
         self.note(d.get("note"))
@@ -1133,6 +1134,26 @@ class _Loader:
                     cols, rows = merge(cols, cc), merge(rows, rr)
                 g.cols = merge(cols, list(g.span_cols or ()))
                 g.rows = merge(rows, list(g.span_rows or ()))
+
+    def overlay_strays(self) -> None:
+        """An overlay is one box around its members: a node on a track cell inside the rows ×
+        columns it covers but not in `over:` would be drawn inside it (an ASG over the EC2s
+        of two AZ columns on different rows also holds the other two EC2s of that grid)."""
+        sp = self.spec
+        idx = {t.id: t.index for t in sp.cols + sp.rows}
+        for gid in self.gorder:
+            g = sp.groups.get(gid)
+            if g is None or not g.overlay or not g.cols or not g.rows:
+                continue
+            (c0, c1), (r0, r1) = [(idx[a], idx[b]) for a, b in (g.cols, g.rows)]
+            stray = [n.id for n in sp.nodes.values()
+                     if n.id not in g.over and n.xy is None and n.col is not None and n.row is not None
+                     and c0 <= idx[n.col] <= c1 and r0 <= idx[n.row] <= r1]
+            if stray:
+                self.err(self.graw[gid]["loc"],
+                         f"over: its box covers columns {g.cols[0]}–{g.cols[1]} and rows {g.rows[0]}–{g.rows[1]}, "
+                         f"so it would also hold {', '.join(stray)} (not members); list them in `over:`, move them "
+                         f"off those tracks, or split the overlay")
 
     def border_sides(self) -> None:
         sp = self.spec

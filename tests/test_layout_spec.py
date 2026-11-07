@@ -740,6 +740,12 @@ ERRORS = [
      ["groups[2] vpc: dash: only generic (and cloudwan) groups take a dash; vpc is always solid"]),
     ("{n} outside a template", lambda d: d["nodes"][2].update(label="Internet {n}"),
      ["nodes[2] inet: label: {n} is the instance number; only items inside a per template have one"]),
+    ("overlay box holding a non-member", lambda d: (
+        d["groups"].append({"id": "asg", "type": "asg", "over": ["ec2.*"]}),
+        d["nodes"].append({"id": "nlb", "icon": "resource/Elastic-Load-Balancing_Network-Load-Balancer",
+                           "label": "NLB", "in": "vpc", "at": ["b", "main"]})),
+     ["groups[5] asg: over: its box covers columns b–b and rows az1–az2, so it would also hold nlb (not "
+      "members); list them in `over:`, move them off those tracks, or split the overlay"]),
 ]
 
 

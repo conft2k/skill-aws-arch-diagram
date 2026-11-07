@@ -24,7 +24,8 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                centered / bottom in the parent's height, with tied xy nodes and
                member-only overlays; no row tracks; a box of stack nodes only likewise),
                9 overlays (ASG:
-               members, header right/below, inside each member subnet, a short title beside the
+               members, header right/below, inside the leftmost / rightmost member subnets on x
+               and the first / last member row's on y, a short title beside the
                first member row), 10 the caller's Requirements, 11 canvas margin (and the
                note's requirements), plus template
                instances kept alike (x: equal edges; y: equal insets, by iteration), twins
@@ -912,7 +913,8 @@ class _Model:
         of each end track among `used` (between two used tracks: the gap's rank − 0.5;
         outside the subtree: None — that edge is not the box's), and its members in the
         subtree by index in norder, each with whether it sits on the overlay's first and
-        last member row (which decides where the header goes and which subnets it insets).
+        last member row and whether its subnet is a leftmost and a rightmost one
+        (_overlay_sides) (which decide where the header goes and which subnets it insets).
         Members outside the subtree count only through those flags, so a box an overlay
         reaches into from outside (an ASG across a VPC's AZs) twins with the box holding the
         same part of an equal overlay. Sorted; the edges come in the same order."""
@@ -923,7 +925,9 @@ class _Model:
                 continue
             rows = [self._member_row(m) for m in o.over]
             first, last = min(rows), max(rows)
-            mem = tuple(sorted((idx[m], r == first, r == last) for m, r in zip(o.over, rows) if m in idx))
+            sides = self._overlay_sides(o)
+            mem = tuple(sorted((idx[m], r == first, r == last, sides.get(self.spec.nodes[m].parent, (True, True)))
+                               for m, r in zip(o.over, rows) if m in idx))
             rr, edges = [], []
             for axis, ts, lo, hi in (("y", used[0], "T", "B"), ("x", used[1], "L", "R")):
                 r = self.group_rng(o.id, axis)
@@ -937,7 +941,7 @@ class _Model:
                     es.append(e)
                 rr.append(tuple(ends))
                 edges.append(es)
-            out.append(((o.type, o.label, o.header, self._overlay_beside(o), tuple(rr), mem),
+            out.append(((o.type, o.label, self._overlay_header(o), self._overlay_beside(o), tuple(rr), mem),
                         (o.id, edges[1], edges[0])))
         out.sort(key=lambda it: repr(it[0]))
         return tuple(sh for sh, _ in out), [e for _, e in out]
@@ -1045,8 +1049,10 @@ class _Model:
         return [v for v in sets.values() if len(v) > 1]
 
     def _overlay_x(self, g):
-        """Overlay (ASG) in x (9): around its members, inside each member's subnet, right of
-        the subnet header labels it crosses."""
+        """Overlay (ASG) in x (9): around its members; its left edge inside (and right of the
+        header label of) each leftmost member subnet, its right edge inside each rightmost one
+        (_overlay_sides: subnets stacked on rows are all both, so the overlay sits inside each;
+        side by side, an ASG across AZ columns, it spans the ones between)."""
         mc, st, gid = self.mc, K.style(g.type), g.id
         own = f"group:{gid}"
         gl, gr = (f"group:{gid}.L", 0.0), (f"group:{gid}.R", 0.0)
@@ -1074,18 +1080,33 @@ class _Model:
                     self.add("x", self.hi(o, "x"), gl, mc.sibling_gap, f"overlay {gid} right of {o.key}", own)
                 elif o.xr is not None and o.xr[0] > c:
                     self.add("x", gr, self.lo(o, "x"), mc.sibling_gap, f"overlay {gid} left of {o.key}", own)
-        first = self._overlay_first(g)
-        for s in self._overlay_subnets(g):
+        first, header = self._overlay_first(g), self._overlay_header(g)
+        for s, (left, right) in self._overlay_sides(g).items():
             sg = self.spec.groups[s]
             ss = K.style(sg.type)
-            self.add("x", (f"group:{s}.L", 0), gl, K.OVERLAY_HEADER_GAP, f"overlay inside {s}", own)
-            self.add("x", gr, (f"group:{s}.R", 0), K.OVERLAY_HEADER_GAP, f"overlay inside {s}", own)
-            if sg.label and (g.header == "right" or s not in first):
+            if left:
+                self.add("x", (f"group:{s}.L", 0), gl, K.OVERLAY_HEADER_GAP, f"overlay inside {s}", own)
+            if right:
+                self.add("x", gr, (f"group:{s}.R", 0), K.OVERLAY_HEADER_GAP, f"overlay inside {s}", own)
+            if sg.label and (header == "right" or s not in first) and (left or s not in first):
+                # an edge that runs down through the subnet's header row clears its title: the
+                # left edge of a leftmost one, else (a lower-row rightmost one) the right edge
                 d = ss.title_dx + _up(layout_text_width(sg.label, ss.title_size)) + K.OVERLAY_HEADER_GAP
-                self.add("x", (f"group:{s}.L", 0), gl, d, f"overlay right of {s} header {fmt_num(d)}", own)
+                if left:
+                    self.add("x", (f"group:{s}.L", 0), gl, d, f"overlay right of {s} header {fmt_num(d)}", own)
+                elif right:
+                    self.add("x", (f"group:{s}.L", 0), gr, d, f"overlay ends right of {s} header {fmt_num(d)}", own)
+        w = (st.title_dx + _up(layout_text_width(g.label, st.title_size)) + K.HEADER_TAIL if g.label
+             else st.badge_size + K.ICON_CLEAR if st.badge else 0)
         if g.label:
-            w = st.title_dx + _up(layout_text_width(g.label, st.title_size)) + K.HEADER_TAIL
             self.add("x", gl, gr, w, f"title width {fmt_num(w)} {gid}", own)
+        if w:
+            # the header row lies in the first-row leftmost subnet: one the overlay leaves on
+            # the right (AZ columns) ends past the title, its border off the text
+            sides = self._overlay_sides(g)
+            for s in first:
+                if s in sides and sides[s] == (True, False):
+                    self.add("x", gl, (f"group:{s}.R", 0), w, f"{gid} title {fmt_num(w)} inside {s}", own)
 
     def _overlay_subnets(self, g):
         out = []
@@ -1094,6 +1115,41 @@ class _Model:
             if p and p not in out:
                 out.append(p)
         return out
+
+    def _overlay_sides(self, g) -> Dict[str, Tuple[bool, bool]]:
+        """Per member subnet (spec order): (leftmost, rightmost) — no other member subnet
+        sits beside it on its left (right): wholly left (right) of it on the columns and
+        sharing a row with it, so the two are kept apart on x. Subnets stacked on rows (on
+        one column or diagonal) are each both, and the overlay sits inside every one; side
+        by side (AZ columns) its left edge stays in the left ones, its right edge in the
+        right ones, and it spans the ones between. A subnet with no column range counts as
+        both; one with no row range shares every row."""
+        subs = self._overlay_subnets(g)
+        rng = {s: (self.group_rng(s, "x"), self.group_rng(s, "y")) for s in subs}
+
+        def share_row(a, b):
+            return a is None or b is None or (a[0] <= b[1] and b[0] <= a[1])
+
+        out = {}
+        for s in subs:
+            rx, ry = rng[s]
+            if rx is None:
+                out[s] = (True, True)
+                continue
+            beside = [tx for tx, ty in (rng[u] for u in subs if u != s) if tx is not None and share_row(ry, ty)]
+            out[s] = (not any(t[1] < rx[0] for t in beside), not any(t[0] > rx[1] for t in beside))
+        return out
+
+    def _overlay_header(self, g) -> str:
+        """The header placement the overlay is drawn with: its `header`, except `below` when
+        a first-row member subnet is not leftmost — the top edge, level with the subnet
+        titles under `right`, would cross that subnet's title (an ASG across AZ columns)."""
+        if g.header == "below":
+            return "below"
+        sides = self._overlay_sides(g)
+        if any(not sides[s][0] for s in self._overlay_first(g) if s in sides):
+            return "below"
+        return g.header
 
     def _overlay_first(self, g, last=False, nodes=False):
         """Member subnets (or, nodes=True, the members) in the overlay's first (or last) member
@@ -1155,8 +1211,9 @@ class _Model:
                    for p in (self.spec.nodes[m].parent for m in first))
 
     def _overlay_below(self, g, s) -> float:
-        """Subnet s's top → the overlay's top: 8, or 8 below s's title (header: below)."""
-        if g.header == "below":
+        """Subnet s's top → the overlay's top: 8, or 8 below s's title (header: below, see
+        _overlay_header)."""
+        if self._overlay_header(g) == "below":
             ss = K.style(self.spec.groups[s].type)
             return _up(ss.title_dy + K.GLYPH_DESCENT * ss.title_size) + K.OVERLAY_HEADER_GAP
         return K.OVERLAY_HEADER_GAP

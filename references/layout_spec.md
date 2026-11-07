@@ -146,11 +146,11 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   (counted within each twin, so twins on other tracks qualify). An overlay that reaches
   into a box from outside (an ASG across a VPC's AZs) counts by the part inside it: the
   nodes it covers there, which of its edges lie inside, and whether the box holds its
-  first member row (its header) or its last — so AZ 1 of two VPCs, each with its own ASG
-  across its AZs, twin, while AZ 1 and AZ 2 of one VPC under one ASG do not, whether the
-  AZs are hand-written or template instances. Twins get the same width and height, and
-  every box, overlay, track and node inside them the same offset from their top-left
-  corner (in a VPC: the same AZ spacing), each at the largest any twin needs (an ASG the
+  first member row (its header) or its last, its leftmost member subnets or its rightmost
+  — so AZ 1 of two VPCs, each with its own ASG across its AZs, twin, while AZ 1 and AZ 2
+  of one VPC under one ASG do not, whether the AZs are hand-written or template instances.
+  Twins get the same width and height, and every box, overlay, track and node inside them
+  the same offset from their top-left corner (in a VPC: the same AZ spacing), each at the largest any twin needs (an ASG the
   wider one) — sizes and offsets, never positions, so they stay on their own tracks.
   Template instances keep their own rule above: an instance twins only with boxes of its
   own instance number. When other constraints keep twins apart (a requirement, tracks
@@ -171,7 +171,14 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   own icon inset (gwlb); a longer one (`ASG · target group`) sits above the members and
   pushes their row down (alb, nlb). The short title goes beside only when the first member
   row is its subnet's first; over a member lower in its subnet (another node above it) or in
-  no box, it sits above the member like a long one.
+  no box, it sits above the member like a long one. Over subnets stacked on rows (AZs on
+  rows) it stays 8 inside each; over subnets side by side (an ASG across AZ columns `aza |
+  azb`) its left edge stays in the leftmost ones and its right edge in the rightmost,
+  crossing the AZ borders between, and its title goes below the subnet titles whatever
+  `header` says (level with them its top would cross the next AZ's subnet title). Its box
+  covers every row and column its members are on, so a node on those tracks that is not a
+  member is rejected (an ASG over EC2s at `[c1, r1]` and `[c2, r2]` would also hold ones
+  at `[c1, r2]` / `[c2, r1]`): list it in `over:`, move it, or split the overlay.
 - A group covers the tracks of what it contains. `span: {cols: [pub, pub], rows: [a, b]}`
   stretches it over tracks with no node of its own (an empty public subnet); the spanned
   track centers keep `pad` (or the node padding) from the border, `pad_left` / `pad_right` /
