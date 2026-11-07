@@ -57,6 +57,7 @@ The engine draws a small, fixed set of candidates for each spec and keeps the on
 - **Candidate generation.** Candidates come from violations, not from enumerating everything. The engine starts from the default drawing and its violations, sorted by tier, rule and owners. For each violation it proposes neighbouring decision sets:
   - R-rt on a route table: flip that table's diagonal pairs.
   - R-flow or R-label on two edges: skip the next routing alternative for each.
+  - R-border on an edge (against a group's border or header band): skip that edge's next routing alternative.
   - R-twin: copy one twin's decisions to the other.
   - Header text conflicts: flip the overlay header.
   - R-fit: put every pair on x, or try the other note place.
