@@ -3,3 +3,4 @@ __pycache__/
 .DS_Store
 assets/icons.json
 assets/icons.json.tmp
+assets/.icons.json.*.tmp

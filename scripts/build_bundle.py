@@ -15,8 +15,10 @@ Sets built from the package (64px service/category, 48px resource, 32px group):
   category  Arch-Category_<Name>_64.svg     -> category/<Name>
 """
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,6 +47,31 @@ def resource_name(stem: str):
     return m.group(1) + ("_Dark" if m.group(2) == "Dark" else "")
 
 
+def write_atomic(out: Path, text: str):
+    """Write `text` to `out` so readers only ever see the old file or the complete new one.
+
+    Each call writes its own temp file beside `out` (same directory, so the rename never
+    crosses a filesystem) and renames it over `out`. Concurrent runs therefore never share
+    a temp path: the last rename wins and every rename finds its own file. If anything
+    fails before the rename, that run's temp file is removed and `out` is left as it was.
+    """
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=out.parent, prefix=f".{out.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)  # mkstemp creates 0600; the bundle is an ordinary readable file
+        os.replace(tmp, out)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def build(pkg: Path, package: str):
     """Pack the extracted package at `pkg` into icons.json, labelled with `package`."""
     sets = {
@@ -58,12 +85,9 @@ def build(pkg: Path, package: str):
     if not sets["service"]:
         sys.exit(f"No service icons found under {pkg} — is it the extracted Icon package?")
 
-    # Write beside the bundle and rename, so a failed run never leaves a half-written one.
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    tmp = OUT.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"version": 3, "package": package, "sets": sets}, ensure_ascii=False),
-                   encoding="utf-8")
-    tmp.replace(OUT)
+    # A failed run never leaves a half-written bundle, and concurrent runs never collide.
+    write_atomic(OUT, json.dumps({"version": 3, "package": package, "sets": sets},
+                                 ensure_ascii=False))
     for name, entries in sets.items():
         print(f"  {name}: {len(entries)}", file=sys.stderr)
     total = sum(len(v) for v in sets.values())
