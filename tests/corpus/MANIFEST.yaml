@@ -719,7 +719,6 @@ cases:
     what: "one VPC with 2 AZ columns side by side, one ASG over both EC2s; AZ a's EC2 has a long label"
     from: "rr-asgcols/b_document.layout.yaml"
   - path: twin/ell.layout.yaml
-    known_fail: "contradictory x on 38c44fd; fixed by the L-shaped ASG fix"
     rules: [R-twin]
     what: "L-shaped ASG over the EC2s in both AZs' app subnets plus a worker EC2 in AZ a's second subnet only"
     from: "rr-asgcols/ell.layout.yaml"
