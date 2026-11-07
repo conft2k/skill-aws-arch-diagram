@@ -285,8 +285,17 @@ class InsetTest(unittest.TestCase):
             for a, b in zip(azs, azs[1:]):
                 if a["x"] != b["x"]:
                     continue
+                # the AZ gap holds a node of the VPC (LB, IGW, firewall); with nothing between
+                # them stacked AZ boxes are plain siblings (layout_spec.md "Tracks")
+                vpc = min((v for v in d.boxes if v["type"] == "vpc" and v["x"] <= a["x"] and a["x1"] <= v["x1"]
+                           and v["y"] <= a["y"] and b["y1"] <= v["y1"]), key=lambda v: v["x1"] - v["x"], default=None)
+                lo, hi = (vpc["x"] - 24, vpc["x1"] + 24) if vpc else (a["x"], a["x1"])
+                between = any(lo <= i["x"] + i["w"] / 2 <= hi and a["y1"] < i["y"] + i["h"] / 2 < b["y"]
+                              for i in d.icons)
                 with self.subTest(draft=d.name, gap=(a["y1"], b["y"])):
-                    if d.mode == "slide":
+                    if not between:
+                        self.assertGreaterEqual(b["y"] - a["y1"], 8)
+                    elif d.mode == "slide":
                         self.assertEqual(b["y"] - a["y1"], K.SLIDE.az_gap)
                     elif "example" not in d.name and "bedrock" not in d.name:
                         self.assertGreaterEqual(b["y"] - a["y1"], K.DOCUMENT.az_gap)
