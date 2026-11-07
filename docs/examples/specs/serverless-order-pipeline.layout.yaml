@@ -63,7 +63,7 @@ edges:
   - {e: "ddb -> stream"}
   - {e: "stream -> pipe", step: 4}
   - {e: "pipe -> bus"}
-  - {e: "bus -> rule", shape: VHV, from_side: bottom, to_side: top}   # the lane wrap: down from the bus, back left in the corridor between the request and analytics lanes, down into the rule
+  - {e: "bus -> rule", shape: VHV, from_side: bottom, to_side: top, verb: OrderCreated}   # verb: names the wrap as the bus's event route, not a line from API Gateway; the lane wrap: down from the bus, back left in the corridor between the request and analytics lanes, down into the rule
   - {e: "rule -> sfn", step: 5}
   - {e: "rule -> sqs"}
   - {e: "sqs -> ingest"}
@@ -88,4 +88,4 @@ note:
     - ["Step Functions → Charge payment", "Fulfillment 워크플로의 첫 상태가 Charge payment Lambda로 결제를 처리합니다. 결제가 실패하면 재고 예약 없이 실패 상태를 order-status에 게시합니다."]
     - ["Step Functions → Reserve stock", "결제 뒤 Reserve stock이 IAM 인증으로(비밀 없이) RDS Proxy → Aurora writer에 재고를 예약합니다. DB 자격 증명은 프록시만 엔드포인트로 읽습니다(NAT 없음)."]
     - ["Step Functions → SNS", "주문 결과(확정 또는 결제 실패)를 order-status 토픽에 게시합니다. SNS는 SES를 직접 호출하지 못해 구독 Lambda를 둡니다."]
-    - ["SNS → Send email", "구독 Lambda가 SES SendEmail로 주문 확인 메일을 보냅니다."]
+    - ["SNS → Send email", "구독 Lambda가 SES SendEmail로 주문 결과 메일(확정 또는 결제 실패)을 보냅니다."]
