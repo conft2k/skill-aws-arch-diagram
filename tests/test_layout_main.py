@@ -598,6 +598,52 @@ class OutAndBack(unittest.TestCase):
         self.assertFalse([r for r in layout.layout_route.plan(spec) if "out-and-back" in r.why])
 
 
+    def test_top_leg_and_label_below_the_header(self):
+        """A top / top VHV inside a box keeps its leg and its label below the box's header
+        (badge, title), not in the header row beside the title (slide vtop: leg 97 under a
+        subnet top of 68, 'sync' on the title's baseline 86); a document whose arrow room
+        already holds it does not grow; an unlabelled one clears the header by HUG_CLEAR."""
+        for mode, label in (("slide", "sync"), ("document", "sync"), ("slide", None)):
+            with self.subTest(mode=mode, label=label):
+                edge = dict({"shape": "VHV", "from_side": "top", "to_side": "top"}, **({"label": label} if label else {}))
+                d = self.spec(mode, ["a", "b"], [["a", "r1"], ["b", "r1"]], edge)
+                d["rows"] = ["r1"]
+                geom, pts = self.drawn(d)
+                self.assertEqual(len(pts), 4, pts)
+                head = geom.groups["sn"].header().y1
+                self.assertGreaterEqual(pts[1][1], head + K.HUG_CLEAR, (pts, head))
+                if label:
+                    _, b = built(d)
+                    g = next(e for e in ET.fromstring(b.svg).iter(NS + "g") if e.get("id") == "edge:0:label")
+                    t, = [c for c in g if c.tag == NS + "text"]
+                    top = float(t.get("y")) - K.GLYPH_ASCENT * float(t.get("font-size"))
+                    self.assertGreaterEqual(top, head + K.LABEL_CLEAR, (t.attrib, head))
+                if mode == "document":
+                    self.assertEqual(geom.nodes["p"].icon.y0, 167)       # as before: the arrow room held it
+
+    def test_same_side_on_a_shared_row_is_rejected(self):
+        """from_side = to_side right with the ends on one row (or top / top on one column):
+        no out-and-back can run there, so the loader says so and names the sides that
+        work, instead of plan() widening the canvas for a leg the draw then refuses (srow:
+        196 → 269, a UVHV off the top edge)."""
+        cases = ((["c", "d"], [["c", "r1"], ["d", "r1"]], {"shape": "HVH", "from_side": "right", "to_side": "right"},
+                  "edges[0] p -> s: from_side = to_side right needs ends on different rows, but p and s share a row"),
+                 (["c", "d"], [["d", "r1"], ["c", "r1"]], {"shape": "HVH", "from_side": "right"},   # to_side implied
+                  "edges[0] p -> s: from_side = to_side right needs ends on different rows"),
+                 (["c"], [["c", "r1"], ["c", "r2"]], {"shape": "VHV", "from_side": "top", "to_side": "top"},
+                  "edges[0] p -> s: from_side = to_side top needs ends on different columns, but p and s share a column"))
+        for cols, at, edge, msg in cases:
+            with self.subTest(edge=edge, at=at):
+                with self.assertRaises(M.SpecError) as cm:
+                    built(self.spec("document", cols, at, dict(edge, label="sync"), boxed=False))
+                p, = cm.exception.problems
+                self.assertTrue(p.startswith(msg), p)
+                self.assertIn("use from_side / to_side", p)
+        # on different rows / columns the same sides load and draw as the out-and-back
+        self.drawn(self.spec("document", ["c", "d"], [["c", "r1"], ["d", "r2"]],
+                             {"label": "sync", "shape": "HVH", "from_side": "right", "to_side": "right"}, boxed=False))
+
+
 class TrunkFork(unittest.TestCase):
     def test_fork_shares_one_port_whatever_its_shape(self):
         """A `trunk: true` fork whose source's facing side is taken (rule 5: VH) leaves one

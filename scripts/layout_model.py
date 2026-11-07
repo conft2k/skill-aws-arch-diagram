@@ -32,6 +32,10 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
         Z_EDGE_LABEL, Z_BADGE) and warnings. skip: {edge n: k} skips the first k
         candidates of edge n (the W5 feedback loop's "use the next candidate"). Must make
         the same shape choices as plan() (recompute them; no module state).
+    same_side_problems(spec) -> list[(where, message)]
+        Lines whose two ends leave one side (from_side / to_side, given or implied) while
+        sharing the row (left / right) or column (top / bottom) the out-and-back's leg
+        would need; W1's load() raises them as SpecError problems.
 
   layout_solve.py  (W2)
     solve(spec, reqs, note_block=None) -> Geometry
@@ -317,12 +321,15 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     (ASG) a line leaves sideways keeps 16 to its member subnets' parallel border (alb
     816 → 836, nlb). `points` routes get no route warnings (check_layout judges them).
     A same-side HVH / VHV (out-and-back, from_side = to_side along the shape's end
-    pieces) gets none of the between-ends gutter / label run / footprint reqs: each end
-    instead keeps port + end segment (+ the labels its leg runs past) + max(HUG_CLEAR, the
-    line's label beside the leg + 8) from the innermost common box's border on that side
-    ("origin" / "drawing" − canvas margin when the ends share no box); a labelled one also
-    HUG_CLEAR + that room past the boxes of one end only (its leg runs outside them); one
-    with a bend_x / bend_y expression gets nothing (the spec placed its leg).
+    pieces, the ends on different rows / columns: W1 rejects a shared one) gets none of
+    the between-ends gutter / label run / footprint reqs: each end instead keeps port +
+    end segment (+ the labels its leg runs past) + max(HUG_CLEAR, the line's label beside
+    the leg + 8) from the innermost common box's border on that side ("origin" /
+    "drawing" − canvas margin when the ends share no box; on top inside a box, its header
+    band — badge, title, CIDR glyphs — counts too in the hard reqs, so leg and label sit
+    below the header: slide vtop); a labelled one also HUG_CLEAR + that room past the
+    boxes of one end only (its leg runs outside them); one with a bend_x / bend_y
+    expression gets nothing (the spec placed its leg).
  o. Note auto rule (DESIGN 4.7) also picks the pane for a document when top-level items sit
     left of the Cloud and the pane fits above them without a push (bedrock-dx 1040 <
     0.7 × 1498 and nlb-mtls 764 vs 763 drew panes; the specs no longer force `place`).

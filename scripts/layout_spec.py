@@ -9,7 +9,8 @@ keys, types, references, id characters, unique track names), applies defaults, e
 2: …}` per-instance values, `only: [n, …]` to keep an item in some instances), parses edge strings (-> <-> -- ..> <..> .., comma targets),
 pairs `*` patterns, resolves step / step_each / steps, resolves icons (full `set/name`
 refs checked against the bundle; aliases through find_icon.search, a unique best score
-≥ 95 only), parses expressions, and lints (DESIGN 4.1). Every problem found is collected
+≥ 95 only), parses expressions, rejects from_side = to_side lines whose ends share the row / column
+their leg would need (layout_route.same_side_problems), and lints (DESIGN 4.1). Every problem found is collected
 and raised as one SpecError; non-fatal lint goes to Spec.warnings. The contract is in
 layout_model.py's docstring.
 
@@ -31,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_layout  # noqa: E402  (services_in_label, OUTSIDE_CLOUD)
 import find_icon  # noqa: E402  (search, SETS: the icon bundle assets/icons.json)
 import layout_const as K  # noqa: E402
+import layout_route  # noqa: E402  (same_side_problems)
 from layout_model import (Edge, Expr, Group, Node, NoteSpec, Place, RawSpec, Spec,  # noqa: E402
                           SpecError, Track, fmt_num)
 
@@ -312,6 +314,7 @@ class _Loader:
         self.note(d.get("note"))
         self.raw(d.get("raw"))
         self.exprs()
+        self.same_sides()
         self.lint()
         if self.problems:
             raise SpecError(self.problems)
@@ -1623,6 +1626,14 @@ class _Loader:
                 return f"{e.ref}.{e.attr}: a group's center is no single variable; {hint}"
             return None if e.attr in attrs else f"{e.ref}.{e.attr} is on the other axis; {hint}"
         return f"{e.kind} expressions depend on the drawn result; {hint}"
+
+    def same_sides(self) -> None:
+        """from_side = to_side while the ends share a row (left / right) or a column (top /
+        bottom): nothing can draw it (layout_route.same_side_problems)."""
+        if self.problems:
+            return
+        for loc, msg in layout_route.same_side_problems(self.spec):
+            self.err(loc, msg)
 
     # ---- lint (DESIGN 4.1)
     def lint(self) -> None:

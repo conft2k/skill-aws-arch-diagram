@@ -3,6 +3,7 @@
     plan(spec) -> [Requirement]                  space the routes need (Spec only)
     draw(spec, geom, skip=None) -> ([Element], [str])   lines, labels, badges on a solved Geometry
     shapes(spec) -> {edge n: shape}              the rule-based shape choice plan() and draw() share
+    same_side_problems(spec) -> [(where, msg)]   from_side = to_side lines no shape can draw (W1 rejects)
 
 The contract (signatures, z layers, ids) is layout_model's docstring; numbers are layout_const.
 
@@ -36,9 +37,11 @@ they fork (a shared port, one arrowhead per branch). Labels and the badge of a t
 drawn once, on its first instance. Other `*` instances are separate lines, each labelled.
 A `trunk` line whose instances are no HVH / VHV trunk (VH / HV by rule 5) still shares
 the port at its common end, so its branches leave as one stem.
-Same side: a HVH (VHV) with from_side = to_side on a left / right (top / bottom) side is
-an out-and-back on that side; plan() reserves its leg between each end and the innermost
-common box's border there (or the canvas), nothing between the ends.
+Same side: a HVH (VHV) with from_side = to_side on a left / right (top / bottom) side and
+its ends on different rows (columns) is an out-and-back on that side; plan() reserves its
+leg between each end and the innermost common box's border there (on top: below its
+header), or the canvas, nothing between the ends. Ends sharing the row (column) have no
+leg to run: same_side_problems() names them and the loader rejects the spec.
 
 Geometry: icon ends at cx ± (S/2 + 4), top at icon.y − 4, bottom at the last label baseline
 + 8; group ends 4 off the border, at the other end's center when it faces the side, else
@@ -457,7 +460,7 @@ def plan(spec: Spec) -> List[Requirement]:
         def seg(head, soft):
             return (m.arrow_target if soft else m.arrow_min) if head else MIN_SEG
 
-        oab = _same_side(shape, t.side_a, t.side_b)
+        oab = _same_side(shape, t.side_a, t.side_b, t.dy if shape == HVH else t.dx)
         if oab:
             _out_and_back_reqs(spec, e, t, shape, hs, he, add)
         for axis, d in (("x", t.dx), ("y", t.dy)):
@@ -586,10 +589,65 @@ def plan(spec: Spec) -> List[Requirement]:
     return reqs
 
 
-def _same_side(shape: str, sa: Optional[str], sb: Optional[str]) -> bool:
+def _same_side(shape: str, sa: Optional[str], sb: Optional[str], d: Optional[int] = None) -> bool:
     """A HVH (VHV) whose ends leave one left / right (top / bottom) side: drawn as an
-    out-and-back on that side (draw: _out_and_back), with no bend between the ends."""
-    return sa is not None and sa == sb and ((shape == HVH and sa in HORIZ) or (shape == VHV and sa in VERT))
+    out-and-back on that side (draw: _out_and_back), with no bend between the ends. `d` is
+    the ends' relation along the leg (t.dy for a HVH, t.dx for a VHV): 0 (they share a row
+    / column) has no leg to run, so no out-and-back (the loader rejects it: same_side_problems)."""
+    return (sa is not None and sa == sb and d != 0
+            and ((shape == HVH and sa in HORIZ) or (shape == VHV and sa in VERT)))
+
+
+def same_side_problems(spec: Spec) -> List[Tuple[str, str]]:
+    """(edge location, message) for each spec line whose two ends leave one side
+    (from_side / to_side, given or implied) while they share a row (left / right) or
+    column (top / bottom): no out-and-back can run there (its leg would have no length)
+    and no other shape joins two ports that face the same way. The loader reports these
+    (layout_spec)."""
+    out: List[Tuple[str, str]] = []
+    topo = _topology(spec)
+    seen = set()
+    for e in spec.edges:
+        t = topo[e.n]
+        if t.shape == P or t.side_a is None or t.side_a != t.side_b or not (e.from_side or e.to_side):
+            continue
+        side = t.side_a
+        horiz = side in HORIZ
+        if (t.dy if horiz else t.dx) != 0 or e.line in seen:
+            continue
+        seen.add(e.line)
+        share, other = ("row", "top or bottom (shape: VHV)") if horiz else ("column", "left or right (shape: HVH)")
+        out.append((_where(e), f"from_side = to_side {side} needs ends on different {share}s, but {e.a} and {e.b} "
+                           f"share a {share} (an out-and-back's leg would have no length); use from_side / "
+                           f"to_side {other} for a line out and back {'above or below' if horiz else 'beside'} "
+                           f"them, or drop from_side / to_side"))
+    return out
+
+
+def _header_band(spec: Spec, gid: str) -> float:
+    """Depth of a box's header (badge, title, CIDR glyph boxes) below its top border: what
+    an out-and-back's leg and label above the ends stay under (W2 _geometry's header)."""
+    g, st = spec.groups[gid], K.style(spec.groups[gid].type)
+    parts = [float(st.badge_size)] if st.badge else []
+    if g.label:
+        parts.append(st.title_dy + K.GLYPH_DESCENT * st.title_size)
+    if g.cidr:
+        parts.append(K.CIDR_DY + K.GLYPH_DESCENT * K.TEXT_CIDR.size)
+    return max(parts, default=0.0)
+
+
+def _leg_room(m, e: Edge, leg_x: bool, far: bool) -> float:
+    """Room an out-and-back's label takes beside its leg, + LABEL_CLEAR (0 without one):
+    beside a vertical leg its widest line + vlabel_dx; above (below) a horizontal one its
+    lines' height + label_above (label_below)."""
+    texts = [s for s in (e.label, e.verb) if s]
+    if not texts:
+        return 0.0
+    sz = K.TEXT_PROTO.size
+    if leg_x:
+        return m.vlabel_dx + max(M.layout_text_width(s, sz) for s in texts) + K.LABEL_CLEAR
+    stack = K.SUB_PITCH * (len(texts) - 1)
+    return (m.label_below + K.GLYPH_DESCENT * sz if far else m.label_above + sz) + stack + K.LABEL_CLEAR
 
 
 def _out_and_back_reqs(spec: Spec, e: Edge, t: _Topo, shape: str, hs: bool, he: bool, add) -> None:
@@ -598,7 +656,11 @@ def _out_and_back_reqs(spec: Spec, e: Edge, t: _Topo, shape: str, hs: bool, he: 
     segment (or arrow) and the end's labels the leg runs past — with a label, HUG_CLEAR
     past the boxes of one end only, which the leg then runs outside — then HUG_CLEAR to the
     border, or the line's label beside the leg + LABEL_CLEAR when wider. None with a
-    bend_x / bend_y expression: the spec placed the leg."""
+    bend_x / bend_y expression: the spec placed the leg. On top inside a common box the
+    leg and its label also stay below the box's header (badge, title, CIDR): the hard
+    needs count from the header's bottom, so neither lands in the header row (slide vtop
+    'sync'); the soft arrow-at-target need keeps the border (draw puts the leg nearest the
+    ends, so that room only spaces the box)."""
     m, side = spec.const, t.side_a
     axis = "x" if shape == HVH else "y"
     hint = e.bend_x if axis == "x" else e.bend_y
@@ -607,17 +669,15 @@ def _out_and_back_reqs(spec: Spec, e: Edge, t: _Topo, shape: str, hs: bool, he: 
     far = side in ("right", "bottom")
     common = _nonshared(spec, e)[2]
     e_ = {"right": "R", "left": "L", "bottom": "B", "top": "T"}[side]
+    # top inside a common box: its header band is wall too (hard needs only: the soft
+    # arrow-at-target room may reach into it, as draw puts the leg nearest the ends)
+    hb = _header_band(spec, common[0]) if common and side == "top" else 0.0
     if common:
         wall, margin = f"group:{common[0]}.{e_}", 0.0
     else:
         wall, margin = ("drawing", m.canvas_margin) if far else ("origin", 0.0)
     texts = [s for s in (e.label, e.verb) if s]
-    room = 0.0
-    if texts and axis == "x":
-        room = m.vlabel_dx + max(M.layout_text_width(s, K.TEXT_PROTO.size) for s in texts) + K.LABEL_CLEAR
-    elif texts:
-        sz = K.TEXT_PROTO.size
-        room = (m.label_below + K.GLYPH_DESCENT * sz if far else m.label_above + sz) + K.LABEL_CLEAR
+    room = _leg_room(m, e, axis == "x", far)
     owner = M.edge_eid(e.n)
     # a labelled leg runs outside the boxes of one end only (HUG_CLEAR off their border),
     # its label beside it: inside them it would cross their border (n1 'replication')
@@ -625,7 +685,7 @@ def _out_and_back_reqs(spec: Spec, e: Edge, t: _Topo, shape: str, hs: bool, he: 
     for g in (dict.fromkeys(na + nb) if texts else ()):
         v = f"group:{g}.{e_}"
         a, b = (v, wall) if far else (wall, v)
-        add(axis, a, b, K.HUG_CLEAR + max(K.HUG_CLEAR, room) - margin,
+        add(axis, a, b, K.HUG_CLEAR + max(K.HUG_CLEAR, room) + hb - margin,
             f"out-and-back {side} of {g} inside {common[0] if common else 'the canvas'}", owner)
     upper = {1: "a", -1: "b"}.get(t.dy if axis == "x" else None)
     for end, eid, kind, head in (("a", e.a, e.a_kind, hs), ("b", e.b, e.b_kind, he)):
@@ -633,7 +693,7 @@ def _out_and_back_reqs(spec: Spec, e: Edge, t: _Topo, shape: str, hs: bool, he: 
             reach = _off(spec, eid, kind, side) + ((m.arrow_target if soft else m.arrow_min) if head else MIN_SEG)
             if kind == "node" and axis == "x" and upper in (None, end):
                 reach = max(reach, _half(spec, spec.nodes[eid]) + OBST_CLEAR)   # past its labels
-            need = reach + max(K.HUG_CLEAR, room) - margin
+            need = reach + max(K.HUG_CLEAR, room) + (0.0 if soft else hb) - margin
             v = f"group:{eid}.{e_}" if kind == "group" else f"node:{eid}"
             a, b = (v, wall) if far else (wall, v)
             add(axis, a, b, need, f"out-and-back {side} of {eid} inside {common[0] if common else 'the canvas'}",
@@ -1082,7 +1142,7 @@ def _bends(ctx: _Ctx, x: _Edge, shape: str, pa: Pt, pb: Pt) -> List[float]:
             pass
     if shape in (HVH, VHV):
         sa, sb = x.sides(shape)
-        if sa == sb and sa in (HORIZ if leg_x else VERT):
+        if _same_side(shape, sa, sb, x.t.dy if leg_x else x.t.dx):
             return _out_and_back(ctx, x, leg_x, i, pa, pb, sa)
     a, b = pa[i], pb[i]
     d = 1 if b >= a else -1
@@ -1151,7 +1211,8 @@ def _out_and_back(ctx: _Ctx, x: _Edge, leg_x: bool, i: int, pa: Pt, pb: Pt, side
     e.g. a replication line beside one column): beyond both ports by the end segments,
     clear of icons and labels along the leg, trunk_clear then HUG_CLEAR from parallel
     borders; nearest first, up to 15 nudges out and HUG_CLEAR inside the innermost box
-    holding both ends (or the canvas)."""
+    holding both ends (or the canvas); on top inside that box, below its header by
+    HUG_CLEAR or the label's room above the leg, whichever is more (plan: the same wall)."""
     m, geom = ctx.m, ctx.geom
     sgn = 1 if side in ("right", "bottom") else -1
     min_a = K.MIN_ARROW if x.hs else MIN_SEG
@@ -1159,12 +1220,16 @@ def _out_and_back(ctx: _Ctx, x: _Edge, leg_x: bool, i: int, pa: Pt, pb: Pt, side
     near = (max if sgn > 0 else min)(pa[i] + sgn * min_a, pb[i] + sgn * min_b)
     far = near + sgn * 15 * NUDGE
     common = _nonshared(ctx.spec, x.e)[2]
+    clear = K.HUG_CLEAR
     if common:
         r = geom.groups[common[0]].rect
         wall = (r.x1 if sgn > 0 else r.x0) if leg_x else (r.y1 if sgn > 0 else r.y0)
+        if side == "top":           # the header band is wall too, and the label sits above the leg
+            wall += _header_band(ctx.spec, common[0])
+            clear = max(clear, _leg_room(m, x.e, leg_x, False))
     else:
         wall = ((geom.canvas_w if leg_x else geom.canvas_h) if sgn > 0 else 0.0)
-    wall -= sgn * K.HUG_CLEAR
+    wall -= sgn * clear
     far = min(far, wall) if sgn > 0 else max(far, wall)
     lo, hi = sorted((near, far))
     if (far - near) * sgn < 0:
@@ -1907,7 +1972,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         hint = getattr(e, leg) if leg else None
         hint = hint if isinstance(hint, M.Expr) else None
         mine = [build(x, c) for c in _candidates(ctx, x, ports) if c[0] == want]
-        side = x.sides(want)[0] if _same_side(want, *x.sides(want)) else None
+        side = x.sides(want)[0] if _same_side(want, *x.sides(want), x.t.dy if want == HVH else x.t.dx) else None
         box = (_nonshared(ctx.spec, e)[2] or [None])[0]
         if not mine and side:
             why = f"no room {side} of both ends {f'inside {box}' if box else 'on the canvas'} for its out-and-back leg"

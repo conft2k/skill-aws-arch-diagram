@@ -226,11 +226,15 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   The same side at both ends of a `HVH` / `VHV` (`from_side: right, to_side: right`)
   draws an out-and-back on that side without `bend_x`: the leg sits at the nearest spot
   past both end segments that clears the labels along it, ≥ 12 from parallel borders and
-  inside the box holding both ends (or the canvas). The engine reserves that room, and the
-  line's label beside the leg, between each end and that box's border on that side —
-  nothing between the two ends (a labelled leg runs outside boxes holding one end only,
-  such as two AZs; a `bend_x` / `bend_y` expression places it yourself and reserves
-  nothing); a refused one says which `pad_<side>` to give the box.
+  inside the box holding both ends (or the canvas) — on `top`, below that box's header
+  (badge, title, CIDR), so the leg and its label never sit in the header row. The engine
+  reserves that room, and the line's label beside the leg, between each end and that box's
+  border (header) on that side — nothing between the two ends (a labelled leg runs outside
+  boxes holding one end only, such as two AZs; a `bend_x` / `bend_y` expression places it
+  yourself and reserves nothing); a refused one says which `pad_<side>` to give the box.
+  The ends must differ along the leg: `left` / `right` at both ends needs them on
+  different rows, `top` / `bottom` on different columns — the loader rejects ends sharing
+  a row (column) and names the sides that work (`top` / `bottom` with `shape: VHV`).
 
 ```yaml
 # from: nfw-reference-architecture.layout.yaml

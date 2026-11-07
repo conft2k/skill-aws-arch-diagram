@@ -739,6 +739,29 @@ class Synthetic(unittest.TestCase):
         self.assertTrue(R._same_side("VHV", "bottom", "bottom"))
         self.assertEqual([r for r in R.plan(spec) if "out-and-back" in r.why], [])
 
+    def test_same_side_needs_ends_apart_along_the_leg(self):
+        """A HVH right / right whose ends share a row (VHV top / top sharing a column) has no
+        leg to run out and back: no out-and-back, no room for one in plan(), and a Spec built
+        by hand (the loader rejects it: same_side_problems) gets no 'move the ends off the
+        canvas right edge' hint for a leg that cannot exist."""
+        self.assertFalse(R._same_side("HVH", "right", "right", 0))
+        self.assertFalse(R._same_side("VHV", "top", "top", 0))
+        self.assertTrue(R._same_side("HVH", "right", "right", 1))
+        self.assertTrue(R._same_side("VHV", "top", "top", -1))
+        self.assertTrue(R._same_side("HVH", "right", "right", None))      # position unknown: as before
+        spec, geom = self.setup(blocker=False)
+        spec.edges = [M.Edge(0, "x", "y", "->", shape="HVH", from_side="right", to_side="right", src="edges[0]")]
+        self.assertEqual([r for r in R.plan(spec) if "out-and-back" in r.why], [])
+        (where, msg), = R.same_side_problems(spec)
+        self.assertEqual(where, "edges[0] x -> y")
+        self.assertIn("needs ends on different rows, but x and y share a row", msg)
+        _, warns = R.draw(spec, geom)
+        self.assertFalse([w for w in warns if "off the canvas" in w or "pad_right" in w], warns)
+        # on different rows: an out-and-back, and nothing for the loader to report
+        spec.nodes["y"].col, spec.nodes["y"].row = "a", "s"
+        self.assertEqual(R.same_side_problems(spec), [])
+        self.assertTrue([r for r in R.plan(spec) if "out-and-back" in r.why])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
