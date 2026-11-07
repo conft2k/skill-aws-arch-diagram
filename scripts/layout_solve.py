@@ -2014,3 +2014,25 @@ def draw(spec: Spec, geom: Geometry) -> List[Element]:
         for t in ng.lines:
             out.append(el_text(t, z=K.Z_NODE, owner=own))
     return out
+
+
+# =======================================================================================
+# twins, for the rule checker (scripts/rules.py R-twin)
+
+def twin_classes(spec: Spec) -> List[List[Tuple[str, Dict[str, List[Tuple[str, str, str]]], List[str]]]]:
+    """The twins solve() draws alike (_Model.twin_sets), per class of two or more: per twin
+    (its box id, per axis its measures (a, b, what) — b − a measured, in corresponding
+    order, see _Model._twin_measures — and its subtree's node ids in corresponding order).
+    Read only: the rule checker evaluates the measures on the final Geometry."""
+    m = _Model(spec)
+    out = []
+    for cls in m.twin_sets():
+        row = []
+        for mem in cls:
+            gid = mem[0]
+            rows, cols = m._tracks_used(gid)
+            rank = ({r: k for k, r in enumerate(rows)}, {c: k for k, c in enumerate(cols)})
+            norder = m._shape(gid, rank, root=True)[2]
+            row.append((gid, {axis: m._twin_measures(axis, mem) for axis in ("x", "y")}, norder))
+        out.append(row)
+    return out

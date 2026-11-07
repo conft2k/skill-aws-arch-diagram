@@ -739,6 +739,16 @@ def slide_problem(spec: Spec, geom: Geometry) -> Optional[str]:
             "move the regional services row into a column, or split the slide")
 
 
+def rule_lines(spec: Spec, geom: Geometry, data: bytes) -> List[str]:
+    """The user rules' verdict on the written draft (scripts/rules.py), one `rule:` line per
+    violation — report only: neither the draft nor the exit status depends on it."""
+    try:
+        import rules
+        return rules.lines(rules.check(spec, geom, data))
+    except Exception as e:  # noqa: BLE001 — a checker bug must not cost the draft
+        return [f"rule: checker error {e!r}"]
+
+
 # =======================================================================================
 # CLI
 
@@ -843,6 +853,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             for line in b.geom.explain:
                 if line.startswith(pre):
                     print(f"  {line}")
+    for line in rule_lines(spec, b.geom, data):
+        print(line)
     if n:
         print(f"{n} problem{'s' if n != 1 else ''}")
         return 1
