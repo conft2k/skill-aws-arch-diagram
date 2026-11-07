@@ -595,10 +595,15 @@ def _same_side(shape: str, sa: Optional[str], sb: Optional[str]) -> bool:
 def _out_and_back_reqs(spec: Spec, e: Edge, t: _Topo, shape: str, hs: bool, he: bool, add) -> None:
     """Room for an out-and-back's leg (draw: _out_and_back) between each end and the
     innermost box holding both on that side (no such box: the canvas): the port, the end
-    segment (or arrow) and the end's labels the leg runs past, then HUG_CLEAR to the
-    border, or the line's label beside the leg + LABEL_CLEAR when wider."""
+    segment (or arrow) and the end's labels the leg runs past — with a label, HUG_CLEAR
+    past the boxes of one end only, which the leg then runs outside — then HUG_CLEAR to the
+    border, or the line's label beside the leg + LABEL_CLEAR when wider. None with a
+    bend_x / bend_y expression: the spec placed the leg."""
     m, side = spec.const, t.side_a
     axis = "x" if shape == HVH else "y"
+    hint = e.bend_x if axis == "x" else e.bend_y
+    if hint is not None and hint != "gap":
+        return                          # the spec placed the leg (slide alb bend_x rds.1.x1+28)
     far = side in ("right", "bottom")
     common = _nonshared(spec, e)[2]
     e_ = {"right": "R", "left": "L", "bottom": "B", "top": "T"}[side]
@@ -614,6 +619,14 @@ def _out_and_back_reqs(spec: Spec, e: Edge, t: _Topo, shape: str, hs: bool, he: 
         sz = K.TEXT_PROTO.size
         room = (m.label_below + K.GLYPH_DESCENT * sz if far else m.label_above + sz) + K.LABEL_CLEAR
     owner = M.edge_eid(e.n)
+    # a labelled leg runs outside the boxes of one end only (HUG_CLEAR off their border),
+    # its label beside it: inside them it would cross their border (n1 'replication')
+    na, nb, _ = _nonshared(spec, e)
+    for g in (dict.fromkeys(na + nb) if texts else ()):
+        v = f"group:{g}.{e_}"
+        a, b = (v, wall) if far else (wall, v)
+        add(axis, a, b, K.HUG_CLEAR + max(K.HUG_CLEAR, room) - margin,
+            f"out-and-back {side} of {g} inside {common[0] if common else 'the canvas'}", owner)
     upper = {1: "a", -1: "b"}.get(t.dy if axis == "x" else None)
     for end, eid, kind, head in (("a", e.a, e.a_kind, hs), ("b", e.b, e.b_kind, he)):
         for soft in ((False, True) if head else (False,)):     # soft: the arrow at its target length

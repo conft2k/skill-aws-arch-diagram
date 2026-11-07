@@ -316,7 +316,9 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     pieces) gets none of the between-ends gutter / label run / footprint reqs: each end
     instead keeps port + end segment (+ the labels its leg runs past) + max(HUG_CLEAR, the
     line's label beside the leg + 8) from the innermost common box's border on that side
-    ("origin" / "drawing" − canvas margin when the ends share no box).
+    ("origin" / "drawing" − canvas margin when the ends share no box); a labelled one also
+    HUG_CLEAR + that room past the boxes of one end only (its leg runs outside them); one
+    with a bend_x / bend_y expression gets nothing (the spec placed its leg).
  o. Note auto rule (DESIGN 4.7) also picks the pane for a document when top-level items sit
     left of the Cloud and the pane fits above them without a push (bedrock-dx 1040 <
     0.7 × 1498 and nlb-mtls 764 vs 763 drew panes; the specs no longer force `place`).

@@ -543,6 +543,24 @@ class OutAndBack(unittest.TestCase):
                     self.assertTrue(sn.y0 + K.HUG_CLEAR <= leg <= sn.y1 - K.HUG_CLEAR, (pts, sn))
 
 
+    def test_labelled_leg_outside_the_boxes_of_one_end(self):
+        """Ends in two AZs: a labelled out-and-back keeps its leg outside the AZ boxes with
+        its label beside it (room reserved inside the VPC), not on a piece across an AZ
+        border; a bend_x expression keeps the spec's own leg and reserves nothing."""
+        d = {"name": "n1", "cols": ["db"], "rows": ["az1", "az2"],
+             "groups": [{"id": "cloud", "type": "cloud"}, {"id": "vpc", "type": "vpc", "label": "VPC", "in": "cloud"},
+                        {"id": "az", "type": "az", "in": "vpc", "per": ["az1", "az2"]},
+                        {"id": "sn", "type": "private", "label": "DB subnet", "in": "az"}],
+             "nodes": [{"id": "db", "icon": "resource/Amazon-Aurora_Amazon-RDS-Instance", "label": "Aurora",
+                        "in": "sn", "col": "db"}],
+             "edges": [{"e": "db.1 -> db.2", "label": "replication", "shape": "HVH", "from_side": "right",
+                        "to_side": "right"}]}
+        geom, pts = self.drawn(d)
+        self.assertGreaterEqual(pts[1][0], geom.groups["az.1"].rect.x1 + K.HUG_CLEAR)
+        spec, _ = built(dict(d, edges=[dict(d["edges"][0], bend_x="db.1.x1+28")]))
+        self.assertFalse([r for r in layout.layout_route.plan(spec) if "out-and-back" in r.why])
+
+
 class TrunkFork(unittest.TestCase):
     def test_fork_shares_one_port_whatever_its_shape(self):
         """A `trunk: true` fork whose source's facing side is taken (rule 5: VH) leaves one

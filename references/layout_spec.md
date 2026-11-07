@@ -222,7 +222,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   past both end segments that clears the labels along it, ≥ 12 from parallel borders and
   inside the box holding both ends (or the canvas). The engine reserves that room, and the
   line's label beside the leg, between each end and that box's border on that side —
-  nothing between the two ends; a refused one says which `pad_<side>` to give the box.
+  nothing between the two ends (a labelled leg runs outside boxes holding one end only,
+  such as two AZs; a `bend_x` / `bend_y` expression places it yourself and reserves
+  nothing); a refused one says which `pad_<side>` to give the box.
 
 ```yaml
 # from: nfw-reference-architecture.layout.yaml
