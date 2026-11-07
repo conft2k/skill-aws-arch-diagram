@@ -1712,7 +1712,7 @@ class _Placer:
         near = b.expand(K.LABEL_CLEAR).t()
         if any(CL.seg_hits_box(p, q, near) for p, q in self.ctx.border_segs):
             return False
-        bt = b.expand(1).t()
+        bt = b.expand(K.LINE_CLEAR).t()       # check_layout LINE NEAR TEXT: a line skims its top or sides
         if any(CL.seg_hits_box(p, q, bt) for p, q in self.lines):
             return False
         if any(b.expand(icon_clear).overlaps(i) for i in self.ctx.node_icons):
