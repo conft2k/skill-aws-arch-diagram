@@ -21,12 +21,12 @@ nodes:
   - {id: prod, icon: service/Amazon-Virtual-Private-Cloud, label: Prod VPC, sub: 10.2.0.0/16, in: ra, at: [a3, top]}
   - {id: dev,  icon: service/Amazon-Virtual-Private-Cloud, label: Dev VPC, sub: 10.3.0.0/16, in: ra, at: [a1, bot]}
   - {id: test, icon: service/Amazon-Virtual-Private-Cloud, label: Test VPC, sub: 10.4.0.0/16, in: ra, at: [a3, bot]}
-  - {id: rta,  icon: resource/Amazon-Route-53_Route-Table, label: TGW A RT, sub: ["VPC·VPN 경로 전파", "10.16.0.0/13 → peering"], in: ra, at: [a2, bot]}   # its long last line sits below Dev / Test VPC's two-line labels and takes no room between them
+  - {id: rta,  icon: resource/Amazon-Route-53_Route-Table, label: TGW A RT, sub: ["VPC·VPN 경로 전파", "10.16.0.0/13 → peering"], in: ra, at: [a2, bot], for: [vpn, svcs, prod, dev, test, peer]}   # TGW A's only table, so associated with every TGW A attachment: the VPN, the four VPCs and the peering (association, not the propagations its sub-caption lists); its long last line sits below Dev / Test VPC's two-line labels and takes no room between them
   - {id: peer, icon: resource/Amazon-VPC_Peering-Connection, label: TGW peering, sub: peering attachment, in: cloud, at: [peer, main]}
   - {id: tgwb, icon: service/AWS-Transit-Gateway, label: Transit Gateway B, in: rb, at: [b1..b2, main]}
   - {id: dr,   icon: service/Amazon-Virtual-Private-Cloud, label: DR VPC, sub: 10.16.0.0/16, in: rb, at: [b1, top]}
   - {id: ana,  icon: service/Amazon-Virtual-Private-Cloud, label: Analytics VPC, sub: 10.17.0.0/16, in: rb, at: [b2, top]}
-  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16", "→ peering"], in: rb, at: [b1..b2, bot]}   # its labels take room from the span's center
+  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16", "→ peering"], in: rb, at: [b1..b2, bot], for: [peer, dr, ana]}   # TGW B's only table: associated with the peering and both VPC attachments; its labels take room from the span's center
 
 edges:                       # topology diagram: '--' = solid 1.5px, no arrowheads
   - {e: "cgw -- inet"}

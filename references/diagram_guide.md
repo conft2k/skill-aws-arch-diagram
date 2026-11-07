@@ -214,6 +214,9 @@ Put every route table as close as the layout allows to the object it is associat
 with, so a reader sees at a glance which resource it belongs to without reading the
 legend. Its position is the association: no line ties a route-table node to anything
 (only a TGW table drawn as a table of routes keeps its dashed tie to the TGW, below).
+In a layout spec, name the association on the node with `for: [ids]` — the attachments
+(the far ends of the TGW's lines) or subnets it is associated with, never the ones it only
+propagates from (layout_spec.md → nodes).
 
 - **Subnet route table:** its routes as the 12px sub-caption of the node in that subnet
   (EC2 "0.0.0.0/0 → TGW", TGW ENI "0.0.0.0/0 → 같은 AZ 방화벽" — what the examples do),

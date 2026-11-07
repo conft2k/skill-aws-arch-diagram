@@ -9,7 +9,8 @@ keys, types, references, id characters, unique track names), applies defaults, e
 2: …}` per-instance values, `only: [n, …]` to keep an item in some instances), parses edge strings (-> <-> -- ..> <..> .., comma targets),
 pairs `*` patterns, resolves step / step_each / steps, resolves icons (full `set/name`
 refs checked against the bundle; aliases through find_icon.search, a unique best score
-≥ 95 only), parses expressions, rejects from_side = to_side lines whose ends share the row / column
+≥ 95 only), resolves route-table associations (`for` / `via` → Node.assoc, layout_model
+decision t), parses expressions, rejects from_side = to_side lines whose ends share the row / column
 their leg would need (layout_route.same_side_problems), and lints (DESIGN 4.1). Every problem found is collected
 and raised as one SpecError; non-fatal lint goes to Spec.warnings. The contract is in
 layout_model.py's docstring.
@@ -34,7 +35,7 @@ import check_layout  # noqa: E402  (services_in_label, OUTSIDE_CLOUD)
 import find_icon  # noqa: E402  (search, SETS: the icon bundle assets/icons.json)
 import layout_const as K  # noqa: E402
 import layout_route  # noqa: E402  (same_side_problems)
-from layout_model import (Edge, Expr, Group, Node, NoteSpec, Place, RawSpec, Spec,  # noqa: E402
+from layout_model import (Assoc, Edge, Expr, Group, Node, NoteSpec, Place, RawSpec, Spec,  # noqa: E402
                           SpecError, Track, fmt_num)
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -54,6 +55,9 @@ ICON_MIN_SCORE = 95
 # Load balancers and the firewall sit in the row between AZs, not inside an AZ template (DESIGN 2.3).
 LB_ICONS = ("service/Elastic-Load-Balancing", "service/AWS-Network-Firewall")
 LB_PREFIX = "resource/Elastic-Load-Balancing_"
+# Route tables (VPC subnet and TGW tables alike): the package's only route table icon. A node
+# with one of these icons should say what it is associated with (`for:`, layout_model decision t).
+RT_ICONS = ("resource/Amazon-Route-53_Route-Table",)
 
 TOP_KEYS = ("name", "mode", "title", "S", "font", "cols", "rows", "groups", "nodes", "edges", "note", "raw")
 TRACK_KEYS = ("id", "min_gap_before", "min_w", "flow", "align")
@@ -61,7 +65,7 @@ FLOW_ALIGN = ("top", "center", "bottom")   # a flow column in its parent's heigh
 GROUP_KEYS = ("id", "type", "label", "cidr", "in", "per", "only", "over", "span", "pad", "pad_top", "pad_left",
               "pad_right", "pad_bottom", "min_w", "min_h",
               "dash", "header")
-NODE_KEYS = ("id", "icon", "label", "sub", "in", "only", "at", "col", "row", "on", "dx", "dy", "xy")
+NODE_KEYS = ("id", "icon", "label", "sub", "in", "only", "at", "col", "row", "on", "dx", "dy", "xy", "for", "via")
 EDGE_KEYS = ("e", "label", "verb", "step", "step_at", "steps", "step_each", "label_at", "trunk", "fork", "shape",
              "bend_x", "bend_y", "from_side", "to_side", "from_offset", "to_offset", "points")
 NOTE_KEYS = ("place", "width", "steps", "summary", "rows")
@@ -338,6 +342,7 @@ class _Loader:
         self.overlay_strays()
         self.border_sides()
         self.edges(d.get("edges"))
+        self.associations()
         self.note(d.get("note"))
         self.raw(d.get("raw"))
         self.exprs()
@@ -714,6 +719,20 @@ class _Loader:
         return float(v)
 
     @staticmethod
+    def c_ids(v):
+        vals = [v] if isinstance(v, str) else v
+        if not isinstance(vals, list) or not vals or not all(isinstance(x, str) and x for x in vals):
+            raise _Conv(f"expected a list of the node / group ids the table is associated with "
+                        f"(<id>.* for a template's instances), got {v!r}")
+        return list(vals)
+
+    @staticmethod
+    def c_id(v):
+        if not isinstance(v, str) or not v:
+            raise _Conv(f"expected the hub node's id, got {v!r}")
+        return v
+
+    @staticmethod
     def c_dash(v):
         t = _text(v)
         if t is None or not re.match(r"^\s*\d+(\.\d+)?([ ,]+\d+(\.\d+)?)*\s*$", t):
@@ -834,6 +853,11 @@ class _Loader:
                     # solve (layout_solve) once exprs() has checked its reference
                     r["xy"] = tuple(float(x) if _num(x) else self.expr(loc, f"xy[{i}]", x)
                                     for i, x in enumerate(v))
+            r["for"] = self.field(r, "for", self.c_ids)
+            r["via"] = self.field(r, "via", self.c_id)
+            if "via" in d and "for" not in d:
+                self.err(loc, "via: names the hub whose lines to the `for:` ids are the associated attachments; "
+                              "give for: too")
             self.position(r)
             if r["icon"] is not None:
                 r["icon_res"] = self.resolve_icon(r)
@@ -1434,6 +1458,98 @@ class _Loader:
         return out
 
     # ---- note and raw
+    # ---- route-table associations (layout_model decision t)
+    def associations(self) -> None:
+        """`for:` / `via:` → Node.assoc: the ends (`*` expanded) and the hub whose lines to
+        them are the associated attachments (None: a subnet association)."""
+        sp = self.spec
+        nbr: Dict[str, set] = {}             # id → the nodes it has an edge to (either direction)
+        for e in sp.edges:
+            if e.b_kind == "node":
+                nbr.setdefault(e.a, set()).add(e.b)
+            if e.a_kind == "node":
+                nbr.setdefault(e.b, set()).add(e.a)
+
+        def err(node: Node, key: str, msg: str) -> None:
+            self.err(node.src, f"{key}: {msg}")
+
+        for nid in self.norder:
+            r = self.nraw[nid]
+            if r.get("for") is None:
+                continue
+            n0 = len(self.problems)
+            insts = self.inst.get(nid, []) if self.count(r["tmpl"]) else [(None, nid)]
+            for n, iid in insts:
+                if iid in sp.nodes:
+                    self.assoc(r, sp.nodes[iid], _pick(r["for"], n), _pick(r.get("via"), n), n, nbr, err)
+            # one report per spec item: a template's instances repeat the same unknown id
+            self.problems[n0:] = list(dict.fromkeys(self.problems[n0:]))
+
+    def own_instance(self, r: dict, pat: str, n: Optional[int]) -> str:
+        """In a template, a bare id of an item of the same template is the node's own instance."""
+        if n is None or pat.endswith(".*"):
+            return pat
+        raw = self.nraw.get(pat) or self.graw.get(pat)
+        if raw is not None and raw.get("tmpl") is not None and raw["tmpl"] == r["tmpl"]:
+            return _inst_id(pat, n)
+        return pat
+
+    def assoc(self, r: dict, node: Node, pats: List[str], via: Optional[str], n: Optional[int],
+              nbr: Dict[str, set], err) -> None:
+        sp = self.spec
+        key = "for" if n is None else f"for ({node.id})"
+        ends: List[str] = []
+        for pat in pats:
+            got = self.pattern(node.src, "for", self.own_instance(r, pat, n))
+            if got is None:
+                return
+            ends += [i for _, i in got if i not in ends]
+        if node.id in ends:
+            err(node, key, f"{node.id!r} lists itself; name what the table is associated with")
+            return
+        quiet = self.edge_failed                 # a dropped edge line: its lines are missing, not wrong
+        if via is not None:
+            vkey = "via" if n is None else f"via ({node.id})"
+            via = self.own_instance(r, via, n)
+            if via not in sp.nodes:
+                if via in sp.groups:
+                    err(node, vkey, f"{via!r} is a group; the hub is a node (the TGW the attachment lines meet)")
+                elif self.pattern(node.src, "via", via, want=("node",)) is not None:
+                    err(node, vkey, f"{via!r} names several nodes; the hub is one node id")
+                return
+            if via == node.id:
+                err(node, vkey, f"{via!r} is the table itself; name the node its attachment lines meet")
+                return
+            missing = [x for x in ends if via not in nbr.get(x, ())]
+            if missing:
+                if not quiet:
+                    err(node, vkey, f"{via!r} has no line to {', '.join(map(repr, missing))}; an association is "
+                                    f"the line between the hub and each `for:` id — draw it, or fix for: / via:")
+                return
+            hub: Optional[str] = via
+        else:
+            cands = set.intersection(*(nbr.get(x, set()) for x in ends)) - {node.id} if ends else set()
+            if len(cands) == 1:
+                hub = next(iter(cands))
+            elif not cands and all(x in sp.groups for x in ends):
+                hub = None                       # a subnet association
+            elif not cands:
+                if quiet:
+                    return
+                seen = "; ".join(f"{x}: {', '.join(sorted(nbr.get(x, ()))) or 'no line'}" for x in ends)
+                err(node, key, f"no node has a line to every listed id ({seen}); list the ends of one hub's "
+                               "lines (the attachments associated with the table), or name the hub with `via:`")
+                return
+            else:
+                order = [i for i in sp.nodes if i in cands]
+                err(node, key, f"{', '.join(map(repr, order))} each have a line to every listed id; name the hub "
+                               f"with `via:` (e.g. via: {order[0]})")
+                return
+        endset = set(ends)
+        edges = [e.n for e in sp.edges if hub is not None
+                 and ((e.a == hub and e.b in endset) or (e.b == hub and e.a in endset))]
+        node.assoc = Assoc(hub=hub, ends=ends, edges=edges)
+
     def note(self, d) -> None:
         if d is None:
             return
@@ -1690,7 +1806,13 @@ class _Loader:
         sp = self.spec
         cloud_types = {"cloud"}
         warned = set()
+        has_for = {self.nraw[i]["loc"] for i in self.norder if "for" in self.nraw[i]["d"]}
         for node in sp.nodes.values():
+            if node.icon in RT_ICONS and node.src not in has_for and ("rt", node.src) not in warned:
+                warned.add(("rt", node.src))
+                self.warn(node.src, "a route table without `for:`; add `for: [<ids>]` — the attachments (the hub's "
+                                    "lines to them) or subnets it is associated with — so the rule checker can "
+                                    "verify it sits beside them")
             chain = sp.node_chain(node.id) if node.parent in sp.groups or node.parent is None else []
             if node.icon in check_layout.OUTSIDE_CLOUD and node.src not in warned:
                 inside = [g for g in chain if sp.groups[g].type in cloud_types]

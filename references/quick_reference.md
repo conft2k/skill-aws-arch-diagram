@@ -118,7 +118,9 @@ the subnets; interface endpoints inside their subnet. A TGW route table drawn as
 table of routes may overlap borders (see the guide).
 
 A route table sits beside what it is associated with ("A route table sits beside what
-it is attached to"), no line to it:
+it is attached to"), no line to it. In a layout spec the node says which with `for: [ids]`
+(the far ends of the associated attachment lines, or the subnet boxes; `via: <hub>` when two
+hubs reach them; see layout_spec.md → nodes):
 
 | Route table | Place |
 |---|---|

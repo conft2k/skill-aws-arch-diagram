@@ -125,7 +125,7 @@ default); text sizes are px.
 =========================================================================================
 3. Who fills what
 =========================================================================================
-Spec / Track / Group / Node / Edge / NoteSpec / RawSpec / Expr   — W1 fills, all read.
+Spec / Track / Group / Node / Assoc / Edge / NoteSpec / RawSpec / Expr   — W1 fills, all read.
 Requirement   — W3 (plan) and W4 (block) create; W5 may add (feedback); W2 consumes.
 Geometry, GroupGeom, NodeGeom, TextLine, Box — W2 fills; W3, W4, W5 read; nobody mutates
                 a Geometry after solve returns (W5 re-solves instead).
@@ -430,6 +430,19 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     even_insets) until they hold, at most TWIN_ROUNDS; a round that leaves them less alike
     than the best one stops the loop and the best is kept; still unlike → one warning per
     class and axis.
+ t. Route-table associations (W1 only; nothing in W2-W5 reads them, so they never change a
+    draft): node key `for: [ids]` names what the table is associated with — node or group
+    ids, `<id>.*` for a template's instances (in a template, a bare id of an item of the
+    same template means the node's own instance; a per-instance map `{1: [...], 2: [...]}`
+    works too) — and optional `via: <node id>` its hub. W1 resolves them to Node.assoc =
+    Assoc(hub, ends, edges): ends = the ids expanded, deduplicated, spec order; hub = the one
+    node other than the table with an edge (either direction, any operator) to every end, or
+    `via` (a SpecError unless it has an edge to each end); none and every end a group → hub
+    None, a subnet association; none otherwise, or several, is a SpecError naming the
+    candidates and asking for `via:`; edges = Edge.n of every hub ↔ end edge, ascending. `for` on a node whose icon is no route table
+    (layout_spec.RT_ICONS) is allowed — another per-attachment table may declare it; a route
+    table without `for` is a lint warning. The association is AWS's (the attachments or
+    subnets associated with the table), not its propagations; a later rule checker reads it.
 """
 from __future__ import annotations
 
@@ -549,6 +562,15 @@ class Group:
 
 
 @dataclass
+class Assoc:
+    """A route table's association (node keys `for` / `via`, decision t): what it belongs to."""
+    hub: Optional[str]              # the node whose lines are the associated attachments (the TGW);
+                                    # None = a subnet association (every end a group no node draws a line to)
+    ends: List[str]                 # the associated ids, `*` expanded, spec order (nodes or groups)
+    edges: List[int]                # Edge.n of every hub ↔ end line, ascending (empty for a subnet association)
+
+
+@dataclass
 class Node:
     id: str                         # expanded id ("nat.1")
     icon: str                       # resolved bundle ref "set/name"
@@ -570,6 +592,7 @@ class Node:
     template: Optional[str] = None
     instance: Optional[int] = None
     src: str = ""
+    assoc: Optional[Assoc] = None   # `for:` (+ `via:`) resolved (decision t); None = not declared
 
 
 @dataclass

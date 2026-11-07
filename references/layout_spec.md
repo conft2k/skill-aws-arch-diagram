@@ -198,7 +198,7 @@ The type fixes border color, width, dash, badge and header insets (quick referen
 
 ## nodes
 
-`{id, icon, label, sub?, in? | on?, at? | col? | row? | xy?, dx?, dy?}`
+`{id, icon, label, sub?, in? | on?, at? | col? | row? | xy?, dx?, dy?, for?, via?}`
 
 - `icon`: the full `set/name` ref that `find_icon.py` printed. A bare alias is accepted
   only when it has exactly one score-95 hit (`ec2` works; `alb`, `igw` score 85 and fail,
@@ -217,6 +217,20 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   inside a template.
 - A load balancer or Network Firewall goes in the VPC on the gap row, `in: vpc, at: [pub,
   main]`, never inside the AZ template (the loader warns: it would be drawn once per AZ).
+- `for: [ids]` (+ `via: <node>`): what a route table is associated with — give it on every
+  route-table node (`resource/Amazon-Route-53_Route-Table`; the loader warns without it).
+  For a TGW table list the far ends of its associated attachments' lines, node or group ids,
+  `<id>.*` for a template's instances: nfw `rtsp` `for: [vpca, vpcb]`, `rtfw` `for:
+  [eni.*]`. The loader takes as the hub the one node with a line (either direction, any
+  operator) to every listed id — the TGW. For a subnet table list the subnet boxes, which no
+  node draws a line to (hub none). No such node, or several (two TGWs reach the same VPCs),
+  is a spec error; `via: <node>` then names the hub, which must have a line to each id.
+  It is the association, not propagation: a TGW's only table lists every attachment of
+  that TGW (tgw `rta` `for: [vpn, svcs, prod, dev, test, peer]`). In a template, a bare id
+  of an item of the same template means the node's own instance. The key moves nothing
+  (the draft is byte-identical with or without it); it records the association so a rule
+  checker can verify the table sits beside it. `for` on a node that is no route table (a
+  per-attachment table with another icon) is accepted, without a warning.
 - Two nodes on one row are spaced by what sits level: icon by icon and label line by label
   line, so a route table's long last route line under a VPC's two-line label takes no room
   between them (tgw `rta` beside `dev`). Don't push such a pair apart with `xy` or
@@ -436,11 +450,14 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 - **Trunks**: merge `nat.* -> igw`, fork `igw -> gwlbe.*`, both `trunk: true`.
 - **Numbered flow** (gwlb, nfw, tgw): `step` on the edges + `note.steps`.
 - **Hub and topology** (tgw): `--` edges, `at: [b1..b2, main]` under two spokes, route
-  tables as nodes with routes in `sub`, `step_at: gap` for a badge between Regions.
+  tables as nodes with routes in `sub` and `for:` every attachment of their TGW (its only
+  table), `step_at: gap` for a badge between Regions.
 - **TGW route tables beside their attachments** (nfw): a column for each table on the
   TGW's row — `rtsp` between the spoke VPCs and the TGW, `rtfw` between the TGW and the
   inspection VPC — `shape: VH` on `tgw <-> eni.*` so the inspection lines leave the TGW's
-  top and bottom around `rtfw`. Neither the document nor the slide needs an empty column:
+  top and bottom around `rtfw`; each table says which attachments it is associated with,
+  `rtsp` `for: [vpca, vpcb]` and `rtfw` `for: [eni.*]` (centralized-egress: `for: [enia.*,
+  enib.*]` and `for: [seni.*]`, the TGW's lines from the TGW ENIs). Neither the document nor the slide needs an empty column:
   the engine keeps the Spoke RT beside VPC A and VPC B (diagonal neighbours) on x, since
   apart on y the table would sit in the spoke column between the two VPCs, left of their
   lines to the TGW (the slide titled or not, and as a document).

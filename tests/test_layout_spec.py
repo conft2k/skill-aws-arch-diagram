@@ -45,8 +45,8 @@ nodes:
   - {id: ec2a, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: sna, at: [spoke, az1]}
   - {id: ec2b, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: snb, at: [spoke, az2]}
   - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
-  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: "VPC A · B 전파", in: region, at: [tgw, az1]}
-  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: "0.0.0.0/0 → 검사 VPC", in: region, at: [tgw, az2]}
+  - {id: rtfw, icon: resource/Amazon-Route-53_Route-Table, label: Firewall RT, sub: "VPC A · B 전파", in: region, at: [tgw, az1], for: [eni.*]}
+  - {id: rtsp, icon: resource/Amazon-Route-53_Route-Table, label: Spoke RT, sub: "0.0.0.0/0 → 검사 VPC", in: region, at: [tgw, az2], for: [vpca, vpcb]}
   - {id: eni,  icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, sub: "0.0.0.0/0 → 같은 AZ 방화벽", in: tgwsn, col: eni}
   - {id: fwe,  icon: resource/AWS-Network-Firewall_Endpoints, label: Firewall endpoint, sub: ["0.0.0.0/0 → 같은 AZ NAT", "10.0.0.0/8 → TGW"], in: fwsn, col: fw}
   - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, sub: ["0.0.0.0/0 → IGW", "10.0.0.0/8 → 같은 AZ 방화벽"], in: pubsn, col: nat}
@@ -136,12 +136,12 @@ nodes:
   - {id: prod, icon: service/Amazon-Virtual-Private-Cloud, label: Prod VPC, sub: 10.2.0.0/16, in: ra, at: [a3, top]}
   - {id: dev,  icon: service/Amazon-Virtual-Private-Cloud, label: Dev VPC, sub: 10.3.0.0/16, in: ra, at: [a1, bot]}
   - {id: test, icon: service/Amazon-Virtual-Private-Cloud, label: Test VPC, sub: 10.4.0.0/16, in: ra, at: [a3, bot]}
-  - {id: rta,  icon: resource/Amazon-Route-53_Route-Table, label: TGW A RT, sub: ["VPC·VPN 경로 전파", "10.16.0.0/13 → peering"], in: ra, at: [a2, bot]}
+  - {id: rta,  icon: resource/Amazon-Route-53_Route-Table, label: TGW A RT, sub: ["VPC·VPN 경로 전파", "10.16.0.0/13 → peering"], in: ra, at: [a2, bot], for: [vpn, svcs, prod, dev, test, peer]}
   - {id: peer, icon: resource/Amazon-VPC_Peering-Connection, label: TGW peering, sub: peering attachment, in: cloud, at: [peer, main]}
   - {id: tgwb, icon: service/AWS-Transit-Gateway, label: Transit Gateway B, in: rb, at: [b1..b2, main]}
   - {id: dr,   icon: service/Amazon-Virtual-Private-Cloud, label: DR VPC, sub: 10.16.0.0/16, in: rb, at: [b1, top]}
   - {id: ana,  icon: service/Amazon-Virtual-Private-Cloud, label: Analytics VPC, sub: 10.17.0.0/16, in: rb, at: [b2, top]}
-  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16 → peering"], in: rb, at: [b1..b2, bot]}
+  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16 → peering"], in: rb, at: [b1..b2, bot], for: [peer, dr, ana]}
 
 edges:                       # 위상도: '--' = 실선, 머리 없음
   - {e: "cgw -- inet"}
@@ -230,6 +230,8 @@ class ExampleSpecs(unittest.TestCase):
         self.assertTrue(s.edges[8].trunk and s.edges[9].trunk)
         self.assertEqual(len(s.note.steps), 5)
         self.assertEqual(s.note.steps[1][0], "TGW → 검사 VPC")
+        self.assertEqual(s.nodes["rtsp"].assoc, M.Assoc("tgw", ["vpca", "vpcb"], [0, 1]))
+        self.assertEqual(s.nodes["rtfw"].assoc, M.Assoc("tgw", ["eni.1", "eni.2"], [2, 3]))
         self.assertEqual(s.warnings, [])
 
     def test_alb(self):
@@ -283,6 +285,10 @@ class ExampleSpecs(unittest.TestCase):
         self.assertEqual(s.edges[1].label, "IPsec")
         self.assertEqual(len(s.note.steps), 4)
         self.assertEqual(s.cloud_id(), "cloud")
+        self.assertEqual(s.nodes["rta"].assoc, M.Assoc("tgwa", ["vpn", "svcs", "prod", "dev", "test", "peer"],
+                                                       [2, 3, 4, 5, 6, 7]))
+        self.assertEqual(s.nodes["rtb"].assoc, M.Assoc("tgwb", ["peer", "dr", "ana"], [8, 9, 10]))
+        self.assertEqual(s.warnings, [])
 
     def test_json_file_and_overrides(self):
         s = load_text(json.dumps(base()), suffix=".json", mode="slide", title=False)
@@ -747,6 +753,125 @@ ERRORS = [
      ["groups[5] asg: over: its box covers columns b–b and rows az1–az2, so it would also hold nlb (not "
       "members); list them in `over:`, move them off those tracks, or split the overlay"]),
 ]
+
+
+def tgw_spec(rt=None, extra_nodes=(), extra_edges=()):
+    """Two spoke VPCs and an inspection VPC's TGW ENIs (2 AZs) on one TGW, plus a route table `rt`."""
+    return {
+        "name": "t", "cols": ["spoke", "rt", "tgw", "eni", "trt"], "rows": ["az1", "main", "az2"],
+        "groups": [{"id": "cloud", "type": "cloud"},
+                   {"id": "region", "type": "region", "in": "cloud"},
+                   {"id": "vpca", "type": "vpc", "in": "region"},
+                   {"id": "sna", "type": "private", "in": "vpca"},
+                   {"id": "vpcb", "type": "vpc", "in": "region"},
+                   {"id": "snb", "type": "private", "in": "vpcb"},
+                   {"id": "insp", "type": "vpc", "in": "region"},
+                   {"id": "az", "type": "az", "in": "insp", "per": ["az1", "az2"]},
+                   {"id": "tsn", "type": "private", "in": "az"}],
+        "nodes": [{"id": "ec2a", "icon": "service/Amazon-EC2", "label": "EC2", "in": "sna", "at": ["spoke", "az1"]},
+                  {"id": "ec2b", "icon": "service/Amazon-EC2", "label": "EC2", "in": "snb", "at": ["spoke", "az2"]},
+                  {"id": "tgw", "icon": "service/AWS-Transit-Gateway", "label": "TGW", "in": "region",
+                   "at": ["tgw", "main"]},
+                  {"id": "eni", "icon": "resource/AWS-Transit-Gateway_Attachment", "label": "TGW ENI", "in": "tsn",
+                   "col": "eni"},
+                  dict({"id": "rt", "icon": "resource/Amazon-Route-53_Route-Table", "label": "Spoke RT",
+                        "in": "region", "at": ["rt", "main"]}, **(rt or {}))] + list(extra_nodes),
+        "edges": [{"e": "vpca <-> tgw"}, {"e": "vpcb <-> tgw"}, {"e": "tgw <-> eni.*"}] + list(extra_edges),
+    }
+
+
+TGW2 = {"id": "tgw2", "icon": "service/AWS-Transit-Gateway", "label": "TGW 2", "in": "region", "at": ["tgw", "az1"]}
+
+
+class Associations(unittest.TestCase):
+    """`for:` / `via:` → Node.assoc (layout_model decision t)."""
+
+    def assoc(self, **kw):
+        s = L.load(tgw_spec(**kw))
+        return s.nodes["rt"].assoc, s.warnings
+
+    def problems(self, **kw):
+        with self.assertRaises(SpecError) as cm:
+            L.load(tgw_spec(**kw))
+        return cm.exception.problems
+
+    def test_hub_found(self):
+        self.assertEqual(self.assoc(rt={"for": ["vpca", "vpcb"]}), (M.Assoc("tgw", ["vpca", "vpcb"], [0, 1]), []))
+        # a single id names it too, and the edge direction / operator does not matter
+        a, _ = self.assoc(rt={"for": "vpca"}, extra_edges=[{"e": "tgw ..> vpca"}])
+        self.assertEqual(a, M.Assoc("tgw", ["vpca"], [0, 4]))
+
+    def test_star_expands(self):
+        self.assertEqual(self.assoc(rt={"for": ["eni.*"]})[0], M.Assoc("tgw", ["eni.1", "eni.2"], [2, 3]))
+        self.assertEqual(self.assoc(rt={"for": ["eni.*", "eni.1", "vpca"]})[0],
+                         M.Assoc("tgw", ["eni.1", "eni.2", "vpca"], [0, 2, 3]))
+
+    def test_subnet_association(self):
+        self.assertEqual(self.assoc(rt={"for": ["sna", "snb"]}), (M.Assoc(None, ["sna", "snb"], []), []))
+
+    def test_in_a_template_own_instance(self):
+        rt = {"id": "trt", "icon": "resource/Amazon-Route-53_Route-Table", "label": "TGW subnet RT", "in": "tsn",
+              "col": "trt", "for": ["tsn"]}
+        s = L.load(tgw_spec(rt={"for": ["eni.*"]}, extra_nodes=[rt]))
+        self.assertEqual([s.nodes[i].assoc for i in ("trt.1", "trt.2")],
+                         [M.Assoc(None, ["tsn.1"], []), M.Assoc(None, ["tsn.2"], [])])
+        rt.update({"for": ["eni"]})
+        s = L.load(tgw_spec(rt={"for": ["eni.*"]}, extra_nodes=[rt]))
+        self.assertEqual(s.nodes["trt.2"].assoc, M.Assoc("tgw", ["eni.2"], [3]))
+        rt.update({"for": ["enx"]})                    # reported once, not once per instance
+        with self.assertRaises(SpecError) as cm:
+            L.load(tgw_spec(rt={"for": ["eni.*"]}, extra_nodes=[rt]))
+        self.assertEqual(cm.exception.problems, ["nodes[5] trt: for: unknown id 'enx'"])
+
+    def test_no_hub(self):
+        self.assertEqual(self.problems(rt={"for": ["vpca", "ec2a"]}), [
+            "nodes[4] rt: for: no node has a line to every listed id (vpca: tgw; ec2a: no line); list the ends of "
+            "one hub's lines (the attachments associated with the table), or name the hub with `via:`"])
+
+    def test_several_hubs(self):
+        two = dict(extra_nodes=[TGW2], extra_edges=[{"e": "vpca -- tgw2"}, {"e": "tgw2 -> vpcb"}])
+        self.assertEqual(self.problems(rt={"for": ["vpca", "vpcb"]}, **two), [
+            "nodes[4] rt: for: 'tgw', 'tgw2' each have a line to every listed id; name the hub with `via:` "
+            "(e.g. via: tgw)"])
+        self.assertEqual(self.assoc(rt={"for": ["vpca", "vpcb"], "via": "tgw2"}, **two)[0],
+                         M.Assoc("tgw2", ["vpca", "vpcb"], [4, 5]))
+
+    def test_via_mismatch(self):
+        self.assertEqual(self.problems(rt={"for": ["vpca", "vpcb", "eni.1"], "via": "ec2a"}), [
+            "nodes[4] rt: via: 'ec2a' has no line to 'vpca', 'vpcb', 'eni.1'; an association is the line between "
+            "the hub and each `for:` id — draw it, or fix for: / via:"])
+        self.assertEqual(self.problems(rt={"for": ["vpca"], "via": "vpcb"}), [
+            "nodes[4] rt: via: 'vpcb' is a group; the hub is a node (the TGW the attachment lines meet)"])
+        self.assertEqual(self.problems(rt={"for": ["vpca"], "via": "tgx"}), [
+            "nodes[4] rt: via: unknown id 'tgx' (did you mean 'tgw'?)"])
+
+    def test_bad_values(self):
+        self.assertEqual(self.problems(rt={"via": "tgw"}), [
+            "nodes[4] rt: via: names the hub whose lines to the `for:` ids are the associated attachments; "
+            "give for: too"])
+        self.assertEqual(self.problems(rt={"for": []}), [
+            "nodes[4] rt: for: expected a list of the node / group ids the table is associated with (<id>.* for a "
+            "template's instances), got []"])
+        self.assertEqual(self.problems(rt={"for": ["vpcx"]}), [
+            "nodes[4] rt: for: unknown id 'vpcx' (did you mean 'vpcb'?)"])
+        self.assertEqual(self.problems(rt={"for": ["rt", "vpca"]}), [
+            "nodes[4] rt: for: 'rt' lists itself; name what the table is associated with"])
+
+    def test_lint_warns_without_for(self):
+        self.assertEqual(self.assoc(), (None, [
+            "nodes[4] rt: a route table without `for:`; add `for: [<ids>]` — the attachments (the hub's lines to "
+            "them) or subnets it is associated with — so the rule checker can verify it sits beside them"]))
+        # `for` on a node that is no route table is allowed, without a warning
+        a, w = self.assoc(rt={"icon": "resource/AWS-Transit-Gateway_Attachment", "for": ["vpca", "vpcb"]})
+        self.assertEqual((a, w), (M.Assoc("tgw", ["vpca", "vpcb"], [0, 1]), []))
+
+    def test_key_does_not_move_anything(self):
+        """`for` only fills Node.assoc: the solved geometry is the same with and without it."""
+        def geom(rt):
+            s = L.load(tgw_spec(rt=rt))
+            return layout_solve.solve(s, [])
+        a, b = geom(None), geom({"for": ["vpca", "vpcb"]})
+        self.assertEqual({i: (n.cx, n.cy) for i, n in a.nodes.items()}, {i: (n.cx, n.cy) for i, n in b.nodes.items()})
 
 
 class FlowColumns(unittest.TestCase):
