@@ -16,6 +16,13 @@
   - RT2: 연관 선이 하나인 RT는 그 선에서 2S + sibling_gap 안
   - F5·L1의 직접 배치 면제와 모서리 판정
   - R-border를 tier 0으로
+- **글자 크기:** 독자가 실제로 보는 크기로 판정합니다(`rules-design.md` §6).
+  - slide: 16:9 슬라이드 pt 기준, 목표 10pt, 하한 8pt
+  - document: 760px 본문 폭 px 기준, 목표 11px, 하한 9px
+  - 목표보다 작으면 모든 글자를 같은 배율로 키워 최대 2회 다시 배치합니다(`text_scale: auto|off|<배율>`).
+  - 그림이 나빠지거나 라벨·배지가 다른 선에 붙으면 원래 그림을 유지합니다.
+  - 효과(corpus): slide 하한 미만 117→103, document 하한 미만 107→96.
+    centralized-egress, tgw, bedrock-dx 같은 큰 그림은 원래 크기 그대로입니다.
 - **리뷰:** 코드 리뷰는 Codex CLI(`codex exec`)가 맡고, 코드는 Claude Code가 씁니다.
 
 ## 남은 일 (순서대로)
@@ -40,6 +47,48 @@
 4. **저장소 전체 Codex 재리뷰(`CODE_REVIEW-2.md`).**
    - 첫 리뷰의 R1~R7은 모두 고쳤습니다.
    - 레이아웃 엔진 바깥 부분(export, PPTX, 아이콘, spec 로더, 문서)은 지금 바로 리뷰할 수 있습니다.
+5. **QA 재현 spec을 corpus로 옮기기.**
+   - 아래 "인수 검토·QA에서 나온 문제"의 재현 spec을 `tests/corpus/qa/`에 넣고 MANIFEST에 `bad` 태그를 답니다.
+   - 2단계 완료 기준의 시험 사례로 씁니다.
+6. **글자 확대 비용 줄이기.**
+   - 그림 하나 기준 중앙값은 1.29배입니다. 최악은 1.5초가 12.3초로 늘었습니다(`bench/engine2-pipeline` slide).
+   - 확대 후보마다 feedback 전체를 다시 돌리기 때문입니다.
+   - 확대를 포기한 이유와 목표 근처의 반올림 정체(nlb 10.69px)를 로그에 남깁니다.
+
+## 2026-11-07 인수 검토·QA에서 나온 문제 (막는 문제, 아직 안 고침)
+
+예제 15개 인수 검토(Codex A·B·C)와 처음 쓰는 사용자 역할 QA 4명(T1 네트워크, T2 앱·데이터, T3 엔터프라이즈,
+T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 가운데 이번에 고치지 못한 것입니다.
+재현 spec과 PNG는 개발 머신의 `~/.cache/skill-design/qa/T*/`(minimal/, repro-*.layout.yaml)에 있습니다.
+corpus에 옮겨 2단계(규칙 판정으로 배치 고르기)의 시험 사례로 쓰는 것이 다음 일입니다.
+
+- **선이 다른 노드의 아이콘·이름을 관통 (R-flow F1, LINE OVER ICON/TEXT):** 3 AZ 큰 그림에서 AZ 3 → DB 선이
+  AZ 2 서버를 지나감(T4 three_az_writer_9nodes), NAT trunk가 Route-Table 아이콘 관통(T3 nat-route-table),
+  DNS outbound가 inbound 아이콘 관통(T3 dns-trunk), SSM trunk가 서비스 라벨 관통(T3 ssm-trunk),
+  PrivateLink S3 경로가 다른 endpoint 관통(T1).
+- **라벨·배지가 다른 선에 붙음 (R-flow F5):** 복제 라벨이 SQL/요청 선에 더 가까움(T2 repro-badge-replication,
+  T3 cache-label, T4 shared_lane_5nodes), DR 복제 배지가 NLB 선에 0px(T1).
+- **접속점처럼 보이는 교차·겹침 (R-flow F2/F3, LINE ON LINE):** bend 옆 8–12px 교차(T3 ssm-trunk, dns-trunk),
+  같은 꺾임점 공유(T2 repro-false-junction), 241px 구간 공유(T4 order_14steps slide), DNS 제어선과 앱 선이
+  한 선처럼 이어짐(T1 DR slide).
+- **규칙 위반이 있어도 `Layout OK`:** F3/F5가 나와도 exit 0이라 사용자는 끝났다고 믿습니다. 2단계에서 규칙
+  판정이 엔진 선택에 들어가면 함께 정합니다(최소한 summary에 "rule violations remain"을 표시).
+- **컨테이너 포함 오류:** `in: cloud`인 private hosted zone이 Region 안에 그려짐(T3 sibling-containment,
+  경고 없음), 형제 account가 다른 account 안에 그려짐(T3 account-containment).
+- **overlay 제목 겹침:** 같은 멤버를 공유하는 overlay 3개의 제목이 겹침(T4 overlay_headers).
+- **선이 아래 AZ subnet 머리띠 관통:** T2 repro-alb-trunk-header의 slide는 797f782에서도 관통합니다.
+  `LINE IN HEADER`와 `R-border B2`가 나오고 exit 1입니다. 재판정에서는 흐름이 읽혀 경미로 봤습니다.
+  feedback 수리가 이 모양(AZ 템플릿 trunk 분기)을 아직 풀지 못합니다.
+- **slide 글자 크기 (797f782 재판정):** 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
+  - serverless-order-pipeline 4.1pt, bedrock-dx 4.35pt, nfw 7.56pt, nlb-mtls 7.9pt, centralized-egress
+  - alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
+  - 따로 쓴 slide spec(`docs/examples/specs/slides/*`)은 모두 10pt 이상이고 통과합니다.
+  - 남은 것은 자동 확대로 풀 수 있는 크기가 아니므로, spec 분할이나 slide 전용 배치가 필요합니다.
+  - 인수 재판정(main 797f782, 그림 20개): 차단 7건이고, 7건 모두 위 글자 크기입니다.
+    범례 잘림(nlb-mtls, gwlb, tgw, bedrock-dx)은 모두 해소됐고, 이전에 통과한 그림 가운데 나빠진 것은 없습니다.
+- **작성 안내 부족(처음 사용자):** multi-account 작성 패턴, CloudFront VPC origin → internal ALB 예제,
+  DX+VPN+TGW 2개 RT 패턴, Route 53 Resolver inbound/outbound 아이콘 검색 결과 없음, F3/F5에 `fix:` 안내 없음,
+  `rule:`의 펼친 edge 번호와 YAML `edges[n]` 번호가 다름, 범례 hop이 표시 이름 대신 node ID.
 
 ## 알려진 문제 (막는 문제 아님)
 
@@ -66,3 +115,8 @@
   - overlay 멤버가 VPC 안과 밖에 나뉜 경우
   - "테두리에 걸치려면 `in:`을 빼라"
 - **문서:** `layout_spec.md`의 hub 설명이 동작과 다릅니다. 선이 닿지 않는 박스는 오류가 아니라 hub None입니다.
+- **corpus 태그:** 문서 모드에도 R-fit 판정이 생기면서 `slide-fit/nfw-s2`, `slide-fit/nfw-t3`,
+  `slides/nfw-reference-architecture`의 `good R-fit` 태그 3개가 document run과 맞지 않습니다.
+  태그를 slide 모드로 한정해야 합니다.
+- **범례(note):** 줄바꿈이 홉 이름(`GWLBe → EC2` 등) 가운데서 일어날 수 있습니다.
+- **글자 확대 기록:** `w4-text-fit-validation.md`의 수치는 88872ab 기준입니다. 병합 후 수치는 위 "지금 상태"에 있습니다.
