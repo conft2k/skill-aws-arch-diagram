@@ -387,12 +387,15 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
  r. Diagonal siblings (W2; disjoint on both axes, decision DESIGN 4.3 #2 said "rows first"):
     the axis with the wider track gap, ties → y, for two nodes. A pair with a box in it that
     this sends to y goes on x instead when the solved x already keeps it its x gap apart,
-    when the solved x centers its node over the columns of a sibling box above it and of
-    one below it (inside the x range each box's nodes take, _stacked_between: on y the node
-    would be stacked in that column between the two boxes — the Spoke RT between VPC A
-    and VPC B — instead of beside them; not weighed), or when y would push the drawing's
-    extent ≥ sibling_gap and x grows it ≤ that + sibling_gap (solve(): x cost per pair
-    from an x solve with it; y cost from y solves without the open pairs and with each, the pairs put on y held, again until none
+    when on y its node would be stacked between two boxes of one column outside the lines
+    they draw past it (_stacked_between: a sibling box above its rows and one below, both
+    on one side of its columns, each with an edge from it or its contents to something
+    whose solved center lies on the node's far side, _Model.lines_past — the Spoke RT
+    between VPC A and VPC B, on the far side of their lines to the TGW, instead of beside
+    them; not weighed, whatever the node's center, footprint or dx, and it can widen the
+    drawing), or when y would push the drawing's extent ≥ sibling_gap and x grows it ≤
+    that + sibling_gap (solve(): x cost per pair from an x solve with it; y cost from y
+    solves without the open pairs and with each, the pairs put on y held, again until none
     moves; the rest re-solve x with their x separation). On x such a pair only keeps its
     row order on y: the later rows' top ≥ the earlier one's (nfw: VPC B beside the TGW,
     the slide spec's empty `att` column no longer needed; a Spoke RT above-left of a
@@ -404,8 +407,9 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     the larger text (slides/nfw without `att` and without the stacked-between rule: y 1036 ×
     578 at 9.3pt, x 1102 × 538 at 10.0pt; with the rule the weighing itself puts the
     Spoke RT beside the spokes and no retry runs). An IGW on its VPC border or a GWLB on
-    its VPC's AZ gap row (off the AZs' nodes) stays on y between the AZ boxes; a node over
-    a lone box's columns (a route table above one VPC) is weighed.
+    its VPC's AZ gap row stays on y between the AZ boxes (their lines end at it, none runs
+    past it); a node beside a lone box (a route table above one VPC) or between boxes that
+    draw no line past it is weighed.
  s. Twins (W2, layout_solve twin_sets): tree groups anywhere whose subtree has one
     signature — group types, titles (a vpc / account / region / onprem / cloud root's own
     excluded), CIDR or not, per box its nodes' icons, caption line counts (1 + sub) and

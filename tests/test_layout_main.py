@@ -95,7 +95,7 @@ class SlideDiagonals(unittest.TestCase):
         return K.slide_pt(g.canvas_w, g.canvas_h, spec.title)
 
     def test_slide_too_small_on_y_goes_on_x(self):
-        with mock.patch.object(layout_solve._Model, "over_columns", return_value=False):
+        with mock.patch.object(layout_solve, "_stacked_between", return_value=[]):
             spec, b = built("slides/nfw-reference-architecture")
             weighed = layout._build(spec, [], {}, None, "x.layout.yaml")
         self.assertNotIn("att", [t.id for t in spec.cols])
@@ -121,11 +121,12 @@ class SlideDiagonals(unittest.TestCase):
 
 
 class RouteTableBeside(unittest.TestCase):
-    """A node the solved x centers over the columns of a box above it and one below it goes
-    beside them, unweighed: the Spoke RT (at [rtsp, main]) stays strictly between the spoke VPCs' right
-    edge and the TGW's left edge, never in the spoke column between VPC A and VPC B, on
-    the slide titled, untitled and as a document, and in the document examples in both
-    modes; a node on its own VPC's AZ gap row off the AZs' columns (the GWLB) stays
+    """A node with a box above it and one below it on one side of its columns, both drawing
+    lines past it, goes beside them, unweighed: the Spoke RT (at [rtsp, main]) stays
+    strictly between the spoke VPCs and the TGW, never in the spoke column between VPC A
+    and VPC B, on the slide titled, untitled and as a document (also with the columns
+    mirrored, a wide label, a dx nudge or unequal spokes), and in the document examples in
+    both modes; a node the AZs' lines end at on its own VPC's AZ gap row (the GWLB) stays
     between them."""
 
     def load(self, name, **kw):
@@ -154,6 +155,69 @@ class RouteTableBeside(unittest.TestCase):
             for mode in ("document", "slide"):
                 with self.subTest(name=name, mode=mode):
                     self.assert_beside(name, mode=mode)
+
+    def assert_between(self, d, mirrored=False, alike=True, **kw):
+        """The Spoke RT strictly between both spoke VPCs and the TGW (a sibling gap off each
+        VPC: beside them, never in their column), whatever the solve needed (feedback
+        rounds, the slide retry), no box pair left on y."""
+        spec = layout_spec.load(copy.deepcopy(d), **kw)
+        g = layout.build(spec, [], {}, None, "x.layout.yaml").geom
+        rt, tgw, gap = g.nodes["rtsp"].footprint(), g.nodes["tgw"].footprint(), spec.const.sibling_gap
+        for v in ("vpca", "vpcb"):
+            r = g.groups[v].rect
+            room = r.x0 - rt.x1 if mirrored else rt.x0 - r.x1
+            self.assertGreaterEqual(room, gap - 0.01, v)
+        if mirrored:
+            self.assertGreater(rt.x0, tgw.x1)
+        else:
+            self.assertLess(rt.x1, tgw.x0)
+        self.assertEqual(g.diag_y, 0)
+        if alike:
+            a, c = g.groups["vpca"].rect, g.groups["vpcb"].rect
+            self.assertEqual((a.x0, a.w, a.h), (c.x0, c.w, c.h))
+
+    MODES = ({}, {"title": False}, {"mode": "document"})
+
+    def nfw(self):
+        d = spec_dict("slides/nfw-reference-architecture")
+        return d, {n["id"]: n for n in d["nodes"]}
+
+    def test_mirrored_columns(self):
+        """Spokes on the right (the TGW left of the table): the table's footprint overlaps
+        the spoke nodes' x (no title) or the VPC rects by a few px (document) without its
+        center inside them; it still goes beside them, between them and the TGW."""
+        d, _ = self.nfw()
+        d["cols"] = ["inet", "igw", "nat", "fw", "eni", "rtfw", "tgw", "rtsp", "spoke"]
+        for kw in self.MODES:
+            with self.subTest(**kw):
+                self.assert_between(d, mirrored=True, **kw)
+
+    def test_wide_label(self):
+        """A table label far wider than the spoke column (center off the spoke nodes)."""
+        d, nodes = self.nfw()
+        nodes["rtsp"].update(label="Spoke route table", sub="0.0.0.0/0 → Inspection VPC attachment")
+        for kw in self.MODES:
+            with self.subTest(**kw):
+                self.assert_between(d, **kw)
+
+    def test_nudged_table(self):
+        """dx: 30 moves the table's center off the spoke nodes' x range."""
+        d, nodes = self.nfw()
+        nodes["rtsp"]["dx"] = 30
+        for kw in self.MODES:
+            with self.subTest(**kw):
+                self.assert_between(d, **kw)
+
+    def test_unequal_spokes(self):
+        """VPC A two columns wide, VPC B one: the table already beside VPC B still goes
+        beside VPC A, not under it."""
+        d, _ = self.nfw()
+        d["cols"] = ["spoke", "spoke2", "rtsp", "tgw", "rtfw", "eni", "fw", "nat", "igw", "inet"]
+        d["nodes"].insert(1, {"id": "lam", "icon": "service/AWS-Lambda", "label": "Lambda", "in": "sna",
+                              "at": ["spoke2", "az1"]})
+        for kw in self.MODES:
+            with self.subTest(**kw):
+                self.assert_between(d, alike=False, **kw)
 
     def test_gwlb_stays_on_the_az_gap_row(self):
         for mode in ("document", "slide"):

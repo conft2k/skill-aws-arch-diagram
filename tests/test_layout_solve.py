@@ -1216,22 +1216,51 @@ class DiagonalTest(unittest.TestCase):
         a1, a2 = g.groups[f"az{v}.1"].rect, g.groups[f"az{v}.2"].rect
         return a2.y0 - a1.y1, a1.h, a2.h
 
-    def test_node_over_the_box_columns_goes_beside(self):
-        """A node on a row between two stacked boxes whose column the solved x centers it
-        over (the Spoke RT at [rt, main] between VPC A on r1 and VPC B on r2, the rt column
-        holding nothing else) goes beside both boxes on x, unweighed, not into the gap
-        between them; diag_y counts no pair on y."""
+    @staticmethod
+    def stacked_spec(lines=True):
+        """VPC A on r1 and VPC B on r2 in column c, the Spoke RT at [rt, main] between their
+        rows one column right, the TGW at [tgw, main] beyond it; lines: VPC A and VPC B
+        each draw a line to the TGW (past the table)."""
         groups = [dict(id="vpca", type="vpc", label="VPC A"), dict(id="vpcb", type="vpc", label="VPC B")]
         nodes = [dict(id="ea", icon="service/Amazon-EC2", label="EC2", parent="vpca", col="c", row="r1"),
                  dict(id="eb", icon="service/Amazon-EC2", label="EC2", parent="vpcb", col="c", row="r2"),
                  dict(id="rt", icon="resource/Amazon-Route-53_Route-Table", label="Spoke RT", col="rt",
-                      row="main")]
-        spec = build("stack", ["c", "rt"], ["r1", "main", "r2"], groups, nodes)
+                      row="main"),
+                 dict(id="tgw", icon="service/AWS-Transit-Gateway", label="TGW", col="tgw", row="main")]
+        spec = build("stack", ["c", "rt", "tgw"], ["r1", "main", "r2"], groups, nodes)
+        if lines:
+            spec.edges = [M.Edge(i, v, "tgw", "<->", "group", "node") for i, v in enumerate(("vpca", "vpcb"))]
+        return spec
+
+    def test_node_between_boxes_inside_their_lines_goes_beside(self):
+        """A node on a row between two stacked boxes of one column whose lines run past it
+        (the Spoke RT between VPC A and VPC B, left of the TGW they connect to) goes beside
+        both boxes on x, unweighed, not into the gap between them; diag_y counts no pair
+        on y."""
+        spec = self.stacked_spec()
+        m = LS._Model(spec)
+        _, _, _, m.xv, m.nodes_x = LS._x_twins(m, [])
+        m.diag_open = []
+        m.build("y")
+        self.assertEqual(len(LS._stacked_between(m)), len(m.diag_open))
+        self.assertGreater(len(m.diag_open), 0)
         g = LS.solve(spec, [])
         rt = g.nodes["rt"].footprint()
         for v in ("vpca", "vpcb"):
             self.assertGreaterEqual(rt.x0 - g.groups[v].rect.x1, spec.const.sibling_gap - 0.01, v)
+        self.assertLess(rt.x1, g.nodes["tgw"].footprint().x0)
         self.assertEqual(g.diag_y, 0)
+
+    def test_node_between_boxes_without_lines_is_weighed(self):
+        """The same boxes drawing no line past the node: nothing to read it against, so the
+        pairs are weighed like any other (_stacked_between leaves them)."""
+        spec = self.stacked_spec(lines=False)
+        m = LS._Model(spec)
+        _, _, _, m.xv, m.nodes_x = LS._x_twins(m, [])
+        m.diag_open = []
+        m.build("y")
+        self.assertGreater(len(m.diag_open), 0)
+        self.assertEqual(LS._stacked_between(m), [])
 
     def test_igw_on_the_gap_row_stays_between_the_azs(self):
         """The IGW on the VPC border, off the AZs' columns: on y between them, counted."""
