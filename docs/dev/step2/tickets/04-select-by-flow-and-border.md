@@ -7,6 +7,7 @@
 - Placements the spec fixes (shape, bend coordinates, label_at, step_at, xy, offsets, points) are never varied. A violation that one of them keeps is warned about.
 - A new summary line names the winning candidate (its index and the decisions that differ from the default) and the violations it removed, or says the default was kept. The existing final line that counts remaining rule violations stays.
 - The winner then goes through the existing later stages (ticket 03).
+- From ticket 03 review (carried over): the first render's feedback rounds and fixed-answer repairs are not yet guarded. The selection wrapper's verdict comparison must cover them within the runtime budget. Reference branch `t03-verdict` (8aadae3) guarded every round by verdict: R-flow −30, but check problems +44 and the worst diagram 5.9× slower. Do not copy it as is.
 
 **Blocked by:** 01, 02, 03
 
