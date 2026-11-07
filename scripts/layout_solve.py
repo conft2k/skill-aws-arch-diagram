@@ -856,11 +856,11 @@ class _Model:
         return sorted(rows), sorted(cols)
 
     def _shape(self, gid, rank, root=False):
-        """(signature, its subtree's box ids in canonical order): the group type tree with
-        each box's type, title (not a named root's own: two App VPCs are twins), CIDR line
-        or not and track ranks, and per box its nodes' icons, caption line counts and track
-        ranks. Children come
-        in signature order (spec order breaks ties), so twins' boxes correspond by index."""
+        """(signature, its subtree's box ids, its nodes' ids, both in canonical order): the
+        group type tree with each box's type, title (not a named root's own: two App VPCs
+        are twins), CIDR line or not and track ranks, and per box its nodes' icons, caption
+        line counts and track ranks. Children come in signature order (spec order breaks
+        ties), so twins' boxes and nodes correspond by index."""
         g = self.spec.groups[gid]
         ry, rx = rank
 
@@ -870,15 +870,40 @@ class _Model:
         kids = sorted(((self._shape(c, rank), k) for k, c in enumerate(self.child_groups[gid])),
                       key=lambda it: (repr(it[0][0]), it[1]))
         nodes = []
-        for nid in self.child_nodes[gid] + self.border_of.get(gid, []):
+        for k, nid in enumerate(self.child_nodes[gid] + self.border_of.get(gid, [])):
             n = self.spec.nodes[nid]
-            nodes.append((n.icon, 1 + len(n.sub), rel(self.node_rng(nid, "y"), ry), rel(self.node_rng(nid, "x"), rx),
-                          bool(n.on), n.side if n.on else None))
+            nodes.append(((n.icon, 1 + len(n.sub), rel(self.node_rng(nid, "y"), ry), rel(self.node_rng(nid, "x"), rx),
+                           bool(n.on), n.side if n.on else None), k, nid))
+        nodes.sort(key=lambda it: (repr(it[0]), it[1]))
         label = None if root and g.type in TWIN_NAMED else g.label
         sig = (g.type, label, bool(g.cidr), rel(self.group_rng(gid, "y"), ry), rel(self.group_rng(gid, "x"), rx),
-               tuple(sh[0] for sh, _ in kids), tuple(sorted(nodes, key=repr)))
-        order = [gid] + [d for (_, ds), _ in kids for d in ds]
-        return sig, order
+               tuple(sh[0] for sh, _ in kids), tuple(t for t, _, _ in nodes))
+        order = [gid] + [d for (_, ds, _), _ in kids for d in ds]
+        norder = [nid for _, _, nid in nodes] + [n for (_, _, ns), _ in kids for n in ns]
+        return sig, order, norder
+
+    def _overlay_shape(self, norder, rank):
+        """The overlays over gid's subtree (norder: its nodes in signature order) as part of
+        its signature: per overlay its type, title, header placement, track ranks and
+        members by their index in norder, sorted. None when an overlay crosses the
+        subtree's boundary (some members inside, some out, or a span past its tracks):
+        such a box twins with nothing."""
+        idx = {nid: k for k, nid in enumerate(norder)}
+        out = []
+        for o in self.overlays:
+            inside = [m in idx for m in o.over]
+            if not any(inside):
+                continue
+            if not all(inside):
+                return None
+            rr = []
+            for axis, rk in (("y", rank[0]), ("x", rank[1])):
+                r = self.group_rng(o.id, axis)
+                if r is not None and not (r[0] in rk and r[1] in rk):
+                    return None
+                rr.append(None if r is None else (rk[r[0]], rk[r[1]]))
+            out.append((o.type, o.label, o.header, tuple(rr), tuple(sorted(idx[m] for m in o.over))))
+        return tuple(sorted(out, key=repr))
 
     def twin_sets(self) -> List[list]:
         """Containers of one structure anywhere in the drawing (twins), per class of two or
@@ -894,8 +919,11 @@ class _Model:
             if not rows and not cols:
                 continue
             rank = ({r: k for k, r in enumerate(rows)}, {c: k for k, c in enumerate(cols)})
-            sig, order = self._shape(g.id, rank, root=True)
-            key = (repr(sig), g.instance if g.template else None)
+            sig, order, norder = self._shape(g.id, rank, root=True)
+            over = self._overlay_shape(norder, rank)
+            if over is None:
+                continue
+            key = (repr((sig, over)), g.instance if g.template else None)
             classes[key].append((g.id, ([self.spec.rows[i].id for i in rows], [self.spec.cols[i].id for i in cols]),
                                  order))
         self._twins = [v for v in classes.values() if len(v) > 1]

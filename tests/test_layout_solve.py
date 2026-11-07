@@ -287,6 +287,23 @@ def side_vpcs(label2="EC2 with a much longer label here", icon2="service/Amazon-
     return build("side", ["c1", "d1"], ["r1", "r2"], groups, nodes)
 
 
+def asg_vpcs(asg=(True, False), label="Auto Scaling group web tier"):
+    """Two VPCs side by side, each one Private subnet with two EC2s on one row; an
+    ASG over VPC v's two EC2s where asg[v - 1] (its long title widens what it is over)."""
+    groups = [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud")]
+    nodes, cols = [], []
+    for v in ("1", "2"):
+        groups += [dict(id=f"vpc{v}", type="vpc", label=f"VPC {v}", cidr=f"10.{v}.0.0/16", parent="region"),
+                   dict(id=f"sn{v}", type="private", label="Private subnet", parent=f"vpc{v}")]
+        for k in ("a", "b"):
+            cols.append(f"{k}{v}")
+            nodes.append(dict(id=f"e{v}{k}", icon="service/Amazon-EC2", label="EC2", parent=f"sn{v}",
+                              col=f"{k}{v}", row="r1"))
+    groups += [dict(id=f"asg{v}", type="asg", label=label, over=[f"e{v}a", f"e{v}b"])
+               for v, on in zip(("1", "2"), asg) if on]
+    return build("asg", cols, ["r1"], groups, nodes)
+
+
 def flowcol_spec(mode="slide", pitch=100, align="center", n=4):
     """mini_spec plus regional services in a flow column right of the VPC (alb slide)."""
     base = mini_spec(mode)
@@ -1258,6 +1275,32 @@ class TwinTest(unittest.TestCase):
         self.assertEqual(LS._Model(spec).twin_sets(), [])
         g = LS.solve(spec, [])
         self.assertNotEqual(g.groups["sn1"].rect.w, g.groups["sn2"].rect.w)
+
+    def test_an_overlay_is_part_of_the_structure(self):
+        """Only VPC 1 has an ASG over its EC2s: VPC 2 and its subnet are no twins of VPC 1's
+        and keep their own (narrower) shape; with the same ASG in both they twin again."""
+        spec = asg_vpcs((True, False))
+        self.assertEqual(LS._Model(spec).twin_sets(), [])
+        g = LS.solve(spec, [])
+        bare = LS.solve(asg_vpcs((False, False)), [])
+        for d in ("vpc2", "sn2"):
+            self.assertEqual(g.groups[d].rect.w, bare.groups[d].rect.w, d)
+        self.assertLess(g.groups["vpc2"].rect.w, g.groups["vpc1"].rect.w)
+        self.assertEqual(g.warnings, [])
+        both = asg_vpcs((True, True))
+        m = LS._Model(both)
+        self.assertEqual(sorted(sorted(c[0] for c in cls) for cls in m.twin_sets()),
+                         [["sn1", "sn2"], ["vpc1", "vpc2"]])
+        gb = LS.solve(both, [])
+        self.assertEqual(self.rel(gb, "sn1", "vpc1"), self.rel(gb, "sn2", "vpc2"))
+        self.assertEqual(self.rel(gb, "asg1", "vpc1"), self.rel(gb, "asg2", "vpc2"))
+
+    def test_an_overlay_across_the_boundary_rules_out_twins(self):
+        """An ASG over one EC2 of each VPC crosses both VPCs: neither twins with the other."""
+        spec = asg_vpcs((False, False))
+        spec.groups["asg"] = Group(src="groups[9]", id="asg", type="asg", label="ASG", over=["e1b", "e2a"],
+                                   cols=("b1", "a2"), rows=("r1", "r1"))
+        self.assertEqual(LS._Model(spec).twin_sets(), [])
 
     def test_template_instances_keep_their_rule(self):
         """A slide's AZ instances each hug their content: subnets of AZ 1 and AZ 2 are not

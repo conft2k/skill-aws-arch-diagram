@@ -380,10 +380,12 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
  s. Twins (W2, layout_solve twin_sets): tree groups anywhere whose subtree has one
     signature — group types, titles (a vpc / account / region / onprem / cloud root's own
     excluded), CIDR or not, per box its nodes' icons, caption line counts (1 + sub) and
-    border sides, every range as ranks among the tracks the subtree covers — plus, for a
-    template instance, its instance number (instances of one template keep DESIGN 2.2's
-    rule). Per axis each twin's measures from its L / T edge (its R / B, each subtree
-    box's two edges in signature order, each covered track) are raised to the class's
+    border sides, every range as ranks among the tracks the subtree covers, each overlay
+    whose members all lie in the subtree (type, title, header, ranges, members by index;
+    an overlay crossing the subtree's boundary rules the box out) — plus, for a template
+    instance, its instance number (instances of one template keep DESIGN 2.2's rule).
+    Per axis each twin's measures from its L / T edge (its R / B, each subtree box's two
+    edges in signature order, each covered track) are raised to the class's
     largest by soft lower bounds (why "twins alike …", dropped first in a positive cycle),
     re-solving x (with hug and flow centering) and y (with even_insets) until they hold, at
     most TWIN_ROUNDS; a round that leaves them less alike than the best one stops the loop
