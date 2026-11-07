@@ -14,8 +14,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import svg2pptx  # noqa: E402
-from pptx import Presentation  # noqa: E402
+try:
+    import svg2pptx  # noqa: E402
+    from pptx import Presentation  # noqa: E402
+except ImportError as err:  # python-pptx / cairosvg not installed: skip, like test_examples' export column
+    raise unittest.SkipTest(f"needs python-pptx and cairosvg ({err})")
 
 TEXT = '<text x="20" y="50" font-size="14" fill="#FFFFFF">Hello</text>'
 SHAPE = '<rect x="20" y="20" width="40" height="30" fill="#FF9900"/>'

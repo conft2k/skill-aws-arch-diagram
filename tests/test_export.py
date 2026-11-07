@@ -3,6 +3,7 @@
 
     uv run --no-project --with python-pptx --with cairosvg python3 tests/test_export.py
 """
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPORT = ROOT / "scripts" / "export.py"
+MISSING = [m for m in ("pptx", "cairosvg") if importlib.util.find_spec(m) is None]
+if MISSING:  # export.py imports them: skip, like test_examples' export column
+    raise unittest.SkipTest(f"needs python-pptx and cairosvg (missing: {', '.join(MISSING)})")
 
 
 def draft(path, color):
