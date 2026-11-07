@@ -399,10 +399,14 @@ class _Model:
                 self.add(axis, gl, gr, w, f"{what} {fmt_num(w)} {gid}", own)
             span = g.span_rows
         if span:
+            # the spanned track centers as if a node sat there with no footprint: pad_node,
+            # or pad_left / pad_right / pad_bottom on that side (the top keeps pad_node)
             pre = "col" if axis == "x" else "row"
-            p = self.pad_node(gid)
-            self.add(axis, gl, (f"{pre}:{span[0]}", 0), p, f"span {gid} ⊃ {span[0]}", own)
-            self.add(axis, (f"{pre}:{span[1]}", 0), gr, p, f"span {gid} ⊃ {span[1]}", own)
+            p0 = self.side_pad(gid, "L", node=True) if axis == "x" else self.pad_node(gid)
+            p1 = self.side_pad(gid, "R", node=True) if axis == "x" else \
+                (g.pad_bottom if g.pad_bottom is not None else self.pad_node(gid))
+            self.add(axis, gl, (f"{pre}:{span[0]}", 0), p0, f"span {fmt_num(p0)} {gid} ⊃ {span[0]}", own)
+            self.add(axis, (f"{pre}:{span[1]}", 0), gr, p1, f"span {fmt_num(p1)} {gid} ⊃ {span[1]}", own)
 
     def _gap(self, axis, a: _Item, b: _Item):
         """Clearance between two siblings, a before b on this axis."""

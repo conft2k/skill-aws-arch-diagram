@@ -297,7 +297,8 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     `pad_left` / `pad_right` replace `pad` on one side only (room for a label beside a line
     on that side); `pad_bottom` replaces it at the
     bottom (child box → border, the header-height minimum; a node's footprint bottom →
-    border, never closer than Mode.label_bottom from its last baseline).
+    border, never closer than Mode.label_bottom from its last baseline). A `span` keeps
+    pad_node from its track centers, or pad_left / pad_right / pad_bottom on those sides.
  n. Router space plan() adds beyond DESIGN 4.3 #10 (W5, from the golden renders):
     a vertical leg at a node through the top border of the node's boxes the other end is
     outside of passes right of their header (hard: checker width + 5; soft: 0.6 em + 8;

@@ -705,6 +705,27 @@ class ConstraintTest(unittest.TestCase):
         self.assertEqual(node_gap(pad_bottom=2)[0], K.DOCUMENT.label_bottom)
         self.assertTrue(40 <= node_gap(pad_bottom=40)[1] < 41)   # from the footprint bottom (rounded up)
 
+    def test_span_only_box_side_pads(self):
+        """A box with a span and no node takes pad_left / pad_right / pad_bottom from the
+        spanned track centers on that side (pad_node elsewhere), like a node there."""
+        def solved(**kw):
+            spec = build("spanpad", ["a", "e"], ["r"],
+                         [dict(id="cloud", type="cloud"), dict(id="vpc", type="vpc", label="VPC", parent="cloud"),
+                          dict(id="sn", type="private", label="App subnet", parent="vpc"),
+                          dict(id="empty", type="public", label="Spare", parent="vpc", **kw)],
+                         [dict(id="ec2", icon="service/Amazon-EC2", label="EC2", parent="sn", col="a", row="r")])
+            e = spec.groups["empty"]
+            e.cols = e.span_cols = ("e", "e")
+            e.rows = e.span_rows = ("r", "r")
+            g = LS.solve(spec, [])
+            b, x, y = g.groups["empty"].rect, g.cols["e"], g.rows["r"]
+            return g, (x - b.x0, b.x1 - x, b.y1 - y)
+        _, base = solved()
+        self.assertLess(max(base), 90)
+        g, got = solved(pad_left=90, pad_right=120, pad_bottom=100)
+        self.assertEqual(got, (90, 120, 100))
+        self.assertFalse(g.warnings)
+
     def test_side_by_side_labels_by_line(self):
         """Two nodes on one row are kept apart by the label lines level with each other: a
         long last line below the neighbour's shorter stack sets nothing, and the result

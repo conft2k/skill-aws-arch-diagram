@@ -125,7 +125,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   row is its subnet's first; over a member lower in its subnet (another node above it) or in
   no box, it sits above the member like a long one.
 - A group covers the tracks of what it contains. `span: {cols: [pub, pub], rows: [a, b]}`
-  stretches it over tracks with no node of its own (an empty public subnet).
+  stretches it over tracks with no node of its own (an empty public subnet); the spanned
+  track centers keep `pad` (or the node padding) from the border, `pad_left` / `pad_right` /
+  `pad_bottom` on those sides.
 - `pad`, `pad_top`, `pad_left`, `pad_right`, `pad_bottom`, `min_w`, `min_h` (px): extra room — `pad_top`
   sets the box top → first icon distance (bedrock-dx 88: a bus above the endpoints);
   `pad_left` / `pad_right` replace `pad` on one side only (room for a label right of a
