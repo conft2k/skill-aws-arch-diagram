@@ -1,7 +1,7 @@
 # Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with
 name: nfw-reference-architecture
 mode: document
-cols: [spoke, att, rtsp, tgw, rtfw, eni, fw, nat, igw, inet]   # att: an empty column so VPC B (az2, spoke) and the Spoke RT (main, rtsp) are two columns apart and separate on x, not on y; rtsp / rtfw: each TGW route table beside the attachments it is associated with, Spoke RT between the spoke VPCs and the TGW, Firewall RT between the TGW and the Inspection VPC
+cols: [spoke, rtsp, tgw, rtfw, eni, fw, nat, igw, inet]   # rtsp / rtfw: each TGW route table beside the attachments it is associated with, Spoke RT between the spoke VPCs and the TGW, Firewall RT between the TGW and the Inspection VPC
 rows: [az1, main, az2]
 
 groups:
