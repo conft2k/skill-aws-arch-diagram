@@ -9,8 +9,11 @@ The contract (signatures, z layers, ids) is layout_model's docstring; numbers ar
 Shape choice (DESIGN 4.5) is a pure function of the Spec, recomputed by plan() and draw():
   0. `points` → "P"; `shape`; from_side / to_side imply one (both horizontal → H/HVH, …).
   1. row ranges overlap → H; column ranges overlap → V (a colspan node covers its whole
-     span, a group its track range, a flow-row node its parent's columns, a flow-column
-     node its parent's rows; two nodes of one flow column are apart by stack order).
+     span, a group its track range, a flow-row node its parent's columns; a flow-column
+     node, or a box holding only such nodes, sits between rows at its stack's slot,
+     Spec.flow_slot: above the parent's first row (align top), below its last (bottom),
+     at its middle (center), so it never shares a grid row; two nodes of one flow column
+     are apart by stack order).
      Straight edges mark the node sides they use.
   2. (a colspan is caught by 1: its V / H to a node under one of its tracks draws with a
      jog through a free bend, like a VHV.)
@@ -120,6 +123,10 @@ def _end(spec: Spec, eid: str, kind: str, ci, ri) -> _End:
         g = spec.groups[eid]
         c = (ci[g.cols[0]], ci[g.cols[1]]) if g.cols else None
         r = (ri[g.rows[0]], ri[g.rows[1]]) if g.rows else None
+        a = None if g.rows else spec.float_align(eid)
+        if a is not None:                                   # a box holding only flow columns: its slot
+            s = spec.flow_slot(g.parent, a)
+            r = (s, s) if s is not None else None
         return _End(eid, kind, c, r)
     n = spec.nodes[eid]
     if n.xy is not None:
@@ -138,9 +145,9 @@ def _end(spec: Spec, eid: str, kind: str, ci, ri) -> _End:
     r = None
     if n.row is not None:
         r = (ri[n.row], ri[n.row])
-    elif n.parent and spec.groups[n.parent].rows:          # flow-column node: somewhere in its parent
-        pr = spec.groups[n.parent].rows
-        r = (ri[pr[0]], ri[pr[1]])
+    elif n.col is not None and n.col2 is None:             # flow-column node: its stack's slot between rows
+        s = spec.flow_slot(n.parent, spec.track(n.col).align)
+        r = (s, s) if s is not None else None
     return _End(eid, kind, c, r)
 
 

@@ -16,8 +16,10 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                on the VPC border (mask kept MASK_CLEAR from borders), 6 the AZ gap row,
                7 colspan (reserved from its center for the span a first solve found), 8 flow rows
                (own x variables, pitch, centered in the parent afterwards) and flow columns
-               (own y variables, pitch or label stack + stack gap, then top / centered /
-               bottom in the parent's height; no row tracks), 9 overlays (ASG:
+               (own y variables, pitch or label stack + stack gap, kept off same-parent
+               siblings sharing the column by slot, then top / centered / bottom in the
+               parent's height, with tied xy nodes and member-only overlays; no row
+               tracks; a box of stack nodes only likewise), 9 overlays (ASG:
                members, header right/below, inside each member subnet, a short title beside the
                first member row), 10 the caller's Requirements, 11 canvas margin (and the
                note's requirements), plus template
@@ -146,7 +148,9 @@ class _Model:
         self.flow = {nid for nid, n in spec.nodes.items() if n.xy is None and n.col is None}
         self.stacks = spec.flow_stacks()                                     # flow columns
         self.flowc = {nid for ids in self.stacks.values() for nid in ids}
-        self.stack_shift: Dict[str, float] = {}                              # nid → align shift (explain)
+        self.stack_of = {nid: (key, k) for key, ids in self.stacks.items() for k, nid in enumerate(ids)}
+        self.floats = {gid: a for gid in spec.groups for a in [spec.float_align(gid)] if a}   # boxes of stacks only
+        self.stack_shift: Dict[str, List[Tuple[str, str, float]]] = defaultdict(list)   # nid → align moves (explain)
         self.tree = [g for g in spec.groups.values() if not g.overlay]
         self.overlays = [g for g in spec.groups.values() if g.overlay]
         self.child_groups: Dict[Optional[str], List[str]] = defaultdict(list)
@@ -291,6 +295,8 @@ class _Model:
                 self._overlay_x(g)
         for parent in [None] + [g.id for g in self.tree]:
             self._siblings(axis, parent)
+            if axis == "y":
+                self._float_siblings(parent)
         for nid, n in spec.nodes.items():
             if n.on:
                 self._border(axis, nid)
@@ -465,7 +471,7 @@ class _Model:
         items = [self.item_group(g) for g in self.child_groups[parent]]
         if len(items) + len(self.child_nodes[parent]) > 1:
             for it in items:
-                if (it.xr if axis == "x" else it.yr) is None:
+                if (it.xr if axis == "x" else it.yr) is None and not (axis == "y" and it.gid in self.floats):
                     g = self.spec.groups[it.gid]
                     key = "cols" if axis == "x" else "rows"
                     self.warnings.append(f"{g.src} {g.id}: no node inside and no span on its {key}, so nothing "
@@ -495,6 +501,53 @@ class _Model:
                         continue
                 first, second = (a, b) if ra[1] < rb[0] else (b, a)
                 self._sep(axis, first, second, owner)
+
+    def _float_units(self, parent):
+        """The y blocks of parent's children that have no row of their own: each flow
+        column's stack (its first node's top → its last node's bottom) and each box holding
+        only stacks, as (x range, top item, bottom item, slot among the rows)."""
+        out = []
+        for (p, col), ids in self.stacks.items():
+            if p == parent:
+                out.append(((self.ci[col], self.ci[col]), self.item_node(ids[0]), self.item_node(ids[-1]),
+                            self.spec.flow_slot(p, self.spec.track(col).align)))
+        for gid in self.child_groups[parent]:
+            if gid in self.floats:
+                it = self.item_group(gid)
+                out.append((it.xr, it, it, self.spec.flow_slot(parent, self.floats[gid])))
+        return out
+
+    def _float_siblings(self, parent):
+        """Siblings that share a flow column's x with a stack (a node pinned on one of its
+        grid rows, a box over its column, another stack box) are kept off it on y: above the
+        stack when the middle of their rows lies above the stack's slot (Spec.flow_slot),
+        else below; two stack blocks by slot, then spec order."""
+        units = self._float_units(parent)
+        if not units:
+            return
+        others = [self.item_group(g) for g in self.child_groups[parent] if g not in self.floats]
+        others += [self.item_node(n) for n in self.child_nodes[parent] if n not in self.flowc]
+        for gid in self.child_groups[parent]:
+            others += [self.item_node(b) for b in self.border_of.get(gid, [])]
+        if parent is not None:
+            others += [self.item_node(b) for b in self.border_of.get(parent, [])]
+        owner = f"group:{parent}" if parent else "canvas"
+        for xr, top, bot, slot in units:
+            for o in others:
+                if o.xr is None or o.yr is None or _disjoint(xr, o.xr):
+                    continue                     # x keeps them apart (or nothing places it)
+                if slot is not None and (o.yr[0] + o.yr[1]) / 2 < slot:
+                    self._sep("y", o, top, owner)
+                else:
+                    self._sep("y", bot, o, owner)
+        for i, (xa, ta, ba, sa) in enumerate(units):
+            for xb, tb, bb, sb in units[i + 1:]:
+                if _disjoint(xa, xb):
+                    continue
+                if (sb if sb is not None else 0) < (sa if sa is not None else 0):
+                    self._sep("y", bb, ta, owner)
+                else:
+                    self._sep("y", ba, tb, owner)
 
     def _align(self, axis, a, b):
         """Sibling boxes over the same tracks share both edges on this axis (subnets of one
@@ -571,28 +624,77 @@ class _Model:
                          f"node:{b}")
 
     def align_stacks(self, cons: List[Requirement], yv: Dict[str, float]):
-        """Move each flow column down from its minimal (top) position: centered in its
-        parent's height (the icon top of the first node to the footprint bottom of the last),
-        or to the bottom, as far as every constraint allows."""
+        """Move each flow column, and each box holding only stacks, down from its minimal
+        (top) position: centered in its parent's height (a stack from its first node's icon
+        top to its last node's footprint bottom; at the top level, the height of the rest of
+        the drawing), or to the bottom, as far as every constraint allows. Innermost first.
+        What is tied to the block moves with it (an `xy` node on a stack node's y, an overlay
+        over stack members only); anything else it would push limits the move."""
+        units = []
         for (parent, col), ids in self.stacks.items():
-            align = self.spec.track(col).align
-            if parent is None or align == "top":
-                continue
             mem = {f"node:{i}" for i in ids}
+            ext = (f"node:{ids[0]}", self.foot[ids[0]].top, f"node:{ids[-1]}", self.foot[ids[-1]].bot)
+            units.append((parent, self.spec.track(col).align, mem, ext, None))
+        for gid, align in self.floats.items():
+            mem = {f"group:{g}.{e}" for g in self.spec.groups if gid in self.spec.ancestors(g) for e in "TB"}
+            mem |= {self.nref(n, "y", "lo")[0] for n in self.spec.nodes if gid in self.spec.node_chain(n)}
+            ext = (f"group:{gid}.T", 0.0, f"group:{gid}.B", 0.0)
+            units.append((self.spec.groups[gid].parent, align, mem, ext, gid))
+        depth = {None: -1, **{g: self.spec.groups[g].depth for g in self.spec.groups}}
+        for parent, align, mem, (tv, to, bv, bo), gid in sorted(units, key=lambda u: -depth[u[0]]):
+            if align == "top":
+                continue
+            mem = self._followers(cons, mem)
             slack = _shift_slack(cons, yv, mem)
-            if align == "center":
-                top = yv[f"node:{ids[0]}"] + self.foot[ids[0]].top
-                bot = yv[f"node:{ids[-1]}"] + self.foot[ids[-1]].bot
-                want = (yv[f"group:{parent}.T"] + yv[f"group:{parent}.B"]) / 2 - (top + bot) / 2
+            top, bot = yv[tv] + to, yv[bv] + bo
+            if parent is None:
+                rest = self._top_extent(yv, mem, gid)
+                if rest is None:
+                    continue
+                pt, pb = rest
             else:
-                want = slack
+                pt, pb = yv[f"group:{parent}.T"], yv[f"group:{parent}.B"]
+            want = (pt + pb) / 2 - (top + bot) / 2 if align == "center" else (slack if parent else pb - bot)
             lim = min(want, slack)
             shift = math.floor(lim + 1e-9) if lim != float("inf") else 0
             if shift > 0:
                 for v in mem:
                     yv[v] += shift
-                for i in ids:
-                    self.stack_shift[i] = shift
+                where = parent or "the drawing"
+                for v in mem:
+                    if v.startswith("node:") and v[5:] in self.flowc:
+                        self.stack_shift[v[5:]].append((align, where, shift))
+
+    def _followers(self, cons: List[Requirement], mem: set) -> set:
+        """mem plus what a move of it carries along: `xy` nodes a constraint ties to it and
+        overlays whose members all move."""
+        mem = set(mem)
+        while True:
+            add = {c.b for c in cons if c.a in mem and c.b not in mem and c.b.startswith("node:")
+                   and self.spec.nodes[c.b[5:]].xy is not None}
+            for g in self.overlays:
+                vs = {f"group:{g.id}.T", f"group:{g.id}.B"}
+                if not vs <= mem and all(self.nref(m, "y", "lo")[0] in mem for m in g.over):
+                    add |= vs
+            add -= mem
+            if not add:
+                return mem
+            mem |= add
+
+    def _top_extent(self, yv, mem, gid) -> Optional[Tuple[float, float]]:
+        """The y extent of the top-level boxes and nodes outside mem (a top-level stack
+        aligns in it); None when there are none."""
+        ext = [(yv[f"group:{g}.T"], yv[f"group:{g}.B"]) for g in self.child_groups[None]
+               if g != gid and f"group:{g}.T" not in mem]
+        for nid in self.child_nodes[None] + [b for v, bs in self.border_of.items()
+                                             if self.spec.groups[v].parent is None for b in bs]:
+            v, o = self.nref(nid, "y", "lo")
+            if v not in mem and v in yv:
+                f = self.foot[nid]
+                ext.append((yv[v] + o + f.top, yv[v] + o + f.bot))
+        if not ext:
+            return None
+        return min(e[0] for e in ext), max(e[1] for e in ext)
 
     def _badge_clear_x(self):
         """Slides: the nodes on a badged box's first row sit right of its badge (icon left ≥
@@ -688,6 +790,19 @@ class _Model:
             for m in self._overlay_first(g, nodes=True):
                 self.add("x", gl, self.nref(m, "x", "lo"), d, f"beside {gid} title {fmt_num(d)} ⊃ {m}", own)
             self.no_hug.add(f"group:{gid}.T")      # the top stays under the subnet header, not on the icon
+        # over stack members: no subnet holds it, so keep it off the parent's other children
+        # left and right of the column (a long title would reach over the VPC beside it)
+        for (parent, col), ids in self.stacks.items():
+            if not set(ids) & set(g.over):
+                continue
+            c = self.ci[col]
+            sibs = [self.item_group(x) for x in self.child_groups[parent]]
+            sibs += [self.item_node(n) for n in self.child_nodes[parent] if n not in ids]
+            for o in sibs:
+                if o.xr is not None and o.xr[1] < c:
+                    self.add("x", self.hi(o, "x"), gl, mc.sibling_gap, f"overlay {gid} right of {o.key}", own)
+                elif o.xr is not None and o.xr[0] > c:
+                    self.add("x", gr, self.lo(o, "x"), mc.sibling_gap, f"overlay {gid} left of {o.key}", own)
         first = self._overlay_first(g)
         for s in self._overlay_subnets(g):
             sg = self.spec.groups[s]
@@ -710,12 +825,36 @@ class _Model:
         return out
 
     def _overlay_first(self, g, last=False, nodes=False):
-        """Member subnets (or, nodes=True, the members) in the overlay's first (or last) member row."""
-        rows = [self.ri.get(self.spec.nodes[m].row, 0) for m in g.over]
+        """Member subnets (or, nodes=True, the members) in the overlay's first (or last) member
+        row. A flow-column member sits at its stack's slot (Spec.flow_slot); of a stack only
+        the first node of a top-aligned column is a first-row member (the others, and a
+        centered or bottom stack, sit below their subnet's top)."""
+        rows = [self._member_row(m) for m in g.over]
         want = max(rows) if last else min(rows)
         if nodes:
-            return [m for m, r in zip(g.over, rows) if r == want]
+            return [m for m, r in zip(g.over, rows) if r == want and self._stack_top(m)]
         return [self.spec.nodes[m].parent for m, r in zip(g.over, rows) if r == want and self.spec.nodes[m].parent]
+
+    def _member_row(self, m) -> float:
+        """An overlay member's row index; a flow-column node its stack's slot (the first node
+        of a top-aligned stack: its parent's first row, beside the nodes on it)."""
+        n = self.spec.nodes[m]
+        if m not in self.stack_of:
+            return self.ri.get(n.row, 0)
+        (parent, col), k = self.stack_of[m]
+        align = self.spec.track(col).align
+        rows = self.spec.groups[parent].rows if parent else None
+        if k == 0 and align == "top" and rows:
+            return self.ri[rows[0]]
+        slot = self.spec.flow_slot(parent, align)
+        return 0 if slot is None else slot
+
+    def _stack_top(self, m) -> bool:
+        """Not a flow-column node, or the first node of a top-aligned stack."""
+        if m not in self.stack_of:
+            return True
+        (_, col), k = self.stack_of[m]
+        return k == 0 and self.spec.track(col).align == "top"
 
     def _overlay_beside(self, g) -> bool:
         """An overlay title no wider than an icon (or a badge alone) goes left of the first
@@ -779,6 +918,17 @@ class _Model:
                 self.add("y", (f"group:{s}.T", 0), gl, d, f"overlay below {s} top {fmt_num(d)}", own)
             for s in self._overlay_first(g, last=True):
                 self.add("y", gr, (f"group:{s}.B", 0), K.OVERLAY_HEADER_GAP, f"overlay inside {s}", own)
+            # over part of a stack: clear of its nodes just above and below the members
+            for key, ids in self.stacks.items():
+                ks = [k for k, i in enumerate(ids) if i in g.over]
+                if not ks:
+                    continue
+                if ks[0] > 0:
+                    it = self.item_node(ids[ks[0] - 1])
+                    self.add("y", self.hi(it, "y"), gl, K.LABEL_CLEAR, f"overlay {gid} below {it.nid}", own)
+                if ks[-1] < len(ids) - 1:
+                    it = self.item_node(ids[ks[-1] + 1])
+                    self.add("y", gr, self.lo(it, "y"), mc.box_node_gap, f"overlay {gid} above {it.nid}", own)
             hdr = _up(max(st.badge_size, K.TITLE_DY + K.GLYPH_DESCENT * st.title_size))
             self.add("y", gl, gr, hdr + mc.pad, f"header height {gid}", own)
         # badge ↔ icon of the group's own nodes
@@ -1013,9 +1163,8 @@ def _explain_stacks(m: _Model, val, pred, final) -> List[str]:
                 if u in stop or u.startswith("row:"):
                     break
             parts = " + ".join(f"{fmt_num(c.d)} ({c.why}, {c.owner})" for c in reversed(chain)) or "0"
-            sh = m.stack_shift.get(nid)
-            where = "centered in" if m.spec.track(col).align == "center" else "at the bottom of"
-            tail = f"; then {where} {parent} +{fmt_num(sh)}" if sh else ""
+            tail = "".join(f"; then {'centered in' if a == 'center' else 'at the bottom of'} {w} +{fmt_num(sh)}"
+                           for a, w, sh in m.stack_shift.get(nid, ()))
             out.append(f"y flow {col} {nid} = {fmt_num(final.get(v, 0))}: {u} {fmt_num(val.get(u, 0))} + {parts}{tail}")
     return out
 

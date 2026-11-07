@@ -65,14 +65,25 @@ out in list order at that pitch, centered in their parent (the regional services
 On a column, `flow: 110` makes a *flow column*: its nodes give `col:` only and are stacked
 top → bottom in list order, each icon center that pitch below the one above it (or the
 label stack above it + the stack gap, whichever is larger), one stack per parent,
-centered in the parent's height (`align: top` / `bottom` pins it there; `--explain` prints
-a `y flow` line per node).
+centered in the parent's height (`align: top` / `bottom` pins it there; a top-level stack
+aligns in the height of the rest of the drawing; `--explain` prints a `y flow` line per
+node). As far as every constraint allows: an `xy` node tied to a stack node's y and an
+overlay over stack members only move with it; anything else below it stops it.
 A flow column makes no rows, so the nodes beside a VPC stay off its AZ rows and never push
 it down (alb slide: the services beside the VPC; Route 53 at the top of the Cloud).
+What else shares the column in the same parent — a node pinned with `at: [flowcol, row]`,
+a box whose columns cover it (a template node on that column inside the VPC), a box of
+stack nodes — is kept off the stack on y: above it when the middle of its rows lies in
+the upper part of the parent's rows (above the middle; an odd middle row counts below),
+else below; with `align: top` everything goes below the stack, with `bottom` above it.
+A box holding only flow-column nodes (a `Monitoring` group of them) takes its height from
+them and is aligned in its parent like its first column.
 `flow: true` takes the mode's pitch (160). A flow-column node takes no `dy` (the stack
-sets its y); an edge into one picks its shape as if it spanned its parent's rows (H to
-a node on any of them), so give `shape:` when it should leave from the top (alb slide
-`users ..> r53`, `shape: VH`); two nodes of one column join with a straight V.
+sets its y). An edge into one picks its shape as if the node sat between rows, never on
+one: above the parent's first row (`align: top`), below its last (`bottom`), at the
+parent's middle (center) — so EC2 → a centered CloudWatch beside the VPC bends (HVH)
+instead of a planned H (alb slide `users ..> r53`: VH, up out of Users); give `shape:`
+for another. Two nodes of one column join with a straight V.
 
 ## groups
 

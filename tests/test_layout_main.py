@@ -277,6 +277,152 @@ class FlowColumn(unittest.TestCase):
         self.assertIn(f"cols: {{id: svc, flow: {M.fmt_num(s3.cy - cw.cy + layout.WIDEN)}}}", tip)
 
 
+def run_main(d):
+    """layout.main in process on a spec dict: (exit status, output, draft bytes)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src, out = Path(tmp) / "t.layout.json", Path(tmp) / "t.draft.svg"
+        src.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = layout.main([str(src), "-o", str(out)])
+        return rc, buf.getvalue(), out.read_bytes()
+
+
+def off_canvas(data):
+    """Connector points outside the draft's viewBox."""
+    root = ET.fromstring(data)
+    w, h = (float(v) for v in root.get("viewBox").split()[2:])
+    bad = []
+    for el in root.iter():
+        if el.tag == NS + "line":
+            pts = [(float(el.get("x1")), float(el.get("y1"))), (float(el.get("x2")), float(el.get("y2")))]
+        elif el.tag == NS + "polyline":
+            v = [float(x) for x in el.get("points").replace(",", " ").split()]
+            pts = list(zip(v[0::2], v[1::2]))
+        else:
+            continue
+        bad += [p for p in pts if not (0 <= p[0] <= w and 0 <= p[1] <= h)]
+    return bad
+
+
+def svc(i, icon, label, **kw):
+    return dict(id=i, icon=icon, label=label, **kw)
+
+
+def with_kms(d, **kw):
+    d["nodes"].append(svc("kms", "service/AWS-Key-Management-Service", "KMS", **kw))
+    return d
+
+
+class FlowColumnFixes(unittest.TestCase):
+    """Review findings on flow columns: what shares the column, edges into it, align with
+    tied nodes and overlays, boxes of stacks only, a top-level stack, feedback and tips."""
+
+    def assertApart(self, geom, a, b):
+        fa, fb = geom.nodes[a].footprint(), geom.nodes[b].footprint()
+        self.assertFalse(fa.overlaps(fb), f"{a} {fa} overlaps {b} {fb}")
+
+    def test_pinned_node_on_the_column_keeps_off_the_stack(self):
+        """`at: [flowcol, az1]`: KMS on the upper row goes above the centered stack."""
+        d = with_kms(flow_column_spec(), at=["svc", "az1"], **{"in": "region"})
+        d["mode"] = "document"          # (a slide gets 14px too tall)
+        spec, b = built(d)
+        g = b.geom
+        self.assertEqual(g.nodes["kms"].cy, g.rows["az1"])
+        self.assertLessEqual(g.nodes["kms"].footprint().y1 + spec.const.stack_gap, g.nodes["acm"].icon.y0)
+        for i in ("acm", "cw", "s3"):
+            self.assertApart(g, "kms", i)
+        rc, text, data = run_main(d)
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+
+    def test_pinned_node_below_a_top_stack(self):
+        d = flow_column_spec()
+        d["cols"][-1]["align"] = "top"
+        with_kms(d, at=["svc", "az1"], **{"in": "region"})
+        spec, b = built(d)
+        g = b.geom
+        self.assertLessEqual(g.nodes["s3"].footprint().y1 + spec.const.stack_gap, g.nodes["kms"].icon.y0)
+
+    def test_box_over_the_column_keeps_off_a_stack(self):
+        """ACM on the Cloud's flow column, where the Region covers that column: above it."""
+        d = flow_column_spec()
+        d["nodes"][5]["in"] = "cloud"
+        spec, b = built(d)
+        g = b.geom
+        self.assertLess(g.nodes["acm"].footprint().y1, g.groups["region"].rect.y0)
+
+    def test_edges_into_a_stack_node_bend_and_stay_on_the_canvas(self):
+        """A flow-column node sits between rows (top: above the first, bottom: below the
+        last), so EC2 → CloudWatch is no H planned across rows."""
+        for align in ("top", "center", "bottom"):
+            with self.subTest(align=align):
+                d = flow_column_spec()
+                d["cols"][-1]["align"] = align
+                d["nodes"] = [n for n in d["nodes"] if n["id"] not in ("acm", "s3")]
+                d["edges"] = d["edges"][:4]
+                spec = layout_spec.load(copy.deepcopy(d))
+                sh = layout.layout_route.shapes(spec)
+                self.assertEqual({sh[e.n] for e in spec.edges if e.b == "cw"}, {"HVH"})
+                rc, text, data = run_main(d)
+                self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+                self.assertEqual(off_canvas(data), [])
+
+    def test_xy_tied_to_a_stack_node_follows_the_centering(self):
+        d = flow_column_spec()
+        base = built(copy.deepcopy(d))[1].geom
+        with_kms(d, xy=["col.users", "cw.cy"])
+        g = built(d)[1].geom
+        self.assertEqual(g.nodes["kms"].cy, g.nodes["cw"].cy)
+        self.assertEqual(g.nodes["cw"].cy, base.nodes["cw"].cy)          # still centered
+
+    def test_overlay_over_stack_members(self):
+        """An overlay over CloudWatch and S3 holds just them (not ACM above), and the stack
+        stays centered with the overlay on it."""
+        for label in ("Obs", "Observability stack"):
+            with self.subTest(label=label):
+                d = flow_column_spec()
+                d["groups"].append({"id": "og", "type": "generic", "label": label, "over": ["cw", "s3"]})
+                spec, b = built(d)
+                g = b.geom
+                og = g.groups["og"].rect
+                self.assertLess(g.nodes["acm"].footprint().y1, og.y0)
+                for i in ("cw", "s3"):
+                    self.assertTrue(og.contains(g.nodes[i].footprint()), i)
+                reg = g.groups["region"].rect
+                top, bot = g.nodes["acm"].icon.y0, g.nodes["s3"].footprint().y1
+                self.assertLessEqual(abs((top + bot) / 2 - reg.cy), 1)
+                self.assertGreater(og.x0, g.groups["vpc"].rect.x1)        # a long title stays off the VPC
+                rc, text, data = run_main(d)
+                self.assertEqual(text.strip().splitlines()[-1], "Layout OK", text)
+
+    def test_box_of_stack_nodes_only(self):
+        """A box holding only flow-column nodes: no warning, centered in its parent as its
+        column says, and edges into its nodes bend instead of the unknown-position VHV."""
+        d = flow_column_spec()
+        d["groups"].append({"id": "mon", "type": "generic", "label": "Monitoring", "in": "region"})
+        for n in d["nodes"][5:]:
+            n["in"] = "mon"
+        spec, b = built(d)
+        g = b.geom
+        self.assertFalse([w for w in spec.warnings + b.warnings if "no node inside" in w], b.warnings)
+        mon, reg = g.groups["mon"].rect, g.groups["region"].rect
+        self.assertLessEqual(abs(mon.cy - reg.cy), 1)
+        sh = layout.layout_route.shapes(spec)
+        self.assertEqual({sh[e.n] for e in spec.edges if e.b == "cw"}, {"HVH"})
+        rc, text, data = run_main(d)
+        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+
+    def test_top_level_stack_aligns_in_the_drawing(self):
+        d = flow_column_spec()
+        for n in d["nodes"][5:]:
+            del n["in"]
+        g = built(d)[1].geom
+        cloud = g.groups["cloud"].rect
+        top, bot = g.nodes["acm"].icon.y0, g.nodes["s3"].footprint().y1
+        self.assertLessEqual(abs((top + bot) / 2 - cloud.cy), 1)
+        self.assertTrue(any("centered in the drawing" in e for e in g.explain if e.startswith("y flow")))
+
+
 class LabelOnLine(unittest.TestCase):
     def test_no_room_above_or_below_puts_the_label_on_its_line(self):
         """No room above (a sub-caption) nor below (an icon): the label sits on its line over

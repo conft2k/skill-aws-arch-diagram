@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import layout_model as M  # noqa: E402
+import layout_solve  # noqa: E402
 import layout_spec as L  # noqa: E402
 from layout_model import SpecError  # noqa: E402
 
@@ -620,6 +621,12 @@ class FlowColumns(unittest.TestCase):
         self.assertEqual(s.flow_stacks(), {("region", "c"): ["s3", "cw"]})
         self.assertEqual(s.groups["region"].rows, ("az1", "az2"))     # the stack adds no rows
         self.assertEqual(s.warnings, [])
+        # solved: KMS, pinned on the column, keeps off the bottom stack (above it)
+        g = layout_solve.solve(s, [])
+        kms = g.nodes["kms"].footprint()
+        for i in ("s3", "cw"):
+            self.assertFalse(kms.overlaps(g.nodes[i].footprint()), i)
+        self.assertLess(kms.y1, g.nodes["s3"].icon.y0)
 
     def test_flow_true_takes_the_mode_pitch(self):
         s = L.load(mutate(lambda d: d.update(cols=["a", "b", {"id": "c", "flow": True}])))

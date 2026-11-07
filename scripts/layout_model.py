@@ -267,7 +267,16 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     counts toward the VPC's parent's cols); `xy` nodes have col / row None; flow-row nodes
     given a `col` (flow-column nodes given a `row`) have flow_index None; a flow-column node
     has row None and col set (Spec.flow_stacks lists them): its y is a "node:" variable,
-    stacked in spec order, and the router takes its parent's rows as its row range;
+    stacked in spec order, then aligned in its parent (Track.align; the top level: the
+    rest of the drawing's height) as far as every constraint allows, carrying `xy` nodes
+    tied to it and overlays over its nodes only. Its stack sits at a fractional row index,
+    Spec.flow_slot (top: parent's first row − 0.5, bottom: last + 0.5, center: between the
+    rows above and below the middle, an odd middle row below): the router's row range for
+    the node (never a grid row, so no rule-1 H to a grid node), and the side a same-parent
+    sibling sharing the column's x goes to (above when the middle of its rows is before the
+    slot, else below). A box with no row that holds flow-column nodes (Spec.float_align)
+    is such a block too: its slot is its first column's in its own parent; overlays over
+    stack members take only a top-aligned stack's first node as a first-row member;
     Edge.src = "edges[i]"; template instances are Group.instance / Node.instance plus the
     ".n" id suffix.
  m. Group `pad_top` (spec key, px): box top → its first icon / nested box when larger than
@@ -302,6 +311,7 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
 """
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -558,6 +568,40 @@ class Spec:
         for ids in out.values():
             ids.sort(key=lambda i: self.nodes[i].flow_index or 0)
         return out
+
+    def float_align(self, gid: str) -> Optional[str]:
+        """A box that holds flow-column nodes and covers no row (decision l): the align of
+        its first flow column (spec order); None for any other group."""
+        g = self.groups[gid]
+        if g.rows is not None or g.overlay:
+            return None
+        for (parent, col) in self.flow_stacks():
+            if gid in self.ancestors(parent):
+                return self.track(col).align
+        return None
+
+    def flow_slot(self, parent: Optional[str], align: str) -> Optional[float]:
+        """Where a flow column's stack in `parent` (or a box holding only stacks) sits among
+        the row tracks, as a fractional row index (decision l): half a row above the
+        parent's first row (align top), below its last (bottom), centered between the rows
+        above and below the middle (an odd middle row counts below). A box holding only
+        stacks takes the slot it gets in its own parent; the top level spans every row.
+        None when nothing gives rows."""
+        if parent is None:
+            if not self.rows:
+                return None
+            r0, r1 = 0, len(self.rows) - 1
+        else:
+            g = self.groups[parent]
+            if g.rows is None:
+                a = self.float_align(parent)
+                return None if a is None else self.flow_slot(g.parent, a)
+            r0, r1 = self.track(g.rows[0]).index, self.track(g.rows[1]).index
+        if align == "top":
+            return r0 - 0.5
+        if align == "bottom":
+            return r1 + 0.5
+        return math.floor((r0 + r1) / 2 + 0.5) - 0.5
 
 
 # =======================================================================================
