@@ -244,9 +244,10 @@ legend. Its position is the association: no line ties a route-table node to anyt
 - **Tight slide:** keep each table beside its attachments and win the room elsewhere, in
   this order: move a table's route sub-caption into the step legend, which names the
   table ("Spoke RT 0.0.0.0/0 → 검사 VPC"); put the attachment-type label on the piece
-  that has room (the inspection line instead of a spoke); drop boxes that add nothing on
-  a slide (a spoke VPC's one subnet box around one workload icon); then split the slide.
-  Never move a table back onto the TGW's column to save width.
+  that has room (the inspection line instead of a spoke); shorten a container label
+  (App subnet → Subnet) — never drop the subnet box, which would read as a VPC without
+  subnets; then split the slide. Never move a table back onto the TGW's column to save
+  width.
 
 #### Internet gateway and VGW sit on the VPC border
 

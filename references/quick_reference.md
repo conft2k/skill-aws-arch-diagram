@@ -126,7 +126,7 @@ it is attached to"), no line to it:
 | TGW table of the spoke VPC attachments (nfw Spoke RT) | between the spoke VPCs and the TGW, on the TGW's row, inside the bracket of the spoke lines into the TGW's left side |
 | TGW table of the inspection VPC attachment (nfw Firewall RT) | between the TGW and the inspection VPC, on the TGW's row; the inspection lines leave the TGW's top and bottom (`shape: VH`) and pass around it |
 | A TGW's only table (tgw) | next to the TGW, above or below it, clear of the attachment lines |
-| Tight slide | keep the places; move the table's routes into the legend, the attachment-type label to the piece with room, drop a spoke VPC's lone subnet box, then split — never back onto the TGW's column |
+| Tight slide | keep the places; move the table's routes into the legend, the attachment-type label to the piece with room, shorten a container label (App subnet → Subnet), then split — never back onto the TGW's column |
 
 ## Text ("Text size")
 
