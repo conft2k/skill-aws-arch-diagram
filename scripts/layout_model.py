@@ -215,8 +215,9 @@ So every id is unique and maps back with split_eid(). Spec ids match [A-Za-z0-9_
 ":" for element ids. svg2pptx accepts <g> with id only (no transform, no presentation
 attributes). check_layout reports an element's own id only, so W5 maps an Issue's
 elements to spec ids through their enclosing <g>.
-An edge's connector (<line> / <polyline>) carries data-flow="<Edge.line>": the instances of
-one spec line (a trunk's fork or merge) share the value, other edges' lines differ.
+An edge's connector (<line> / <polyline>) carries data-flow: "<Edge.line>" for the
+instances of a `trunk: true` / `fork` spec line (one flow that forks or merges, sharing a
+value), "<Edge.line>.<Edge.k>" for any other edge instance (each its own flow).
 check_layout's LINE ON LINE takes two connectors with different data-flow values as two
 flows even where they leave (or enter) one point, so a shared stem between them is
 reported; lines without the attribute (hand-drawn SVG, raw) keep the point-contact rule.
@@ -1042,9 +1043,9 @@ def _stroke(a: Dict[str, Union[str, Number]], dash: Optional[str], start: bool, 
 
 def el_path(points: Sequence[Tuple[float, float]], *, dash: Optional[str] = None, start: bool = False,
             end: bool = False, color: str = K.LINE_COLOR, width: float = K.LINE_WIDTH,
-            z: int = K.Z_EDGE, owner: str = "", flow: Optional[int] = None) -> Element:
-    """A connector: <line> for two points, <polyline fill="none"> for more; flow (the spec
-    line it draws) → data-flow (section 5)."""
+            z: int = K.Z_EDGE, owner: str = "", flow: Optional[str] = None) -> Element:
+    """A connector: <line> for two points, <polyline fill="none"> for more; flow (which
+    flow it draws) → data-flow (section 5)."""
     if len(points) < 2:
         raise ValueError("a path needs two points")
     if len(points) == 2:
@@ -1052,12 +1053,12 @@ def el_path(points: Sequence[Tuple[float, float]], *, dash: Optional[str] = None
         a: Dict[str, Union[str, Number]] = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
         _stroke(a, dash, start, end, color, width)
         if flow is not None:
-            a["data-flow"] = str(flow)
+            a["data-flow"] = flow
         return Element("line", a, z=z, owner=owner)
     a = {"points": " ".join(f"{fmt_num(x)},{fmt_num(y)}" for x, y in points), "fill": "none"}
     _stroke(a, dash, start, end, color, width)
     if flow is not None:
-        a["data-flow"] = str(flow)
+        a["data-flow"] = flow
     return Element("polyline", a, z=z, owner=owner)
 
 

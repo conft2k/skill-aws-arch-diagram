@@ -39,9 +39,9 @@ Reports, and exits with status 1 on any of them:
                    or ending at one (a merge), a route drawn in pieces — are one net and
                    are not reported; an arrowhead into the point another line leaves from
                    (Y → T, then T → X out of T's same port) is two flows and is
-                   reported, and so are two lines of different spec edges in a
-                   layout.py draft (different data-flow values) that leave or enter
-                   one point together
+                   reported, and so are two lines of different flows in a layout.py
+                   draft (different data-flow values: only the instances of one
+                   `trunk: true` line share one) that leave or enter one point together
   LOOSE END        a connector that no other line touches has an end without an arrowhead
                    on nothing — no node (icon or the labels under it), no line, no
                    container border within 6px: a branch cut off the trunk it
@@ -632,7 +632,7 @@ def flow_of(run):
 
 def two_flows(run, other):
     """Do two connectors draw different flows by their data-flow (layout.py drafts: the
-    instances of one spec line share it)? Unknown (either lacks it) is not two."""
+    instances of one `trunk: true` line share it)? Unknown (either lacks it) is not two."""
     a, b = flow_of(run), flow_of(other)
     return a is not None and b is not None and a != b
 
@@ -642,7 +642,7 @@ def lines_on_lines(paths):
     more than ON_LINE_RUN px: [(segment, other segment, shared px)], one per pair of lines.
     A pair chained at one point (an arrow into it, the next flow out of it) is two flows
     even when the rest of a net joins them, and so is a pair of different data-flow values
-    (two spec lines out of one port: a shared stem reads as one line that forks)."""
+    (two flows out of one port: a shared stem reads as one line that forks)."""
     net = joined(paths)
     ids = list(paths)
     out = []

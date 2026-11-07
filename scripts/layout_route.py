@@ -2023,6 +2023,13 @@ def _label_spots(ctx: _Ctx, pc: _Piece, texts, want, has_badge: bool, other: boo
                 yield out
 
 
+def _flow(e: Edge) -> str:
+    """An edge connector's data-flow: its spec line for the instances of a `trunk: true` /
+    `fork` line (one flow that forks or merges: they may share a stem), else line.k, one
+    per instance (lines that are no trunk never share a run)."""
+    return str(e.line) if e.trunk or e.fork else f"{e.line}.{e.k}"
+
+
 def _where(e: Edge) -> str:
     return f"{e.src or f'edges[{e.line}]'} {e.a} {e.op} {e.b}"
 
@@ -2386,6 +2393,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         if lead is None or t.shape == P or _ends_on(r, lead, t.trunk == "merge"):
             continue
         routes[n] = rejoin(x, lead)
+        for key in ctx.drawn_use:           # the route it replaces leaves its ports free
+            ctx.drawn_use[key] = [u for u in ctx.drawn_use[key] if u[0] != n]
         _note_drawn(ctx, x, routes[n])
     # trunks whose followers could not share the first instance's bend: report
     for n, r in sorted(routes.items()):
@@ -2403,7 +2412,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
     for n in sorted(routes):
         r, x = routes[n], xs[n]
         els.append(M.el_path(r.pts, dash=K.DASH_DASHED if x.e.dashed else None, start=r.hs, end=r.he,
-                             z=K.Z_EDGE, owner=M.edge_eid(n), flow=x.e.line))
+                             z=K.Z_EDGE, owner=M.edge_eid(n), flow=_flow(x.e)))
     pl = _Placer(ctx, all_lines)
     labels: List[Element] = []
     badges: List[Element] = []

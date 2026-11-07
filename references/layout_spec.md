@@ -251,7 +251,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   leave 12px apart, not as one stem). Two different lines on one run are a
   `LINE ON LINE` problem — an arrow into a node's port and the next flow out of that same
   port included, and two edges out of (or into) one port that share its stem; write
-  `trunk: true` when they are meant to merge.
+  `trunk: true` when they are meant to merge. The router splits the ports on a node's side
+  only: two lines into one side of a group can land on one point, so give one a
+  `to_offset` (`from_offset`) of its own.
 - `label`: protocol and port, 12px squid ink (`"HTTPS :443"`). `verb`: a verb or
   attachment type, 12px grey (`DNS 조회`, `VPC attachment`). The loader rejects either one
   when it names a service with an official icon (SERVICE AS TEXT) — make it a node.
