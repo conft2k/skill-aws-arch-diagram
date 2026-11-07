@@ -681,7 +681,7 @@ class ContainerSeparationTest(unittest.TestCase):
     def test_overlapping_ranges_with_clear_offsets_keep_the_draft(self):
         sp = self.fixture()
         sp.nodes["phz"].dx = 300
-        before = LS._solve_once(sp, [], None, False, [])[1]
+        before = LS._solve_once(sp, [], None, None, [])[1]
         after = LS.solve(sp, [])
         self.assertEqual(after, before)
 

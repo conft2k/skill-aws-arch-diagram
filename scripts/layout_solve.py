@@ -1,7 +1,7 @@
 """W2: spec + requirements → Geometry (difference constraints, longest path), and the
 Elements of every group and node.
 
-    solve(spec, reqs, note_block=None, diag_x=False) -> Geometry
+    solve(spec, reqs, note_block=None, decisions=None) -> Geometry
     draw(spec, geom) -> list[Element]
 
 The contract (variable names, coordinates, who fills what) is layout_model's docstring;
@@ -55,9 +55,9 @@ import math
 import re
 import sys
 from collections import defaultdict
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import layout_const as K  # noqa: E402
@@ -70,6 +70,31 @@ _EPS = 1e-7
 _NEG = float("-inf")
 
 Ref = Tuple[str, float]          # (variable, offset): the value is val[var] + offset
+
+
+PairKey = FrozenSet[str]
+
+
+@dataclass(frozen=True)
+class Decisions:
+    """One candidate's choices; omitted choices retain the engine's existing defaults.
+
+    diag=None uses the prior; otherwise the named open pairs go on x and the other open
+    pairs go on y. Overlay choices are beside/above the first member row, skip entries
+    name edge instances and their routing alternative, and place selects the note.
+    """
+    diag: Optional[FrozenSet[PairKey]] = None
+    overlay: Tuple[Tuple[str, str], ...] = ()
+    skip: Tuple[Tuple[int, int], ...] = ()
+    place: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class DiagonalPair:
+    key: PairKey
+    default_axis: str
+    x_cost: float
+    y_cost: float
 
 
 def _up(v: float) -> float:
@@ -153,8 +178,11 @@ def _span_gap(a, b) -> int:
 
 
 class _Model:
-    def __init__(self, spec: Spec, avoid: Sequence[Tuple[str, str, str, str]] = (), relaxed=()):
+    def __init__(self, spec: Spec, avoid: Sequence[Tuple[str, str, str, str]] = (), relaxed=(),
+                 decisions: Optional[Decisions] = None):
         self.spec = spec
+        self.decisions = decisions or Decisions()
+        self.overlay_choices = dict(self.decisions.overlay)
         self.relaxed = set(relaxed)       # grid centers promoted to movable pins, per axis
         self.mc = spec.const
         self.S = spec.S
@@ -196,6 +224,8 @@ class _Model:
         # the pairs (frozenset of item keys) solve() chose to keep apart on x instead
         self.diag_open: Optional[List[Tuple[_Item, _Item, str]]] = None
         self.diag_x: set = set()
+        self.diag_force_y: set = set()
+        self.diag_pairs: List[DiagonalPair] = []
         self.diag_y: set = set()                 # the box pairs build("y") separated on y (keys)
         self.diag_boxes: List[Tuple[_Item, _Item]] = []   # every diagonal node-box pair build("y") met
         self._past: Dict[Tuple[str, str, bool], bool] = {}   # lines_past() cache
@@ -584,7 +614,8 @@ class _Model:
                         continue
                     if here < there or (here == there and axis == "x"):
                         continue
-                    if box and self._x_apart(first, second):
+                    if box and frozenset((a.key, b.key)) not in self.diag_force_y \
+                            and self._x_apart(first, second):
                         self._diag_order(first, second, owner)
                         continue
                     if box and self.diag_open is not None:
@@ -1296,6 +1327,8 @@ class _Model:
         then finds them clear of the header. Only when every first-row member is in a
         subnet and on its first row: a member lower in its box (something of the box above
         it) or outside any box has no subnet header to sit beside, so the title goes above."""
+        if g.header is None and g.id in self.overlay_choices:
+            return self.overlay_choices[g.id] == "beside"
         st, mc = K.style(g.type), self.mc
         if g.label:
             if layout_text_width(g.label, st.title_size) > self.S:
@@ -1401,7 +1434,9 @@ class _Model:
                     # inset in the subnet, so the top hugs to 8 under the subnet top when the
                     # row sits at that inset and follows the row when it sits lower
                     p = self.spec.nodes[m].parent
-                    top, what = max(top, self._icon_inset(p) - self._overlay_below(g, p)), "beside"
+                    if p is not None:
+                        top = max(top, self._icon_inset(p) - self._overlay_below(g, p))
+                    what = "beside"
                 self.add("y", gl, self.lo(it, "y"), top, f"{what} inset {fmt_num(top)} {gid} ⊃ {m}", own)
                 ref, d, what = self.node_bottom(gid, it)
                 self.add("y", ref, gr, d, f"{what} {m} ⊂ {gid}", own)
@@ -1861,9 +1896,8 @@ def _solve_x(m: _Model, extra: Sequence[Requirement]):
     return out
 
 
-def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool = False) -> Geometry:
-    """diag_x: keep every diagonal pair build("y") leaves open apart on x, without weighing
-    x against y (layout.build's retry for a slide the weighing leaves too small).
+def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, decisions: Optional[Decisions] = None) -> Geometry:
+    """Draw a candidate using its layout decisions, retaining the prior by default.
 
     An `xy` node the solve had to move (_move_pin), or one whose xy follows it, may land on
     a sibling it was never kept apart from (xy nodes are no grid siblings): such pairs are
@@ -1872,13 +1906,14 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
     contradictory are tried in the other order, then on the other axis in either order
     (_avoid_variants), the first that solves kept; none: the pairs stay apart undone, with
     a warning."""
+    decisions = decisions or Decisions()
     avoid: List[Tuple[str, str, str, str]] = []
-    res = _solve_once(spec, reqs, note_block, diag_x, avoid)
-    res, avoid = _repair_xy(spec, reqs, note_block, diag_x, avoid, res)
-    return _separate_containers(spec, reqs, note_block, diag_x, avoid, res)[1]
+    res = _solve_once(spec, reqs, note_block, decisions, avoid)
+    res, avoid = _repair_xy(spec, reqs, note_block, decisions, avoid, res)
+    return _separate_containers(spec, reqs, note_block, decisions, avoid, res)[1]
 
 
-def _repair_xy(spec, reqs, note_block, diag_x, avoid, res, relaxed=()):
+def _repair_xy(spec, reqs, note_block, decisions, avoid, res, relaxed=()):
     """Repeat collision avoidance after any solve that may have moved a center."""
     stuck: List[tuple] = []
     why = "keeping them apart contradicts the drawing in every order and axis"
@@ -1888,7 +1923,7 @@ def _repair_xy(spec, reqs, note_block, diag_x, avoid, res, relaxed=()):
             break
         for cand in _avoid_variants(clashes):
             try:
-                res2 = _solve_once(spec, reqs, note_block, diag_x, avoid + cand, relaxed)
+                res2 = _solve_once(spec, reqs, note_block, decisions, avoid + cand, relaxed)
             except SolveError:
                 continue
             avoid, res = avoid + cand, res2
@@ -1922,7 +1957,7 @@ def _container_clashes(m: _Model, geom: Geometry):
                     yield parent, a, b, ab, bb
 
 
-def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
+def _separate_containers(spec, reqs, note_block, decisions, avoid, res):
     """Add the missing disjunction only for actual intersections, preserving clean drafts.
 
     Try each axis and order. If shared tracks conflict, promote the sibling's grid
@@ -1953,7 +1988,7 @@ def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
             for lo, hi in ((first, second), (second, first)):
                 pair = (axis, lo.key, hi.key, owner)
                 try:
-                    trial = _solve_once(spec, reqs, note_block, diag_x, avoid + [pair], relaxed)
+                    trial = _solve_once(spec, reqs, note_block, decisions, avoid + [pair], relaxed)
                 except SolveError as e:
                     failures.extend(e.problems[:2])
                     continue
@@ -1979,7 +2014,7 @@ def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
                         if flex == relaxed:
                             continue
                         try:
-                            trial = _solve_once(spec, reqs, note_block, diag_x, avoid + [pair], flex)
+                            trial = _solve_once(spec, reqs, note_block, decisions, avoid + [pair], flex)
                         except SolveError:
                             continue
                         shift = sum(abs(_xy_shift(trial[0], nid, axis, trial[2 if axis == "x" else 3]))
@@ -2001,7 +2036,7 @@ def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
             ])
         _, _, pair, res, relaxed = min(candidates, key=lambda c: (c[0], c[1], c[2]))
         avoid = avoid + [pair]
-        res, avoid = _repair_xy(spec, reqs, note_block, diag_x, avoid, res, relaxed)
+        res, avoid = _repair_xy(spec, reqs, note_block, decisions, avoid, res, relaxed)
         m = res[0]
         warnings += res[1].warnings
     if next(_container_clashes(res[0], res[1]), None) is not None:
@@ -2025,8 +2060,10 @@ def _avoid_variants(clashes) -> List[List[Tuple[str, str, str, str]]]:
     return [pairs(False, False), pairs(False, True), pairs(True, False), pairs(True, True)]
 
 
-def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: bool, avoid, relaxed=()):
-    m = _Model(spec, avoid, relaxed)
+def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block,
+                decisions: Optional[Decisions], avoid, relaxed=()):
+    decisions = decisions or Decisions()
+    m = _Model(spec, avoid, relaxed, decisions)
     extra = list(reqs) + (list(note_block.requirements) if note_block is not None else [])
     mapped = {"x": [], "y": []}
     probs = []
@@ -2048,13 +2085,17 @@ def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: boo
     m.build("y")
     m.y_after_x(xv, nodes_x)
     open_keys = {frozenset((first.key, second.key)) for first, second, _ in m.diag_open}
-    pick = open_keys if diag_x else _diagonals(m, m.cons["y"] + mapped["y"], extra)
+    prior = _diagonals(m, m.cons["y"] + mapped["y"], extra)
+    pairs = tuple(m.diag_pairs)
+    pick = prior if decisions.diag is None else open_keys & decisions.diag
     if pick:
         # a pair x keeps apart for less than y would: solve again with it on x (the rows
         # it no longer pushes stay where the rest puts them); m2's build("y") puts every
         # other pair its x does not keep apart on y (m2.diag_y), the new ones included
-        m2 = _Model(spec, avoid, relaxed)
+        m2 = _Model(spec, avoid, relaxed, decisions)
         m2.diag_x = pick
+        if decisions.diag is not None:
+            m2.diag_force_y = open_keys - pick
         m = m2
         xbf, xpred, xcons, xv, nodes_x = _x_twins(m, extra)
         m.xv, m.nodes_x = xv, nodes_x
@@ -2096,6 +2137,7 @@ def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: boo
     geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)
     geom.warnings = list(m.warnings)
     geom.diag_y = len(m.diag_y)
+    geom.diag_pairs = pairs
     return m, geom, xv, yv
 
 
@@ -2310,8 +2352,8 @@ def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]
     base = _solve_axis(m, "x", m.cons["x"] + [_map_req(m, r) for r in extra if r.axis == "x"])
     x0, pins0 = _extent(base[0]), _pin_moves(base[2])
     xcost = {}
-    for first, second, _ in open_:
-        mp = _Model(m.spec, m.avoid)
+    for first, second, _ in m.diag_open:
+        mp = _Model(m.spec, m.avoid, decisions=m.decisions)
         mp.diag_x = {frozenset((first.key, second.key))}
         try:
             out = _solve_x(mp, extra)
@@ -2331,20 +2373,34 @@ def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]
         return _extent(_solve_axis(m, "y", list(ycons) + held)[0])
 
     on_y: List[Tuple[_Item, _Item, str]] = []
+    ycost = {}
     g = m.mc.sibling_gap
     while open_:
         y0 = ysolve(on_y)
         moved = []
         for p in open_:
             dy = ysolve(on_y + [p]) - y0
+            ycost[(p[0].key, p[1].key)] = dy
             if dy < g - _EPS or xcost[(p[0].key, p[1].key)] > dy + g + _EPS:
                 moved.append(p)
         if not moved:
             break
         on_y += moved
         open_ = [p for p in open_ if p not in moved]
+    for p in stacked:
+        try:
+            ycost[(p[0].key, p[1].key)] = ysolve(on_y + [p]) - ysolve(on_y)
+        except SolveError:
+            ycost[(p[0].key, p[1].key)] = float("inf")
+    picked = {frozenset((first.key, second.key)) for first, second, _ in open_ + stacked}
+    m.diag_pairs = [
+        DiagonalPair(frozenset((first.key, second.key)),
+                     "x" if frozenset((first.key, second.key)) in picked else "y",
+                     max(0.0, xcost[(first.key, second.key)]),
+                     max(0.0, ycost[(first.key, second.key)]))
+        for first, second, _ in m.diag_open]
     del m.warnings[w0:]              # the solves proper report their own
-    return {frozenset((first.key, second.key)) for first, second, _ in open_ + stacked}
+    return picked
 
 
 def _node_center(m: _Model, nid: str, axis: str, val) -> float:

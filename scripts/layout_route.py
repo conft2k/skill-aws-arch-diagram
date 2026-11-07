@@ -104,6 +104,22 @@ from layout_model import Box, Edge, Element, Geometry, Place, Requirement, Spec,
 
 Pt = Tuple[float, float]
 
+
+@dataclass(frozen=True)
+class RoutingAlternative:
+    skip: int
+    shape: str
+    points: Tuple[Pt, ...]
+
+
+def skippable(edge: Edge) -> bool:
+    """Neighbour decisions may not vary an author's explicit placement."""
+    return not any(getattr(edge, name) is not None for name in
+                   ("shape", "bend_x", "bend_y", "label_at", "from_side",
+                    "to_side", "from_offset", "to_offset")) \
+        and edge.step_at == "mid" and not edge.points
+
+
 H, V, HVH, VHV, HV, VH, P = "H", "V", "HVH", "VHV", "HV", "VH", "P"
 SHAPES = (H, V, HVH, VHV, HV, VH)
 ALTERNATIVES = {H: (HVH, VHV), V: (VHV, HVH), HVH: (VHV, HV, VH), VHV: (HVH, VH, HV),
@@ -2407,7 +2423,7 @@ def _bend_groups(xs: Dict[int, _Edge]) -> List[List[int]]:
 # draw()
 
 def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
-         avoid_headers=None) -> Tuple[List[Element], List[str]]:
+         avoid_headers=None, alternatives=None) -> Tuple[List[Element], List[str]]:
     skip = dict(skip or {})
     ctx = _Ctx(spec, geom)
     ctx.avoid_headers = set(avoid_headers or ())
@@ -2462,12 +2478,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         return _Route(x.e.n, P, pts, x.hs, x.he,
                       _line_problems(ctx, pts, x.hs, x.he, x.e.n in ctx.avoid_headers))
 
-    def individual(x: _Edge, k: int = 0) -> _Route:
+    def ranked_routes(x: _Edge):
         t = x.t
-        lead = routes.get(t.first) if t.trunk and t.first != x.e.n else None
-        if lead is not None and lead.shape == t.shape:      # a trunk follower takes the lead's bend
-            pa, pb = x.ends(t.shape, ports.get((x.e.n, "a"), 0.0), ports.get((x.e.n, "b"), 0.0))
-            return build(x, (t.shape, pa, pb, lead.bend))
         # a clean line in the chosen shape beats any other shape (that would change the
         # gutters plan() reserved); a detour into (or out of) a side other lines use comes
         # after every other clean shape, then a detour and a shape misread against a line
@@ -2482,11 +2494,25 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
             return r.shape.startswith("U") + _conflicts(x, r.pts, drawn)
         ranked = [((r.quality == 3, r.shape != t.shape, _u_taken(ctx, x, c[0], c[1], c[2]), last(r), r.quality), i, r)
                   for i, (c, r) in enumerate((c, build(x, c)) for c in _candidates(ctx, x, ports))]
+        ranked.sort(key=lambda it: (it[0], it[1]))
+        clean = [r for q, _, r in ranked if not q[0]]
+        if alternatives is not None and skippable(x.e) and not (t.trunk and t.first != x.e.n):
+            moves = tuple(RoutingAlternative(i, r.shape, tuple(r.pts))
+                          for i, r in enumerate(clean) if i > skip.get(x.e.n, 0))
+            if moves:
+                alternatives[x.e.n] = moves
+        return ranked, clean
+
+    def individual(x: _Edge, k: int = 0) -> _Route:
+        t = x.t
+        lead = routes.get(t.first) if t.trunk and t.first != x.e.n else None
+        if lead is not None and lead.shape == t.shape:      # a trunk follower takes the lead's bend
+            pa, pb = x.ends(t.shape, ports.get((x.e.n, "a"), 0.0), ports.get((x.e.n, "b"), 0.0))
+            return build(x, (t.shape, pa, pb, lead.bend))
+        ranked, clean = ranked_routes(x)
         if not ranked:
             pa, pb = x.ends(H, 0, 0)
             return _Route(x.e.n, H, [pa, pb], x.hs, x.he, ["no candidate"])
-        ranked.sort(key=lambda it: (it[0], it[1]))
-        clean = [r for q, _, r in ranked if not q[0]]
         return clean[min(k, len(clean) - 1)] if clean else ranked[0][2]
 
     def rejoin(x: _Edge, lead: _Route) -> _Route:
@@ -2566,6 +2592,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         if len(todo) >= 2:
             chosen = shared(todo)
             for n, r in (chosen or {}).items():
+                if alternatives is not None and skippable(xs[n].e):
+                    ranked_routes(xs[n])
                 commit(xs[n], r)
         for x in members:
             if x.e.n in routes:

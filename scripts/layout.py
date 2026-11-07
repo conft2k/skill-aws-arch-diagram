@@ -11,7 +11,7 @@ Pipeline (the contract is layout_model.py's docstring, section 1):
   load → route.plan → solve (no note) → note.block → solve (with the note) → note.block
   (place and width fixed) → route.draw → emit → check_layout in process. A slide that
   comes out under 10pt with diagonal pairs kept apart on y is built once more with every
-  such pair on x (solve(diag_x=True)), and the pass with the larger text is kept.
+  such pair on x in a second decision set, and the candidate with the larger text is kept.
 The check applies check_layout --fix's fixed-answer repairs, then answers what is left by
 kind and solves again (at most 5 rounds): SHORT ARROW, LINE HUGS BORDER and a label or
 badge crowded by a border, icon or another label widen the column / row gap it sits in
@@ -48,6 +48,7 @@ is missing; a .json spec needs nothing). Python 3.9+, standard library otherwise
 """
 import argparse
 import copy
+import dataclasses
 import math
 import re
 import sys
@@ -90,15 +91,24 @@ RAW_TAGS = {"g", "rect", "image", "text", "line", "polyline", "circle", "tspan"}
 # One build: spec + feedback → elements
 
 class Build:
-    """Everything one pass of the pipeline produced."""
+    """One candidate, including its decisions and available neighbours.
+
+    diag_pairs includes open pairs from the solves both before and after placing the note.
+    routing_alternatives maps edge instance numbers to later clean routes and their skip
+    values. Spec placements are excluded from these routing moves.
+    """
 
     def __init__(self, spec: Spec, geom: Geometry, nb: NoteBlock, elements: List[Element],
                  warnings: List[str], svg: bytes, avoid_headers=None,
-                 feedback_svg: Optional[bytes] = None):
+                 feedback_svg: Optional[bytes] = None, decisions=None,
+                 diag_pairs=(), routing_alternatives=None):
         self.spec, self.geom, self.nb, self.elements = spec, geom, nb, elements
         self.warnings, self.svg = warnings, svg
         self.avoid_headers = set(avoid_headers or ())
         self.feedback_svg = feedback_svg if feedback_svg is not None else svg
+        self.decisions = decisions or layout_solve.Decisions()
+        self.diag_pairs = tuple(diag_pairs)
+        self.routing_alternatives = dict(routing_alternatives or {})
 
 
 def slide_text_pt(spec: Spec, svg: bytes) -> Tuple[float, Optional[Tuple[float, str]], Tuple[float, float]]:
@@ -146,22 +156,24 @@ def value(var: str, geom: Geometry, axis: str) -> float:
 
 
 def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
-          source: str, avoid_headers=None) -> Build:
+          source: str, avoid_headers=None, decisions=None) -> Build:
     with layout_text.font_context(spec.font_factor, spec.font_steps):
-        return build_at_size(spec, extra, skip, place, source, avoid_headers)
+        return build_at_size(spec, extra, skip, place, source, avoid_headers, decisions)
 
 
 def build_at_size(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
-                  source: str, avoid_headers=None) -> Build:
+                  source: str, avoid_headers=None, decisions=None) -> Build:
     route_kw = {"avoid_headers": avoid_headers} if avoid_headers else {}
-    b = _build(spec, extra, skip, place, source, **route_kw)
-    if b.geom.diag_y and slide_problem(spec, b.feedback_svg):
+    decisions = decisions or layout_solve.Decisions()
+    b = _build(spec, extra, skip, place, source, decisions=decisions, **route_kw)
+    if decisions.diag is None and b.geom.diag_y and slide_problem(spec, b.feedback_svg):
         # the solve weighs a diagonal pair's x and y growth px for px, but a 1108 × 540
         # slide has half the room down: with the pairs put on y leaving the text under
         # 10pt, build again with every pair on x and keep the larger text (both passes
         # solve the note too, so its place and size follow the geometry it sits on)
         try:
-            alt = _build(spec, extra, skip, place, source, diag_x=True, **route_kw)
+            all_x = dataclasses.replace(decisions, diag=frozenset(p.key for p in b.diag_pairs))
+            alt = _build(spec, extra, skip, place, source, decisions=all_x, **route_kw)
         except M.LayoutError:
             return b
         if slide_text_pt(spec, alt.feedback_svg)[0] > slide_text_pt(spec, b.feedback_svg)[0]:
@@ -170,15 +182,24 @@ def build_at_size(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int]
 
 
 def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
-           source: str, diag_x: bool = False, avoid_headers=None) -> Build:
+           source: str, decisions=None, avoid_headers=None) -> Build:
+    decisions = decisions or layout_solve.Decisions()
+    chosen_skip = dict(skip)
+    for n, k in decisions.skip:
+        edge = next((e for e in spec.edges if e.n == n), None)
+        if edge is not None and layout_route.skippable(edge):
+            chosen_skip[n] = k
+    if decisions.place is not None and (spec.note is None or spec.note.place == "auto"):
+        place = decisions.place
+    decisions = dataclasses.replace(decisions, skip=tuple(sorted(chosen_skip.items())), place=place)
     reqs = layout_route.plan(spec) + list(extra)
-    geom0 = layout_solve.solve(spec, reqs, diag_x=diag_x)
+    geom0 = layout_solve.solve(spec, reqs, decisions=decisions)
     nb0 = layout_note.block(spec, geom0, place=place)
     # Notes must not change which drawing/route wins feedback merely by fixing a text
     # overflow. Evaluate the existing note layout, then wrap on the chosen geometry.
     old_nb0 = layout_note.block(spec, geom0, place=nb0.place,
                                width=nb0.w if nb0.place == "pane" else None, wrap_text=False)
-    geom = layout_solve.solve(spec, reqs + nb0.requirements, note_block=old_nb0, diag_x=diag_x)
+    geom = layout_solve.solve(spec, reqs + nb0.requirements, note_block=old_nb0, decisions=decisions)
     nb = layout_note.block(spec, geom, place=nb0.place, width=nb0.w if nb0.place == "pane" else None)
     old_nb = layout_note.block(spec, geom, place=nb0.place,
                               width=nb0.w if nb0.place == "pane" else None, wrap_text=False)
@@ -188,15 +209,19 @@ def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place
         if got < r.d - 0.5:
             warns.append(f"note: requirement {r.why!r} short by {M.fmt_num(r.d - got)}px on the final geometry")
     route_kw = {"avoid_headers": avoid_headers} if avoid_headers else {}
-    edges, route_warns = layout_route.draw(spec, geom, skip, **route_kw)
+    alternatives = {}
+    edges, route_warns = layout_route.draw(spec, geom, chosen_skip, alternatives=alternatives, **route_kw)
     raws, raw_warns = raw_elements(spec, geom)
     drawing = layout_solve.draw(spec, geom) + edges
     feedback_svg = emit(spec, geom, drawing + old_nb.elements + raws, source)
     elements = drawing + nb.elements + raws
     geom.canvas_h = max(geom.canvas_h, math.ceil(geom.drawing.y1 + nb.below()))
     warns += [w for w in nb.warnings if w not in warns] + route_warns + raw_warns
+    pairs = {p.key: p for p in geom0.diag_pairs}
+    pairs.update((p.key, p) for p in geom.diag_pairs)
     return Build(spec, geom, nb, elements, warns, emit(spec, geom, elements, source),
-                 avoid_headers=avoid_headers, feedback_svg=feedback_svg)
+                 avoid_headers=avoid_headers, feedback_svg=feedback_svg, decisions=decisions,
+                 diag_pairs=pairs.values(), routing_alternatives=alternatives)
 
 
 # =======================================================================================

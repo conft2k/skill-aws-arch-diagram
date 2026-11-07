@@ -128,6 +128,103 @@ class SlideDiagonals(unittest.TestCase):
         self.assertEqual(w.call_count, 1)
 
 
+class LayoutDecisions(unittest.TestCase):
+    """Decision sets are exercised through complete drawings and their available moves."""
+
+    def test_default_decisions_keep_the_draft_and_expose_open_pairs(self):
+        spec, original = built("nfw-reference-architecture")
+        candidate = layout._build(spec, [], {}, None, "x.layout.yaml",
+                                  decisions=layout_solve.Decisions())
+        self.assertEqual(original.svg, candidate.svg)
+        self.assertTrue(candidate.geom.diag_pairs)
+        for pair in candidate.geom.diag_pairs:
+            self.assertEqual(len(pair.key), 2)
+            self.assertIn(pair.default_axis, ("x", "y"))
+            self.assertGreaterEqual(pair.x_cost, 0)
+            self.assertGreaterEqual(pair.y_cost, 0)
+        self.assertTrue(candidate.routing_alternatives)
+        for n, alternatives in candidate.routing_alternatives.items():
+            self.assertIn(n, [e.n for e in spec.edges])
+            self.assertTrue(all(a.skip > 0 and len(a.points) >= 2 for a in alternatives))
+
+    def test_same_decisions_give_byte_identical_drafts(self):
+        spec = layout_spec.load(copy.deepcopy(spec_dict("nfw-reference-architecture")))
+        original = layout._build(spec, [], {}, None, "x.layout.yaml")
+        decisions = layout_solve.Decisions(
+            diag=frozenset(p.key for p in original.geom.diag_pairs),
+            skip=((0, 1),), place="panel")
+        a = layout._build(spec, [], {}, None, "x.layout.yaml", decisions=decisions)
+        b = layout._build(spec, [], {}, None, "x.layout.yaml", decisions=decisions)
+        self.assertEqual(a.svg, b.svg)
+        self.assertEqual(a.nb.place, "panel")
+
+    def test_open_pairs_can_be_kept_apart_on_either_axis(self):
+        spec, original = built("nfw-reference-architecture")
+        on_y = layout._build(spec, [], {}, None, "x.layout.yaml",
+                             decisions=layout_solve.Decisions(diag=frozenset()))
+        on_x = layout._build(spec, [], {}, None, "x.layout.yaml",
+                             decisions=layout_solve.Decisions(
+                                 diag=frozenset(p.key for p in original.diag_pairs)))
+        self.assertNotEqual(on_y.svg, on_x.svg)
+        self.assertEqual(on_x.svg, original.svg)
+        self.assertGreater(on_y.geom.canvas_h, on_x.geom.canvas_h)
+
+    def test_exposed_routing_move_changes_the_connector(self):
+        spec, original = built("nfw-reference-architecture")
+        move = original.routing_alternatives[0][0]
+        candidate = layout._build(spec, [], {}, None, "x.layout.yaml",
+                                  decisions=layout_solve.Decisions(skip=((0, move.skip),)))
+        def connector(draft):
+            return ET.fromstring(draft).find(f"{NS}g[@id='edge:0']").find(f"{NS}polyline").get("points")
+        self.assertNotEqual(connector(original.svg), connector(candidate.svg))
+
+    def test_an_overlay_without_a_parent_can_put_its_header_beside_members(self):
+        spec = layout_spec.load({
+            "name": "overlay", "cols": ["a"], "rows": ["r"],
+            "groups": [{"id": "sg", "type": "sg", "label": "SG", "over": ["a"]}],
+            "nodes": [{"id": "a", "icon": "service/Amazon-EC2", "label": "EC2", "at": ["a", "r"]}],
+        })
+        candidate = layout._build(spec, [], {}, None, "x.layout.yaml",
+                                  decisions=layout_solve.Decisions(overlay=(("sg", "beside"),)))
+        header = candidate.geom.groups["sg"].title
+        icon = candidate.geom.nodes["a"].icon
+        self.assertLess(header.box().x1, icon.x0)
+
+    def test_slide_retry_is_an_explicit_decision_set(self):
+        with mock.patch.object(layout_solve, "_stacked_between", return_value=[]), \
+                mock.patch.object(layout, "_build", wraps=layout._build) as calls:
+            spec, candidate = built("slides/nfw-reference-architecture")
+        self.assertEqual(calls.call_count, 2)
+        decisions = calls.call_args.kwargs["decisions"]
+        self.assertIsNotNone(decisions.diag)
+        self.assertGreater(layout.slide_text_pt(spec, candidate.svg)[0],
+                           layout.slide_text_pt(spec, layout._build(
+                               spec, [], {}, None, "x.layout.yaml",
+                               decisions=layout_solve.Decisions(diag=frozenset())).svg)[0])
+
+    def test_overlay_header_decision_changes_a_drawing(self):
+        data = spec_dict("alb-reference-architecture")
+        overlay = next(g for g in data["groups"] if g.get("over"))
+        overlay.pop("header", None)
+        spec = layout_spec.load(data)
+        above = layout._build(spec, [], {}, None, "x.layout.yaml",
+                              decisions=layout_solve.Decisions(overlay=((overlay["id"], "above"),)))
+        beside = layout._build(spec, [], {}, None, "x.layout.yaml",
+                               decisions=layout_solve.Decisions(overlay=((overlay["id"], "beside"),)))
+        self.assertNotEqual(above.svg, beside.svg)
+
+    def test_hard_note_and_route_placements_keep_the_draft(self):
+        data = spec_dict("nlb-reference-architecture")
+        data["note"]["place"] = "panel"
+        data["edges"][0]["shape"] = "H"
+        spec = layout_spec.load(data)
+        original = layout._build(spec, [], {}, None, "x.layout.yaml")
+        candidate = layout._build(spec, [], {}, None, "x.layout.yaml",
+                                  decisions=layout_solve.Decisions(skip=((0, 1),), place="pane"))
+        self.assertEqual(original.svg, candidate.svg)
+        self.assertNotIn(0, candidate.routing_alternatives)
+
+
 class SlideNoteOverflow(unittest.TestCase):
     def test_document_notes_fit_on_slides_without_smaller_text(self):
         for name, old_pt in (("gwlb", 8.737864), ("tgw", 9.356962), ("bedrock-dx", 4.354838)):

@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** implemented; awaiting independent review
 
-- [ ] Every corpus draft and every example draft is byte-identical to the baseline (0 changed).
-- [ ] The slide retry still picks the larger text, now as a decision set instead of a flag.
-- [ ] A drawing exposes its open diagonal pairs (with the default axis and the x/y cost) and its skippable routing alternatives.
-- [ ] Two runs of the same spec and decision set give byte-identical drafts.
-- [ ] Existing tests pass. Runtime stays within the spec's limits (at most 3× per diagram and never over 30 s; corpus wall time at most 3×).
+- [x] Every corpus draft and every example draft is byte-identical to the baseline (0 changed). Corpus 744/744, examples 21/21; [evidence](../results/02-layout-decision-set.md).
+- [x] The slide retry still picks the larger text, now as a decision set instead of a flag. 9.342561pt → 10.037175pt; `scripts/layout.py:175`, `tests/test_layout_main.py:193`.
+- [x] A drawing exposes its open diagonal pairs (with the default axis and the x/y cost) and its skippable routing alternatives. NFW: 2 pairs, 8 connectors, 102 alternatives; `scripts/layout_solve.py:93`, `scripts/layout.py:110`.
+- [x] Two runs of the same spec and decision set give byte-identical drafts. `tests/test_layout_main.py:150`; [evidence](../results/02-layout-decision-set.md).
+- [x] Existing tests pass. Runtime stays within the spec's limits (at most 3× per diagram and never over 30 s; corpus wall time at most 3×). 687 tests + 2539 subtests; max 1.556× / 10.358 s, wall 2.600×; [evidence](../results/02-layout-decision-set.md).

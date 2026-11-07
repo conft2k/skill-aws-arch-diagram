@@ -44,7 +44,7 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
         would need; W1's load() raises them as SpecError problems.
 
   layout_solve.py  (W2)
-    solve(spec, reqs, note_block=None, diag_x=False) -> Geometry
+    solve(spec, reqs, note_block=None, decisions=None) -> Geometry
         Footprints, constraint generation (DESIGN 4.3 items 1-11) + reqs, longest-path
         solve per axis, hug, border nodes, flow rows / columns, overlays, colspan, canvas. With
         note_block it also applies note_block.requirements (W5 passes them inside reqs as
@@ -52,7 +52,10 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
         Diagonal sibling pairs the solved x does not keep apart go on x when y would stack
         the node between two boxes of one column, else on x or y by weighing the growth of
         each axis in px; Geometry.diag_y counts the box pairs the final solve kept apart on y.
-        diag_x=True puts every such pair on x without weighing (W5's slide retry).
+        Geometry.diag_pairs exposes each open pair's key, default axis and x/y growth cost.
+        Decisions.diag=None keeps this prior; a set names the pairs to put on x, with the
+        other open pairs on y. Decisions also carries overlay headers, routing skips and
+        the note's place; W5 applies the latter two.
         Raises SolveError(problems) on a positive cycle, naming the Requirement.why/owner
         and spec ids of the constraints in it (after dropping soft requirements first).
     draw(spec, geom) -> list[Element]
@@ -79,7 +82,7 @@ layers) are in layout_const.py. Python 3.9, standard library only (PyYAML in W1)
         geom  = layout_solve.solve(spec, reqs + nb0.requirements, note_block=nb0)
         nb    = layout_note.block(spec, geom, place=nb0.place, width=nb0.w if nb0.place == "pane" else None)
         (a slide whose geom is under 10pt with geom.diag_y > 0 runs these four steps again
-        with diag_x=True and keeps whichever pass gives the larger text: the weighing counts
+        with a decision set putting all open pairs on x and keeps the larger text: the weighing counts
         x and y px alike, while the 1108 × 540 frame makes a px of height cost about twice
         a px of width)
         edges, warns = layout_route.draw(spec, geom)
@@ -412,7 +415,7 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     centralized-egress spec's empty `sp` column no longer needed). The weighing counts x
     and y px alike; a slide frame (1108 × 540) does not: when the final geometry of a slide
     is under 10pt with pairs on y (Geometry.diag_y: every box pair the final solve kept
-    apart on y), W5 builds again with solve(diag_x=True) — every open pair on x — and keeps
+    apart on y), W5 builds again with every open pair on x in a second decision set and keeps
     the larger text (slides/nfw without `att` and without the stacked-between rule: y 1036 ×
     578 at 9.3pt, x 1102 × 538 at 10.0pt; with the rule the weighing itself puts the
     Spoke RT beside the spokes and no retry runs). An IGW on its VPC border or a GWLB on
@@ -927,6 +930,7 @@ class Geometry:
     explain: List[str] = field(default_factory=list)   # --explain lines: which constraint set each gap
     warnings: List[str] = field(default_factory=list)
     diag_y: int = 0                  # diagonal box pairs the final solve kept apart on y (W5's slide retry)
+    diag_pairs: tuple = ()           # open DiagonalPairs: keys, default axis and x/y growth cost
 
     def track(self, tid: str) -> float:
         return self.cols[tid] if tid in self.cols else self.rows[tid]
