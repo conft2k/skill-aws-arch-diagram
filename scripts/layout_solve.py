@@ -26,7 +26,9 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                members, header right/below, inside each member subnet, a short title beside the
                first member row), 10 the caller's Requirements, 11 canvas margin (and the
                note's requirements), plus template
-               instances kept alike (x: equal edges; y: equal insets, by iteration), badge ↔
+               instances kept alike (x: equal edges; y: equal insets, by iteration), twins
+               (containers of one structure anywhere: equal sizes and inner offsets at the
+               larger, by iteration on both axes), badge ↔
                icon clearance, track order / min_gap_before, min_w / min_h.
   solve        Bellman-Ford longest path from "origin" per axis = the minimal solution. A
                positive cycle drops the soft requirements in it and retries; a cycle of hard
@@ -183,9 +185,7 @@ class _Model:
         # the pairs (frozenset of item keys) solve() chose to keep apart on x instead
         self.diag_open: Optional[List[Tuple[_Item, _Item, str]]] = None
         self.diag_x: set = set()
-        # soft requirements dropped first when a positive cycle holds one (id → requirement,
-        # kept alive so the ids stay unique): the twins' equal spacing
-        self.yields: Dict[str, Dict[int, Requirement]] = {"x": {}, "y": {}}
+        self._twins: Optional[List[list]] = None   # twin_sets() cache
 
     # ---- helpers --------------------------------------------------------------------
 
@@ -297,7 +297,6 @@ class _Model:
         tracks = spec.cols if axis == "x" else spec.rows
         pre = "col" if axis == "x" else "row"
         L, R = ("L", "R") if axis == "x" else ("T", "B")
-        self.yields[axis] = {}
         # track order and min_gap_before
         for prev, t in zip(tracks, tracks[1:]):
             self.add(axis, (f"{pre}:{prev.id}", 0), (f"{pre}:{t.id}", 0), max(0.0, t.min_gap_before),
@@ -834,6 +833,137 @@ class _Model:
                     self.add(axis, vb, va, 0, f"template instances alike {a} = {b}", f"group:{b}")
                     self.ties[axis].append((va[0], vb[0]))
 
+    # ---- twins: containers of one structure drawn alike ----------------------------
+
+    def _subtree(self, gid) -> List[str]:
+        out = [gid]
+        for c in self.child_groups[gid]:
+            out += self._subtree(c)
+        return out
+
+    def _tracks_used(self, gid) -> Tuple[List[int], List[int]]:
+        """The row and column indexes gid's subtree covers (its boxes' ranges, its nodes')."""
+        rows, cols = set(), set()
+        for g in self._subtree(gid):
+            for axis, out in (("y", rows), ("x", cols)):
+                r = self.group_rng(g, axis)
+                if r:
+                    out.update(r)
+                for nid in self.child_nodes[g] + self.border_of.get(g, []):
+                    r = self.node_rng(nid, axis)
+                    if r:
+                        out.update(r)
+        return sorted(rows), sorted(cols)
+
+    def _shape(self, gid, rank, root=False):
+        """(signature, its subtree's box ids in canonical order): the group type tree with
+        each box's type, title (not a named root's own: two App VPCs are twins), CIDR line
+        or not and track ranks, and per box its nodes' icons, caption line counts and track
+        ranks. Children come
+        in signature order (spec order breaks ties), so twins' boxes correspond by index."""
+        g = self.spec.groups[gid]
+        ry, rx = rank
+
+        def rel(r, rk):
+            return None if r is None else (rk[r[0]], rk[r[1]])
+
+        kids = sorted(((self._shape(c, rank), k) for k, c in enumerate(self.child_groups[gid])),
+                      key=lambda it: (repr(it[0][0]), it[1]))
+        nodes = []
+        for nid in self.child_nodes[gid] + self.border_of.get(gid, []):
+            n = self.spec.nodes[nid]
+            nodes.append((n.icon, 1 + len(n.sub), rel(self.node_rng(nid, "y"), ry), rel(self.node_rng(nid, "x"), rx),
+                          bool(n.on), n.side if n.on else None))
+        label = None if root and g.type in TWIN_NAMED else g.label
+        sig = (g.type, label, bool(g.cidr), rel(self.group_rng(gid, "y"), ry), rel(self.group_rng(gid, "x"), rx),
+               tuple(sh[0] for sh, _ in kids), tuple(sorted(nodes, key=repr)))
+        order = [gid] + [d for (_, ds), _ in kids for d in ds]
+        return sig, order
+
+    def twin_sets(self) -> List[list]:
+        """Containers of one structure anywhere in the drawing (twins), per class of two or
+        more: (box id, (its row ids, its col ids) in rank order, its subtree's boxes in
+        corresponding order). Instances of one template keep their own rule (alike in a
+        document, each hugging its content on a slide): an instance only twins with boxes
+        of its own instance number."""
+        if self._twins is not None:
+            return self._twins
+        classes: Dict[tuple, list] = defaultdict(list)
+        for g in self.tree:
+            rows, cols = self._tracks_used(g.id)
+            if not rows and not cols:
+                continue
+            rank = ({r: k for k, r in enumerate(rows)}, {c: k for k, c in enumerate(cols)})
+            sig, order = self._shape(g.id, rank, root=True)
+            key = (repr(sig), g.instance if g.template else None)
+            classes[key].append((g.id, ([self.spec.rows[i].id for i in rows], [self.spec.cols[i].id for i in cols]),
+                                 order))
+        self._twins = [v for v in classes.values() if len(v) > 1]
+        return self._twins
+
+    def _twin_measures(self, axis, member) -> Tuple[str, List[str]]:
+        """A twin's base variable (its left / top edge) and the variables measured from it
+        in corresponding order: its far edge, each box of its subtree's two edges, each
+        track it covers."""
+        gid, (rows, cols), order = member
+        lo, hi = ("L", "R") if axis == "x" else ("T", "B")
+        out = [f"group:{gid}.{hi}"]
+        for d in order[1:]:
+            out += [f"group:{d}.{lo}", f"group:{d}.{hi}"]
+        out += [f"{'col' if axis == 'x' else 'row'}:{t}" for t in (cols if axis == "x" else rows)]
+        return f"group:{gid}.{lo}", out
+
+    def twins_even(self, axis, val: Dict[str, float], have: Dict[tuple, Requirement]) -> bool:
+        """Twins on this axis: every measure (size, each inner box's edges, each track, from
+        the twin's own left / top edge) at the largest its class has, as soft lower bounds
+        in `have` ((base, var) → requirement, raised in place) — offsets, never positions,
+        so twins on other tracks stay where they are. True when one was added or raised.
+        Twins whose tracks other twins share can push each other on without end: the
+        caller keeps the round with the least twins_spread and stops when a round does not
+        lower it (twins_unlike then warns)."""
+        changed = False
+        for cls in self.twin_sets():
+            ms = [self._twin_measures(axis, mem) for mem in cls]
+            for k in range(len(ms[0][1])):
+                vals = [val[v[k]] - val[b] for b, v in ms]
+                top = max(vals)
+                like = cls[vals.index(top)][0]
+                for (b, v), got, mem in zip(ms, vals, cls):
+                    key = (b, v[k])
+                    if got >= top - 0.25 or (key in have and have[key].d >= top - _EPS):
+                        continue
+                    have[key] = Requirement(axis, b, v[k], top, f"{TWIN_WHY} {mem[0]} like {like} "
+                                            f"({fmt_num(top)} to {v[k].split(':', 1)[1]})", f"group:{mem[0]}", True)
+                    changed = True
+        return changed
+
+    def twins_spread(self, axis, val: Dict[str, float]) -> float:
+        """How unlike the twins still are on this axis: Σ (largest − smallest) per measure."""
+        out = 0.0
+        for cls in self.twin_sets():
+            ms = [self._twin_measures(axis, mem) for mem in cls]
+            for k in range(len(ms[0][1])):
+                vals = [val[v[k]] - val[b] for b, v in ms]
+                out += max(vals) - min(vals)
+        return out
+
+    def twins_unlike(self, axis, val: Dict[str, float]) -> List[str]:
+        """Warnings for twins still drawn unlike (their spacing dropped in a contradiction,
+        or not settled): one per class and axis."""
+        out = []
+        for cls in self.twin_sets():
+            ms = [self._twin_measures(axis, mem) for mem in cls]
+            for k in range(len(ms[0][1])):
+                vals = [val[v[k]] - val[b] for b, v in ms]
+                if max(vals) - min(vals) > 0.5:
+                    a, b = cls[vals.index(min(vals))][0], cls[vals.index(max(vals))][0]
+                    out.append(f"{self.spec.groups[a].src} {a}: same structure as {b} but drawn "
+                               f"{fmt_num(max(vals) - min(vals))} px unlike it on {axis} "
+                               f"({ms[vals.index(min(vals))][1][k].split(':', 1)[1]}); other constraints keep "
+                               f"them apart")
+                    break
+        return out
+
     def template_sets(self) -> List[List[str]]:
         sets: Dict[str, List[str]] = {}
         for g in self.tree:
@@ -1199,9 +1329,9 @@ def _solve_axis(m: _Model, axis: str, cons: List[Requirement]):
                      f"({c.a} → {c.b} ≥ {fmt_num(c.d)}) in a cycle that needs {fmt_num(excess)} px more than 0"
                      for c in cycle if c.owner != "canvas" or c.why != "coordinate ≥ 0"]
             raise SolveError(probs or [f"canvas: contradictory {axis} constraints"])
-        # a requirement that yields (a twin's spacing) goes first and alone; the caller's
-        # soft requirements stay while dropping those breaks the cycle
-        soft = [c for c in soft if id(c) in m.yields[axis]] or soft
+        # a twin's spacing goes first and alone; the caller's soft requirements stay while
+        # dropping those breaks the cycle
+        soft = [c for c in soft if c.why.startswith(TWIN_WHY)] or soft
         drop = {id(c) for c in soft}
         for c in soft:
             m.warnings.append(f"{_loc(m.spec, c.owner)}: dropped soft requirement {c.why!r} ({axis}) "
@@ -1303,6 +1433,9 @@ def _explain_stacks(m: _Model, val, pred, final) -> List[str]:
 
 SPAN_TOL = 0.01         # px: a colspan's span has settled when its solve gives it back this close
 SPAN_ROUNDS = 12        # x solves spent looking for the spans (then the closest, with a warning)
+TWIN_ROUNDS = 6         # solves per axis spent evening out twins (their measures at the class's largest)
+TWIN_WHY = "twins alike"
+TWIN_NAMED = ("vpc", "account", "region", "onprem", "cloud")   # a twin root's own title may differ
 
 
 def _solve_x(m: _Model, extra: Sequence[Requirement]):
@@ -1398,7 +1531,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
         raise SolveError(probs)
 
     # ---- x, then the diagonal pairs ---------------------------------------------------
-    xbf, xpred, xcons, xv, nodes_x = _x_stage(m, extra)
+    xbf, xpred, xcons, xv, nodes_x = _x_twins(m, extra)
     m.xv, m.nodes_x, m.diag_open = xv, nodes_x, []
     m.build("y")
     m.y_after_x(xv, nodes_x)
@@ -1409,7 +1542,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
         m2 = _Model(spec)
         m2.diag_x = pick
         m = m2
-        xbf, xpred, xcons, xv, nodes_x = _x_stage(m, extra)
+        xbf, xpred, xcons, xv, nodes_x = _x_twins(m, extra)
         m.xv, m.nodes_x = xv, nodes_x
         m.build("y")
     else:
@@ -1420,20 +1553,55 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
     # ---- y ---------------------------------------------------------------------------
     m.y_after_x(xv, nodes_x)
     ycons_in = m.cons["y"] + mapped["y"]
-    for _ in range(6):
-        ybf, ypred, ycons = _solve_axis(m, "y", ycons_in)
+    twins: Dict[tuple, Requirement] = {}
+    w0 = len(m.warnings)
+    best = None
+    for _ in range(max(6, TWIN_ROUNDS)):
+        del m.warnings[w0:]
+        ybf, ypred, ycons = _solve_axis(m, "y", ycons_in + list(twins.values()))
         yv = dict(ybf)
         _hug(m, "y", ycons, yv)          # insets are compared on the hugged boxes
+        spread = m.twins_spread("y", yv)
         more = m.even_insets(yv)
-        if not more:
+        if best is not None and spread > best[0] + 0.5 and not more:
+            break                        # twins pushing each other on: keep the best round
+        if best is None or spread <= best[0] + 0.5:
+            best = (spread, ybf, ypred, ycons, yv, m.warnings[w0:])
+        grew = m.twins_even("y", yv, twins)
+        if not more and not grew:
             break
-        ycons_in = ycons + more
+        ycons_in = [c for c in ycons if not c.why.startswith(TWIN_WHY)] + more
+    _, ybf, ypred, ycons, yv, w = best
+    m.warnings[w0:] = w
     m.align_stacks(ycons, yv)
+    m.warnings += m.twins_unlike("x", xv) + m.twins_unlike("y", yv)
 
     geom = _geometry(m, xv, yv, note_block)
     geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)
     geom.warnings = list(m.warnings)
     return geom
+
+
+def _x_twins(m: _Model, extra: Sequence[Requirement]):
+    """_x_stage, again with the twins' x measures raised to their class's largest until
+    they hold (at most TWIN_ROUNDS solves; the round leaving them least unlike wins)."""
+    twins: Dict[tuple, Requirement] = {}
+    w0 = len(m.warnings)
+    best = None
+    for _ in range(TWIN_ROUNDS):
+        del m.warnings[w0:]
+        out = _x_stage(m, list(extra) + list(twins.values()))
+        spread = m.twins_spread("x", out[3])
+        if best is not None and spread > best[0] + 0.5:
+            break                        # twins pushing each other on: keep the best round
+        best = (spread, out, list(twins.values()), m.warnings[w0:])
+        if not m.twins_even("x", out[3], twins):
+            break
+    if best[1] is not out:
+        # the model's x state (flow rows, ties, spans) is the last solve's: solve the best again
+        del m.warnings[w0:]
+        out = _x_stage(m, list(extra) + best[2])
+    return out
 
 
 def _x_stage(m: _Model, extra: Sequence[Requirement]):

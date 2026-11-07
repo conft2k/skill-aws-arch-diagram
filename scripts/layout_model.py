@@ -377,6 +377,17 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     the slide spec's empty `att` column no longer needed; a Spoke RT above-left of a
     Security VPC no longer pushes its rows, and the spoke VPC AZ sharing them, down; the
     centralized-egress spec's empty `sp` column no longer needed).
+ s. Twins (W2, layout_solve twin_sets): tree groups anywhere whose subtree has one
+    signature — group types, titles (a vpc / account / region / onprem / cloud root's own
+    excluded), CIDR or not, per box its nodes' icons, caption line counts (1 + sub) and
+    border sides, every range as ranks among the tracks the subtree covers — plus, for a
+    template instance, its instance number (instances of one template keep DESIGN 2.2's
+    rule). Per axis each twin's measures from its L / T edge (its R / B, each subtree
+    box's two edges in signature order, each covered track) are raised to the class's
+    largest by soft lower bounds (why "twins alike …", dropped first in a positive cycle),
+    re-solving x (with hug and flow centering) and y (with even_insets) until they hold, at
+    most TWIN_ROUNDS; a round that leaves them less alike than the best one stops the loop
+    and the best is kept; still unlike → one warning per class and axis.
 """
 from __future__ import annotations
 

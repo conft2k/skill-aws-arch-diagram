@@ -273,6 +273,20 @@ def corner_spec(label, gap_rows=0):
     return build("corner", ["c1", "c2"], ["r1", ("r2", {"min_gap_before": gap_rows})], groups, nodes)
 
 
+def side_vpcs(label2="EC2 with a much longer label here", icon2="service/Amazon-EC2", row2="r2"):
+    """Two VPCs side by side, each VPC > AZ > Private subnet > one node; VPC 2's node on
+    another row (row2) with another label: twins (same types, titles, icons, caption lines)
+    on different tracks. icon2: VPC 2's node icon (another icon: not twins)."""
+    groups = [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud")]
+    nodes = []
+    for v, col, row, label, icon in (("1", "c1", "r1", "EC2", "service/Amazon-EC2"), ("2", "d1", row2, label2, icon2)):
+        groups += [dict(id=f"vpc{v}", type="vpc", label=f"VPC {v}", cidr=f"10.{v}.0.0/16", parent="region"),
+                   dict(id=f"az{v}", type="az", label="Availability Zone 1", parent=f"vpc{v}"),
+                   dict(id=f"sn{v}", type="private", label="Private subnet", parent=f"az{v}")]
+        nodes.append(dict(id=f"n{v}", icon=icon, label=label, parent=f"sn{v}", col=col, row=row))
+    return build("side", ["c1", "d1"], ["r1", "r2"], groups, nodes)
+
+
 def flowcol_spec(mode="slide", pitch=100, align="center", n=4):
     """mini_spec plus regional services in a flow column right of the VPC (alb slide)."""
     base = mini_spec(mode)
@@ -1192,6 +1206,76 @@ class DiagonalTest(unittest.TestCase):
                  dict(id="q", icon="service/Amazon-EC2", label="Standby", col="d", row="r2")]
         g = LS.solve(build("pair", ["c", "d"], ["r1", "r2"], groups, nodes), [])
         self.assertGreaterEqual(g.nodes["q"].icon.y0 - g.nodes["p"].stack().y1, K.DOCUMENT.stack_gap - 0.01)
+
+
+class TwinTest(unittest.TestCase):
+    """Containers of one structure anywhere in the drawing (same group type tree, titles but
+    a VPC's own, CIDR line or not, node icons and caption line counts, track ranks) are drawn
+    the same shape: equal size and equal offsets of what they hold, at the larger value."""
+
+    @staticmethod
+    def rel(g, gid, root):
+        r, o = g.groups[gid].rect, g.groups[root].rect
+        return (r.x0 - o.x0, r.y0 - o.y0, r.w, r.h)
+
+    def test_spoke_vpcs_pushed_by_a_diagonal_node(self):
+        """The Spoke RT stays above the Security VPC (x would cost far more) and pushes VPC
+        A's AZ 2 down: VPC B, its twin, gets the same AZ gap (the larger) and height."""
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode):
+                spec = egress_spec(mode)
+                g = LS.solve(spec, [])
+                ga = DiagonalTest.az_gaps(g, "a")
+                self.assertGreater(ga[0], spec.const.sibling_gap)       # the push happened
+                self.assertEqual(ga, DiagonalTest.az_gaps(g, "b"))
+                self.assertEqual(g.groups["vpca"].rect.h, g.groups["vpcb"].rect.h)
+                for d in ("aza.1", "appa.1", "tsna.1", "aza.2", "appa.2", "tsna.2"):
+                    self.assertEqual(self.rel(g, d, "vpca"), self.rel(g, re.sub(r"a(\.\d)$", r"b\1", d), "vpcb"), d)
+                self.assertEqual(check(spec, g), [])
+
+    def test_subnets_and_azs_across_vpcs(self):
+        """VPC 2's node has a longer label and sits on a later row: both subnets, both AZs
+        and both VPCs take the wider size, and the node the same place in its subnet."""
+        spec = side_vpcs()
+        m = LS._Model(spec)
+        self.assertEqual(sorted(sorted(c[0] for c in cls) for cls in m.twin_sets()),
+                         [["az1", "az2"], ["sn1", "sn2"], ["vpc1", "vpc2"]])
+        g = LS.solve(spec, [])
+        self.assertEqual(g.warnings, [])
+        for a, b in (("sn1", "sn2"), ("az1", "az2"), ("vpc1", "vpc2")):
+            ra, rb = g.groups[a].rect, g.groups[b].rect
+            self.assertEqual((ra.w, ra.h), (rb.w, rb.h), (a, b))
+        self.assertEqual(self.rel(g, "sn1", "vpc1"), self.rel(g, "sn2", "vpc2"))
+        n1, n2, s1, s2 = g.nodes["n1"], g.nodes["n2"], g.groups["sn1"].rect, g.groups["sn2"].rect
+        self.assertEqual((n1.cx - s1.x0, n1.cy - s1.y0), (n2.cx - s2.x0, n2.cy - s2.y0))
+        self.assertGreaterEqual(n2.cy, n1.cy)    # rows that share no box keep only their order
+        lone = LS.solve(side_vpcs(label2="EC2"), [])
+        self.assertGreater(g.groups["sn1"].rect.w, lone.groups["sn1"].rect.w)   # at the larger value
+        self.assertEqual(check(spec, g), [])
+
+    def test_same_title_other_nodes_are_not_twins(self):
+        spec = side_vpcs(icon2="service/AWS-Lambda")
+        self.assertEqual(LS._Model(spec).twin_sets(), [])
+        g = LS.solve(spec, [])
+        self.assertNotEqual(g.groups["sn1"].rect.w, g.groups["sn2"].rect.w)
+
+    def test_template_instances_keep_their_rule(self):
+        """A slide's AZ instances each hug their content: subnets of AZ 1 and AZ 2 are not
+        made twins of each other, only of their own instance number elsewhere."""
+        m = LS._Model(egress_spec("slide"))
+        for cls in m.twin_sets():
+            self.assertEqual(len({m.spec.groups[c[0]].instance for c in cls}), 1, [c[0] for c in cls])
+
+    def test_twins_that_cannot_be_alike_warn(self):
+        """A caller requirement holds subnet 2 narrower than its twin needs: the twins'
+        spacing yields (a warning names them), nothing raises."""
+        spec = side_vpcs(label2="EC2")
+        narrow = Requirement("x", "group:sn1.R", "group:sn1.L", -170, "test: at most 170 wide", "group:sn1")
+        wide = Requirement("x", "group:sn2.L", "group:sn2.R", 260, "test: at least 260 wide", "group:sn2")
+        g = LS.solve(spec, [narrow, wide])
+        self.assertLessEqual(g.groups["sn1"].rect.w, 170)
+        self.assertGreaterEqual(g.groups["sn2"].rect.w, 260)
+        self.assertTrue(any("same structure as" in w and "sn" in w for w in g.warnings), g.warnings)
 
 
 if __name__ == "__main__":

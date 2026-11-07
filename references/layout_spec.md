@@ -128,6 +128,20 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   2: 10.0.1.0/24}`. Nodes inside give `col:` only (the row is the instance's). One
   template level only. In a document the instances come out alike (same top and bottom
   insets); on a slide each hugs its own content (an ASG header deepens only AZ 1's top).
+- **Twins**: containers of one structure anywhere in the drawing are drawn the same shape —
+  two App VPCs, the TGW subnet of each, the AZ boxes of two VPCs, two subnets in different
+  AZs. One structure = the same group type tree, the same titles (a VPC's, Account's or
+  Region's own title may differ), CIDR line or not, the same node icons with the same
+  number of caption lines, on the same pattern of rows and columns (counted within each
+  twin, so twins on other tracks qualify). Twins get the same width and height, and every
+  box, track and node inside them the same offset from their top-left corner (in a VPC:
+  the same AZ spacing), each at the largest any twin needs — sizes and offsets, never
+  positions, so they stay on their own tracks. Template instances keep their own rule
+  above: an instance twins only with boxes of its own instance number. When other
+  constraints keep twins apart (a requirement, tracks they share with each other's
+  content), the solve keeps the closest it found and warns `same structure as … but drawn
+  N px unlike it`. Same title with other nodes, or a node with a sub-caption where the other
+  has none: not twins.
 - `only: [1]` (or `only: 2`) on a group or node inside a template draws it in those
   instances only: the Aurora writer in AZ 1, a reader in AZ 2, a subnet one AZ lacks. A
   group's `only` leaves out everything inside it. `a.* -> b.*` then pairs the shared
