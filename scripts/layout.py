@@ -232,7 +232,9 @@ def scale_raw_text(svg: str, factor: float, steps=()) -> str:
                 pass
         group_font = tag == "g" and declared is not None and valid
         stack.append((font, inherited or group_font))
-        text_font = tag in ("text", "tspan") and valid and (
+        # Plain tspans inherit the parent's scaled size. Formatting on a tspan is
+        # already refused by svg2pptx; preserve it for the same diagnostic.
+        text_font = tag == "text" and valid and (
             factor != 1 or inherited or declared == "inherit")
         if not group_font and not text_font:
             return

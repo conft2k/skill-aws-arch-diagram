@@ -125,6 +125,63 @@ def test_raw_font_transform_preserves_unrelated_bytes_and_rounds_each_pass():
     assert layout.scale_raw_text(quoted, 1.5) == quoted.replace("font-size='16'", "font-size='24'")
 
 
+@pytest.mark.parametrize("scale,expected", [("off", 16), ("auto", 20), (1.5, 24)])
+@pytest.mark.parametrize("fragment", [
+    '<text x="400" y="60">Raw <tspan>annotation</tspan></text>',
+    '<text x="400" y="60">Raw <tspan id="part"><tspan>annotation</tspan></tspan></text>',
+    '<g font-size="16"><text x="400" y="60">Raw <tspan>annotation</tspan></text></g>',
+])
+def test_plain_raw_tspan_layout_and_pptx_export(tmp_path, scale, expected, fragment):
+    import json
+    import subprocess
+    from pptx import Presentation
+
+    source, draft, deck = (tmp_path / name for name in ("wide.json", "wide.svg", "wide.pptx"))
+    source.write_text(json.dumps({**wide_spec(), "text_scale": scale,
+                                 "raw": [{"layer": "above", "svg": fragment}]}))
+    rendered = subprocess.run([sys.executable, str(ROOT / "scripts/layout.py"), str(source), "-o", str(draft)],
+                              capture_output=True, text=True)
+    assert rendered.returncode == 0, rendered.stdout + rendered.stderr
+    root = ET.fromstring(draft.read_bytes())
+    assert all("font-size" not in span.attrib for span in root.iter() if span.tag.endswith("}tspan"))
+    assert (expected, "Raw annotation") in layout.CL.slide_texts(root)
+
+    exported = subprocess.run([sys.executable, str(ROOT / "scripts/export.py"), str(draft), "--pptx", str(deck)],
+                              capture_output=True, text=True)
+    assert exported.returncode == 0, exported.stdout + exported.stderr
+    assert deck.exists()
+
+    def annotation_sizes(shapes):
+        for shape in shapes:
+            if shape.shape_type == 6:
+                yield from annotation_sizes(shape.shapes)
+            elif shape.has_text_frame and shape.text_frame.text == "Raw annotation":
+                yield from (run.font.size.pt for paragraph in shape.text_frame.paragraphs
+                            for run in paragraph.runs if run.text)
+
+    _, _, width, height = layout.CL.viewbox(root)[0]
+    assert list(annotation_sizes(Presentation(deck).slides[0].shapes)) == pytest.approx(
+        [K.slide_pt(width, height, True, expected)], abs=0.01)
+
+
+@pytest.mark.parametrize("factor", [1, 1.259, 1.5])
+@pytest.mark.parametrize("attributes,diagnostic", [
+    ('font-size="16"', "sets font-size"),
+    ('style="font-size:16px"', "uses style=/class="),
+])
+def test_formatted_raw_tspan_keeps_its_existing_rejection(factor, attributes, diagnostic):
+    import svg2pptx
+    original = f'<text x="400" y="60">Raw <tspan {attributes}>annotation</tspan></text>'
+    changed = layout.scale_raw_text(original, factor)
+    before, after = (ET.fromstring(f'<svg xmlns="{layout.SVG_NS}" viewBox="0 0 1200 120">{body}</svg>')
+                     for body in (original, changed))
+    assert list(before)[0][0].attrib == list(after)[0][0].attrib
+    for root in (before, after):
+        assert any(diagnostic in problem for problem in svg2pptx.collect(root)[2])
+    if attributes.startswith("style"):
+        assert layout.raw_problems(original) == layout.raw_problems(changed)
+
+
 @pytest.mark.parametrize("bad", [True, 0, -1, float("inf"), float("nan"), "large"])
 def test_reject_invalid_scale(bad):
     with pytest.raises(layout.M.SpecError, match="text_scale"):
