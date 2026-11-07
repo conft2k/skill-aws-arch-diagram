@@ -149,8 +149,10 @@ class Drawn:
                 self.badges.setdefault(int(ref), []).append((i["box"], digit))
             elif kind == "node" and not i["badge"] and not part:
                 self.node_icon.setdefault(ref, i)
-        self.stacks = CL.node_stacks(self.icons, self.texts, self.segs)
-        self.feet = CL.footprints(self.icons, self.texts, self.segs, self.stacks)
+        # as check_layout.run_checks: a connector end attaches to a node's footprint over all of
+        # its lines; its own lines are node_stacks
+        self.feet = CL.footprints(self.icons, self.texts)
+        self.stacks = CL.node_stacks(self.icons, self.texts, self.segs, feet=self.feet)
         node_of = {id(i): nid for nid, i in self.node_icon.items()}
         self.foot: Dict[str, BoxT] = {node_of[id(i)]: b for i, b in self.feet if id(i) in node_of}
         self.icon_node = {id(i): nid for nid, i in self.node_icon.items()}
@@ -750,7 +752,7 @@ def label_rules(spec, d: Drawn) -> List[Violation]:
 def fit_rules(spec, d: Drawn) -> List[Violation]:
     if spec.mode != "slide":
         return []
-    w, h = d.canvas
+    w, h = d.canvas[2], d.canvas[3]      # collect: (min-x, min-y, w, h)
     pt = K.slide_pt(w, h, spec.title)
     if pt >= K.SLIDE_MIN_PT:
         return []
