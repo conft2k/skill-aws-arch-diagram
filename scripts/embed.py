@@ -26,12 +26,19 @@ nothing is written, and the script exits with status 1.
 import base64
 import re
 import sys
+from functools import cache
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_icons import load_sets  # noqa: E402
 
-SETS = load_sets()  # downloads the official AWS icons on first use
+
+@cache
+def icon_sets():
+    """The icon sets, loaded on the first icon lookup (downloading the official AWS icons if
+    the bundle isn't built yet), not at import: export.py's checks and --help stay offline."""
+    return load_sets()
+
 
 # Attribute values may be single- or double-quoted; group 1 is the quote.
 REF_RE = re.compile(r'(?:xlink:)?href\s*=\s*(["\'])bundle:([^"\']+)\1')
@@ -67,7 +74,7 @@ EXTERNAL_RE = re.compile(
 
 
 def data_uri(setname: str, name: str):
-    entry = SETS.get(setname, {}).get(name)
+    entry = icon_sets().get(setname, {}).get(name)
     if entry is None:
         return None
     if entry["type"] == "svg":
@@ -118,7 +125,7 @@ DATA_RE = re.compile(r'((?:xlink:)?href\s*=\s*)(["\'])data:image/(svg\+xml|png);
 
 def unembed(svg: str):
     """Turn inlined bundle icons back into bundle: refs. Returns (SVG or None, count, problems)."""
-    ref = {e["data"]: f"{s}/{n}" for s, icons in SETS.items() for n, e in icons.items()}
+    ref = {e["data"]: f"{s}/{n}" for s, icons in icon_sets().items() for n, e in icons.items()}
     unknown, count = [], 0
 
     def back(m):

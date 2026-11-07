@@ -31,6 +31,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from functools import cache
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -48,10 +49,20 @@ from pptx.util import Emu, Pt
 
 from fetch_icons import load_sets  # noqa: E402
 
-SETS = load_sets()  # downloads the official AWS icons on first use
-# An already-embedded SVG (data: URI from embed.py) maps back to its icon.
-BY_DATA = {e["data"]: f"{setname}/{name}" for setname, icons in SETS.items()
-           for name, e in icons.items()}
+
+@cache
+def icon_sets():
+    """The icon sets, loaded on the first icon lookup (downloading the official AWS icons if
+    the bundle isn't built yet), not at import: export.py's checks and --help stay offline."""
+    return load_sets()
+
+
+@cache
+def by_data():
+    """An already-embedded SVG (data: URI from embed.py) -> its bundle ref."""
+    return {e["data"]: f"{setname}/{name}" for setname, icons in icon_sets().items()
+            for name, e in icons.items()}
+
 
 NS = "{http://www.w3.org/2000/svg}"
 XLINK = "{http://www.w3.org/1999/xlink}href"
@@ -135,7 +146,7 @@ def resolve_icon(href):
         if ref in REPLACED:
             raise ValueError(f"bundle:{ref} has no AWS logo -> use bundle:{REPLACED[ref]}")
         setname, _, name = ref.partition("/")
-        entry = SETS.get(setname, {}).get(name)
+        entry = icon_sets().get(setname, {}).get(name)
         if entry is None:
             raise ValueError(f"bundle:{ref} is not in the bundle (check with find_icon.py)")
         if entry["type"] == "svg":
@@ -146,8 +157,8 @@ def resolve_icon(href):
         raw = base64.b64decode(m.group(2))
         if m.group(1) == "svg+xml":
             svg = raw.decode("utf-8")
-            return BY_DATA.get(svg, "data/icon-%d" % hash(raw)), svg, None
-        return BY_DATA.get(m.group(2), "data/icon-%d" % hash(raw)), None, raw
+            return by_data().get(svg, "data/icon-%d" % hash(raw)), svg, None
+        return by_data().get(m.group(2), "data/icon-%d" % hash(raw)), None, raw
     raise ValueError(f"image href {href[:60]!r} is external (use bundle:set/name)")
 
 

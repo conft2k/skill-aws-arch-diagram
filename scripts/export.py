@@ -16,11 +16,16 @@ architecture). Every output path is worked out first: if two different drafts wo
 the same file (docs/arch.draft.svg and slides/arch.draft.svg, or arch.draft.svg and
 arch.svg, all -> <out-dir>/arch.svg), a slide preview would land on a draft's PNG, or an
 output would overwrite one of the drafts, the script names the clash, writes nothing and
-exits with status 1. Every draft is checked next — icon refs (embed.py) and the shared
-draft subset (svg2pptx.py) — whatever formats are asked for, so one draft always works for
-all of them. If any draft fails, nothing is written and the script exits with status 1.
+exits with status 1. Names that differ only in case (Arch.svg, arch.svg) count as the same
+file, as they are on macOS and Windows; the same draft given twice, by any path or link,
+is not a clash. This check needs no icons: the official icon bundle is loaded (and
+downloaded on first use) only when the drafts are checked. Every draft is checked next —
+icon refs (embed.py) and the shared draft subset (svg2pptx.py) — whatever formats are
+asked for, so one draft always works for all of them. If any draft fails, nothing is
+written and the script exits with status 1.
 """
 import argparse
+import os
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -41,14 +46,34 @@ def stem(path: Path) -> str:
     return name
 
 
+def path_key(path: Path) -> str:
+    """Where `path` lands, case-folded: on a case-insensitive file system (macOS APFS,
+    Windows) Arch.svg and arch.svg are one file, so they are compared as one everywhere."""
+    return os.path.normcase(str(path.resolve())).casefold()
+
+
+def file_id(path: Path):
+    """(device, inode) of an existing file, else None: the same file under two names."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_dev, st.st_ino
+
+
+def draft_source(path: Path):
+    """Identity of a draft's contents: its file (any path, case or link to it), else its key."""
+    return file_id(path) or path_key(path)
+
+
 def planned_outputs(drafts, svg, png, out_dir, pptx, preview):
     """[(output path, source, label)] for every file the export would write. `source` says
-    which input the bytes come from (a draft's resolved path, or the deck), `label` names it."""
+    which input the bytes come from (a draft's identity, or the deck), `label` names it."""
     plan = []
     for d in drafts:
         for on, ext in ((svg, "svg"), (png, "png")):
             if on:
-                plan.append((out_dir / f"{stem(d)}.{ext}", d.resolve(), str(d)))
+                plan.append((out_dir / f"{stem(d)}.{ext}", draft_source(d), str(d)))
     if pptx:
         plan.append((pptx, "deck", "--pptx"))
         if preview:
@@ -60,18 +85,24 @@ def planned_outputs(drafts, svg, png, out_dir, pptx, preview):
 
 def clashes(drafts, plan):
     """Error lines for every output written from two different sources or landing on a draft.
-    The same draft given twice writes identical bytes, so that alone is not a clash."""
+    Output paths are compared case-folded (see path_key); the same draft given twice writes
+    identical bytes, so that alone is not a clash."""
     by_path = {}
     for out, source, label in plan:
-        by_path.setdefault(out.resolve(), (out, {}))[1].setdefault(source, label)
-    inputs = {d.resolve(): d for d in drafts}
-    lines = []
-    for key, (out, sources) in by_path.items():
+        first, sources = by_path.setdefault(path_key(out), (out, {}))
+        sources.setdefault(source, label if out == first else f"{label} (as {out})")
+    by_key = {path_key(d): d for d in drafts}
+    by_file = {i: d for d in drafts if (i := file_id(d))}
+    lines, overwritten = [], set()
+    for out, sources in by_path.values():
         if len(sources) > 1:
             lines.append(f"{out} would be written from each of:")
             lines += [f"  {label}" for label in sources.values()]
-        if key in inputs:
-            lines.append(f"{out} would overwrite the draft {inputs[key]}")
+    for out, _, _ in plan:  # an existing output may be a draft under another name (hard link)
+        hit = by_key.get(path_key(out)) or by_file.get(file_id(out))
+        if hit and path_key(out) not in overwritten:
+            overwritten.add(path_key(out))
+            lines.append(f"{out} would overwrite the draft {hit}")
     return lines
 
 
@@ -98,8 +129,7 @@ def main():
     if problems:
         print("Output name clash:")
         print("\n".join(f"  {p}" for p in problems))
-        sys.exit("Nothing written; give the drafts distinct file names or export them "
-                 "with separate --out-dir runs.")
+        sys.exit("Nothing written; rename a draft or the deck, or use a separate --out-dir.")
 
     embedded, failed = {}, False
     for d in a.drafts:

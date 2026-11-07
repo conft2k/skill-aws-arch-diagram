@@ -213,8 +213,9 @@ uv run --with python-pptx --with cairosvg python ${CLAUDE_SKILL_DIR}/scripts/exp
   default 2000). `<name>` only drops `.draft` and `.svg`, so drafts sharing a name
   (`docs/arch.draft.svg` and `slides/arch.draft.svg`, or `arch.draft.svg` and `arch.svg`)
   would write the same file; the export refuses that — and any output that would
-  overwrite a draft or a `--preview` PNG — before writing anything (status 1). Rename a
-  draft or give each its own `--out-dir` run.
+  overwrite a draft or a `--preview` PNG — before writing anything (status 1). Names that
+  differ only in case (`Arch.svg`, `arch.svg`) count as the same file, as they are on
+  macOS and Windows. Rename a draft or the deck, or use a separate `--out-dir`.
 - `--pptx DECK` writes one 16:9 deck, one slide per draft in order, `--title` once per
   slide; `--font` / `--ea-font` change the Latin / Korean typeface (default Arial /
   Malgun Gothic). `--preview` renders each slide back to `DECK-1.png`, `DECK-2.png`, ...
