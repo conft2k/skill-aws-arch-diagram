@@ -395,10 +395,15 @@ it even when only an SVG or PNG is wanted:
 | `<defs>`, `<marker>` | read for the arrowheads only |
 
 No `<path>` outside markers, no other transforms (scale, rotate), no CSS classes or
-`style=""`, no stroked text. Colors as `#RRGGBB`. The full-canvas white background rect
-is dropped (the slide is white) when it is the first thing drawn, unstroked and fully
-opaque; any other background colour, and a canvas-sized rect drawn later or elsewhere,
-stays a shape. One draft is one slide; the export scales it to fit a
+`style=""`, no stroked text. Colors as `#RRGGBB`. `opacity`, `fill-opacity` and
+`stroke-opacity` (`0.08` or `8%`) on a rect, circle, line, polyline or text become the
+alpha of its fill / line color (fill = `opacity` × `fill-opacity`, line = `opacity` ×
+`stroke-opacity`; 0 is no fill / no line); on an `<image>`, `<g>` or `<svg>` an opacity
+below 1 is rejected. The full-canvas background rect is dropped (the slide is white) when it is
+the first thing drawn, unstroked, and its fill is `none`, fully transparent or opaque
+white; any other background — a colour, a tint at any opacity, translucent white, a rect
+with no `fill` (black) — and a canvas-sized rect drawn later or elsewhere stays a shape.
+One draft is one slide; the export scales it to fit a
 16:9 slide, so the canvas size decides the slide's text size (see "Text size").
 
 ### Skeleton

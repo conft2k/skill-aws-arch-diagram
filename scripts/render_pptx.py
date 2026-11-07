@@ -28,6 +28,17 @@ REL_EMBED = qn("r:embed")
 ASCENT = 0.95  # keep in sync with svg2pptx.py
 
 
+def paint(solid_fill):
+    """(RRGGBB, alpha 0..1) of an <a:solidFill>'s srgbClr; <a:alpha val> is in 1/1000 %."""
+    clr = solid_fill.find(qn("a:srgbClr"))
+    a = clr.find(qn("a:alpha"))
+    return clr.get("val"), int(a.get("val")) / 100000 if a is not None else 1.0
+
+
+def opacity(attr, a):
+    return f' {attr}-opacity="{a:g}"' if a < 1 else ""
+
+
 def preview_font():
     try:
         out = subprocess.run(["fc-list"], capture_output=True, text=True).stdout
@@ -77,8 +88,8 @@ class Renderer:
         if ln is None or ln.find(qn("a:noFill")) is not None or ln.find(qn("a:solidFill")) is None:
             return 'stroke="none"'
         w = int(ln.get("w", "12700"))
-        c = ln.find(qn("a:solidFill")).find(qn("a:srgbClr")).get("val")
-        attrs = f'stroke="#{c}" stroke-width="{w}"'
+        c, a = paint(ln.find(qn("a:solidFill")))
+        attrs = f'stroke="#{c}" stroke-width="{w}"{opacity("stroke", a)}'
         cust = ln.find(qn("a:custDash"))
         if cust is not None:
             dash = []
@@ -88,8 +99,8 @@ class Renderer:
         for end, which in (("a:headEnd", "start"), ("a:tailEnd", "end")):
             e = ln.find(qn(end))
             if e is not None and e.get("type", "none") != "none":
-                mid = f"arr-{c}-{which}"
-                self.markers.add((mid, c, which))
+                mid = f"arr-{c}-{which}" + (f"-{a:g}" if a < 1 else "")
+                self.markers.add((mid, c, which, a))
                 attrs += f' marker-{which}="url(#{mid})"'
         return attrs
 
@@ -98,7 +109,8 @@ class Renderer:
         sf = sp_pr.find(qn("a:solidFill"))
         if sf is None:
             return 'fill="none"'
-        return f'fill="#{sf.find(qn("a:srgbClr")).get("val")}"'
+        c, a = paint(sf)
+        return f'fill="#{c}"{opacity("fill", a)}'
 
     def sp(self, el, tf, connector):
         sp_pr = el.find(qn("p:spPr"))
@@ -155,7 +167,11 @@ class Renderer:
             size = int(rpr.get("sz", "1800")) * 127  # 1/100 pt -> EMU
             bold = rpr.get("b") == "1"
             sf = rpr.find(qn("a:solidFill"))
-            col = "#" + sf.find(qn("a:srgbClr")).get("val") if sf is not None else "#000000"
+            if sf is not None:
+                c, a = paint(sf)
+                col = f'"#{c}"{opacity("fill", a)}'
+            else:
+                col = '"none"' if rpr.find(qn("a:noFill")) is not None else '"#000000"'
             s = "".join(r.find(qn("a:t")).text or "" for r in runs)
             lines.append((s, size, bold, col, algn))
         if body.get("anchor") == "ctr" and lines:
@@ -165,7 +181,7 @@ class Renderer:
             ax, anchor = {"ctr": ((left + right) / 2, "middle"), "r": (right, "end")}.get(algn, (left, "start"))
             weight = ' font-weight="bold"' if bold else ""
             self.out.append(f'<text x="{ax}" y="{base}" font-size="{size}" text-anchor="{anchor}" '
-                            f'fill="{col}"{weight}>{escape(s)}</text>')
+                            f'fill={col}{weight}>{escape(s)}</text>')
             top += size * 1.2
 
     def pic(self, el, tf):
@@ -179,11 +195,11 @@ class Renderer:
 
     def svg(self, sw, sh):
         defs = []
-        for mid, c, which in sorted(self.markers):
+        for mid, c, which, a in sorted(self.markers):
             path = "M0,0 L8,3 L0,6 Z" if which == "end" else "M8,0 L0,3 L8,6 Z"
             ref = 8 if which == "end" else 0
             defs.append(f'<marker id="{mid}" markerWidth="10" markerHeight="10" refX="{ref}" refY="3" '
-                        f'orient="auto"><path d="{path}" fill="#{c}"/></marker>')
+                        f'orient="auto"><path d="{path}" fill="#{c}"{opacity("fill", a)}/></marker>')
         return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {sw} {sh}" '
                 f'font-family="\'{self.font}\', sans-serif"><defs>{"".join(defs)}</defs>'
                 f'<rect width="{sw}" height="{sh}" fill="#FFFFFF"/>{"".join(self.out)}</svg>')

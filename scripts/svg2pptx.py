@@ -17,12 +17,16 @@ title, if one is given) and placed as one group, so it moves and resizes as a un
   circle    -> oval (step badges, junction dots)
   g         -> its translate() is applied to the children
 
+opacity, fill-opacity and stroke-opacity (numbers or percentages) become the alpha of the
+fill and line colors: fill alpha = opacity x fill-opacity, line alpha = opacity x
+stroke-opacity, and 0 means no fill / no line.
+
 Icons are referenced exactly as in the SVG workflow: `bundle:set/name` hrefs (looked
 up in assets/icons.json) or data: URIs. Nothing is written, and the script exits with
 status 1, when an href doesn't resolve, points at an external file, names the
 logo-less AWS Cloud badge, when a group container is rounded, or when the SVG uses an
 element, transform, style/class or text stroke that this converter would otherwise
-drop silently.
+drop silently (opacity on an <image> included).
 """
 import argparse
 import base64
@@ -91,6 +95,25 @@ def num(v, default=0.0):
         return float(v)
     except (TypeError, ValueError):
         return default
+
+
+def alpha(v):
+    """SVG opacity value ('0.5', '.5', '50%'; missing -> 1) -> float clamped to 0..1."""
+    v = (v or "").strip()
+    if not v:
+        return 1.0
+    m = re.fullmatch(r"([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(%?)", v)
+    if not m:
+        raise ValueError(f"unsupported opacity {v!r} (use a number 0-1 or a percentage)")
+    a = float(m.group(1)) / (100 if m.group(2) else 1)
+    return min(1.0, max(0.0, a))
+
+
+def paint(el, which, default):
+    """(RGBColor or None, alpha) for el's `which` ('fill' / 'stroke'); fully transparent -> (None, 1)."""
+    rgb = color(el.get(which, default))
+    a = alpha(el.get("opacity")) * alpha(el.get(f"{which}-opacity"))
+    return (None, 1.0) if rgb is None or a <= 0 else (rgb, a)
 
 
 def color(v):
@@ -162,22 +185,21 @@ def resolve_icon(href):
     raise ValueError(f"image href {href[:60]!r} is external (use bundle:set/name)")
 
 
-def blank_backdrop(el, it, vw, vh):
-    """True when rect item `it` (from <rect> `el`) paints nothing the white slide does not:
-    it covers the whole viewBox (its box is in viewBox-origin coordinates), has no stroke,
-    and its fill is none or white at full opacity. Only the first painted element can be
-    the background; a white rect drawn later masks the shapes under it and must stay."""
+def blank_backdrop(it, vw, vh):
+    """True when rect item `it` is the slide's own white background: it covers the whole
+    viewBox (its box is in viewBox-origin coordinates), has no (visible) stroke, and its
+    fill is none, fully transparent, or opaque white. A translucent white rect stays a
+    shape with its alpha. Only the first painted element can be the background; a white
+    rect drawn later masks the shapes under it and must stay."""
     x, y, w, h = it["box"]
     if x > 0 or y > 0 or x + w < vw or y + h < vh or it["stroke"] is not None:
         return False
-    if it["fill"] is None:
-        return True
-    opaque = all(num(el.get(a), 1.0) >= 1 for a in ("opacity", "fill-opacity"))
-    return it["fill"] == RGBColor(0xFF, 0xFF, 0xFF) and opaque
+    return it["fill"] is None or (it["fill"] == RGBColor(0xFF, 0xFF, 0xFF) and it["fa"] >= 1)
 
 
-def collect(svg_root):
-    """Flatten the SVG into drawing items in document order, plus every problem found."""
+def collect(svg_root, drop_backdrop=True):
+    """Flatten the SVG into drawing items in document order, plus every problem found.
+    drop_backdrop=False keeps a blank full-canvas background rect (see blank_backdrop)."""
     items, problems = [], []
     vb = [num(v) for v in svg_root.get("viewBox", "").replace(",", " ").split()]
     if len(vb) != 4:
@@ -206,6 +228,9 @@ def collect(svg_root):
         if g("style") or g("class"):
             problems.append(f"<{tag}> uses style=/class= — write presentation attributes "
                             "(fill=, stroke=, font-size=, ...) instead")
+        if tag == "svg" and alpha(g("opacity")) < 1:
+            problems.append(f"<svg> has opacity={g('opacity')!r} — not applied; put the opacity on "
+                            "each element")
         if tag == "g":
             extra = sorted(k for k in el.keys() if k not in ("transform", "id"))
             if extra:
@@ -223,28 +248,33 @@ def collect(svg_root):
         try:
             if tag == "rect":
                 x, y, w, h = num(g("x")) + ox, num(g("y")) + oy, num(g("width")), num(g("height"))
-                items.append({"k": "rect", "box": (x, y, w, h), "fill": color(g("fill", "#000")),
-                              "stroke": color(g("stroke")), "sw": num(g("stroke-width"), 1),
+                (fill, fa), (stroke, sa) = paint(el, "fill", "#000"), paint(el, "stroke", "none")
+                items.append({"k": "rect", "box": (x, y, w, h), "fill": fill, "fa": fa,
+                              "stroke": stroke, "sa": sa, "sw": num(g("stroke-width"), 1),
                               "dash": g("stroke-dasharray"), "r": num(g("rx") or g("ry"))})
-                if len(items) == 1 and blank_backdrop(el, items[0], vw, vh):
+                if drop_backdrop and len(items) == 1 and blank_backdrop(items[0], vw, vh):
                     backdrop.append(True)
             elif tag == "image":
                 href = g("href") or g(XLINK) or ""
                 x, y = num(g("x")) + ox, num(g("y")) + oy
                 if href.startswith("bundle:group/"):
                     badges.add((round(x, 2), round(y, 2)))
+                if alpha(g("opacity")) < 1:
+                    problems.append(f"<image> {href[:60]!r} has opacity={g('opacity')!r} — icons are "
+                                    "converted fully opaque; drop the opacity")
                 key, svg, png = resolve_icon(href)
                 items.append({"k": "image", "box": (x, y, num(g("width")), num(g("height"))),
                               "key": key, "svg": svg, "png": png,
                               "name": key.partition("/")[2]})
             elif tag == "text":
                 s = "".join(el.itertext()).strip()
-                if color(g("stroke")) is not None:
+                fill, fa = paint(el, "fill", "#000")
+                if paint(el, "stroke", "none")[0] is not None:
                     problems.append(f"<text> {s!r} has a stroke (text halo) — PowerPoint text has no "
                                     "stroke; put a white mask rect behind the label instead")
                 elif s:
                     items.append({"k": "text", "s": s, "x": num(g("x")) + ox, "y": num(g("y")) + oy,
-                                  "fs": num(g("font-size"), 16), "fill": color(g("fill", "#000")),
+                                  "fs": num(g("font-size"), 16), "fill": fill, "fa": fa,
                                   "bold": g("font-weight", "normal") in ("bold", "bolder", "600", "700", "800", "900"),
                                   "anchor": g("text-anchor", "start")})
                 return  # tspans are part of the text run
@@ -253,16 +283,18 @@ def collect(svg_root):
                     pts = [(num(g("x1")), num(g("y1"))), (num(g("x2")), num(g("y2")))]
                 else:
                     pts = points(g("points"))
-                    if color(g("fill")) is not None:
+                    if paint(el, "fill", "none")[0] is not None:
                         problems.append("<polyline> with a fill is not supported (use fill=\"none\")")
+                stroke, sa = paint(el, "stroke", "#000")
                 items.append({"k": "path", "pts": [(px + ox, py + oy) for px, py in pts],
-                              "stroke": color(g("stroke", "#000")), "sw": num(g("stroke-width"), 1),
+                              "stroke": stroke, "sa": sa, "sw": num(g("stroke-width"), 1),
                               "dash": g("stroke-dasharray"),
                               "head": has_marker(el, "marker-start"), "tail": has_marker(el, "marker-end")})
             elif tag == "circle":
                 cx, cy, r = num(g("cx")) + ox, num(g("cy")) + oy, num(g("r"))
-                items.append({"k": "oval", "box": (cx - r, cy - r, 2 * r, 2 * r), "fill": color(g("fill", "#000")),
-                              "stroke": color(g("stroke")), "sw": num(g("stroke-width"), 1), "dash": None})
+                (fill, fa), (stroke, sa) = paint(el, "fill", "#000"), paint(el, "stroke", "none")
+                items.append({"k": "oval", "box": (cx - r, cy - r, 2 * r, 2 * r), "fill": fill, "fa": fa,
+                              "stroke": stroke, "sa": sa, "sw": num(g("stroke-width"), 1), "dash": None})
         except ValueError as e:
             problems.append(f"<{tag}>: {e}")
             return
@@ -325,7 +357,17 @@ class Deck:
         return px * self.k / 12700
 
     # ---- line / fill helpers --------------------------------------------
-    def _ln(self, sp_pr, stroke, sw, dash, head=False, tail=False):
+    @staticmethod
+    def _alpha(solid_fill, a):
+        """Give the srgbClr under `solid_fill` an <a:alpha> when `a` (0..1) is below 1."""
+        val = int(round(a * 100000))
+        if val < 100000:
+            clr = solid_fill.find(qn("a:srgbClr"))
+            for old in clr.findall(qn("a:alpha")):
+                clr.remove(old)
+            etree.SubElement(clr, qn("a:alpha")).set("val", str(val))
+
+    def _ln(self, sp_pr, stroke, sw, dash, head=False, tail=False, a=1.0):
         for old in sp_pr.findall(qn("a:ln")):
             sp_pr.remove(old)
         ln = etree.SubElement(sp_pr, qn("a:ln"))
@@ -335,6 +377,7 @@ class Deck:
         ln.set("w", str(int(round(self.pt(sw) * 12700))))
         fill = etree.SubElement(ln, qn("a:solidFill"))
         etree.SubElement(fill, qn("a:srgbClr")).set("val", str(stroke))
+        self._alpha(fill, a)
         parts = [num(v) for v in re.split(r"[ ,]+", (dash or "").strip()) if v and v != "none"]
         if parts:
             if len(parts) % 2:
@@ -354,13 +397,14 @@ class Deck:
                 end.set("w", "med")
                 end.set("len", "med")
 
-    @staticmethod
-    def _fill(shape, rgb):
+    @classmethod
+    def _fill(cls, shape, rgb, a=1.0):
         if rgb is None:
             shape.fill.background()
         else:
             shape.fill.solid()
             shape.fill.fore_color.rgb = rgb
+            cls._alpha(shape._element.spPr.find(qn("a:solidFill")), a)
 
     @staticmethod
     def _plain(shape):
@@ -377,16 +421,16 @@ class Deck:
         self._plain(shape)
         if kind == MSO_SHAPE.ROUNDED_RECTANGLE:
             shape.adjustments[0] = min(0.5, it["r"] / min(w, h))
-        self._fill(shape, it["fill"])
-        self._ln(shape._element.spPr, it["stroke"], it["sw"], it["dash"])
+        self._fill(shape, it["fill"], it["fa"])
+        self._ln(shape._element.spPr, it["stroke"], it["sw"], it["dash"], a=it["sa"])
         return shape
 
     def _oval(self, slide, shapes, it):
         x, y, w, h = it["box"]
         shape = shapes.add_shape(MSO_SHAPE.OVAL, self.X(x), self.Y(y), self.L(w), self.L(h))
         self._plain(shape)
-        self._fill(shape, it["fill"])
-        self._ln(shape._element.spPr, it["stroke"], it["sw"], it["dash"])
+        self._fill(shape, it["fill"], it["fa"])
+        self._ln(shape._element.spPr, it["stroke"], it["sw"], it["dash"], a=it["sa"])
 
     def _path(self, slide, shapes, it):
         pts = it["pts"]
@@ -399,7 +443,7 @@ class Deck:
             shape = ff.convert_to_shape()
             shape.fill.background()
         self._plain(shape)
-        self._ln(shape._element.spPr, it["stroke"], it["sw"], it["dash"], it["head"], it["tail"])
+        self._ln(shape._element.spPr, it["stroke"], it["sw"], it["dash"], it["head"], it["tail"], it["sa"])
 
     def _text(self, slide, shapes, it):
         fs, s = it["fs"], it["s"]
@@ -416,14 +460,17 @@ class Deck:
         p.line_spacing = 1.0
         run = p.add_run()
         run.text = s
-        self._font(run, Pt(self.pt(fs)), it["bold"], it["fill"])
+        self._font(run, Pt(self.pt(fs)), it["bold"], it["fill"], it["fa"])
 
-    def _font(self, run, size, bold, rgb):
+    def _font(self, run, size, bold, rgb, a=1.0):
         f = run.font
         f.size, f.bold, f.name = size, bold, self.font
-        if rgb is not None:
-            f.color.rgb = rgb
         r_pr = run._r.get_or_add_rPr()
+        if rgb is None:
+            f.fill.background()  # fill="none" / opacity 0: invisible, as in the SVG
+        else:
+            f.color.rgb = rgb
+            self._alpha(r_pr.find(qn("a:solidFill")), a)
         r_pr.set("lang", "ko-KR")
         for tag in ("a:ea", "a:cs"):
             el = r_pr.find(qn(tag))
