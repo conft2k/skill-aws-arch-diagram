@@ -172,6 +172,7 @@ class _Model:
         # colspan node → the b1 → b2 span its x reservation assumes (held as b2 − b1 ≥ it);
         # empty on the first x solve, which reserves from both end tracks (solve())
         self.span: Dict[str, float] = {}
+        self.hold_span = True            # build("x") holds b2 − b1 ≥ span (False: _solve_x measures g(span))
 
     # ---- helpers --------------------------------------------------------------------
 
@@ -307,7 +308,7 @@ class _Model:
                 self.add(axis, ref, v, 0, f"xy {txt}", f"node:{nid}")
                 self.add(axis, v, ref, 0, f"xy {txt}", f"node:{nid}")
         if axis == "x":
-            for nid, sp in sorted(self.span.items()):
+            for nid, sp in sorted(self.span.items()) if self.hold_span else ():
                 n = spec.nodes[nid]
                 self.add("x", (f"col:{n.col}", 0), (f"col:{n.col2}", 0), sp,
                          f"colspan {nid} centered (span {fmt_num(sp)})", f"node:{nid}")
@@ -1172,6 +1173,85 @@ def _explain_stacks(m: _Model, val, pred, final) -> List[str]:
 # =======================================================================================
 # solve
 
+SPAN_TOL = 0.01         # px: a colspan's span has settled when its solve gives it back this close
+SPAN_ROUNDS = 12        # x solves spent looking for the spans (then the closest, with a warning)
+
+
+def _solve_x(m: _Model, extra: Sequence[Requirement]):
+    """The x solve. A colspan node's center (X_b1 + X_b2) / 2 is no single variable, so its
+    footprint and requirements are reserved from X_b1 + s/2 (as b) and X_b2 − s/2 (as a)
+    for an assumed span s (s = 0: from both end tracks). g(s), the span a solve with that
+    reservation gives b2 − b1, grows with s at a slope below 1 (only half the reservation
+    moves), so the span wanted is the fixed point g(s) = s: found per colspan by secant
+    steps on h(s) = g(s) − s, by regula falsi (Illinois) once a step overshoots (h < 0, as
+    when the reservation stops pulling b1 left), to SPAN_TOL, at most SPAN_ROUNDS solves.
+    The answer is solved once more with b2 − b1 ≥ s held, so the reservation is exact or
+    conservative whatever s was (DESIGN 4.3 #7). Every round rebuilds the x model whole
+    (constraints, ties, flow rows, warnings), so _hug and flow-row centering see the
+    answer's own."""
+    spec = m.spec
+    spans = [nid for nid, n in spec.nodes.items() if n.col2 and n.xy is None]
+    w0 = len(m.warnings)
+
+    def run(span, hold):
+        m.span, m.hold_span = dict(span), hold
+        m.cons["x"], m.ties["x"], m.flow_rows = [], [], []
+        m.aligned = {k for k in m.aligned if k[0] != "x"}
+        del m.warnings[w0:]
+        m.build("x")
+        mapped = [_map_req(m, r) for r in extra if r.axis == "x"]
+        out = _solve_axis(m, "x", m.cons["x"] + mapped)
+        got = {nid: out[0][f"col:{spec.nodes[nid].col2}"] - out[0][f"col:{spec.nodes[nid].col}"] for nid in spans}
+        return out, got
+
+    out, g = run({}, True)
+    if not spans:
+        return out
+    s = {i: 0.0 for i in spans}
+    lo: Dict[str, Tuple[float, float]] = {}        # last s with h > 0 (span too small), its h
+    hi: Dict[str, Tuple[float, float]] = {}        # last s with h < 0 (overshot), its h
+    prev: Dict[str, Tuple[float, float]] = {}      # the step before (secant)
+    side: Dict[str, int] = {}                      # Illinois: which end stayed twice
+    for _ in range(SPAN_ROUNDS):
+        h = {i: g[i] - s[i] for i in spans}
+        if all(abs(h[i]) <= SPAN_TOL for i in spans):
+            break
+        nxt = {}
+        for i in spans:
+            if abs(h[i]) <= SPAN_TOL:
+                nxt[i] = s[i]
+                continue
+            if h[i] > 0:
+                if i in lo:
+                    prev[i] = lo[i]
+                lo[i] = (s[i], h[i])
+                if side.get(i) == 1 and i in hi:
+                    hi[i] = (hi[i][0], hi[i][1] / 2)
+                side[i] = 1
+            else:
+                hi[i] = (s[i], h[i])
+                if side.get(i) == -1:
+                    lo[i] = (lo[i][0], lo[i][1] / 2)
+                side[i] = -1
+            if i in hi:                            # bracketed: regula falsi
+                (a, ha), (b, hb) = lo[i], hi[i]
+                nxt[i] = a + ha * (b - a) / (ha - hb)
+            elif i in prev and lo[i][0] != prev[i][0]:  # secant through the last two under-steps
+                (a, ha), (b, hb) = prev[i], lo[i]
+                slope = (hb - ha) / (b - a)        # h' = g' − 1, in [−1, 0) while g' ∈ [0, 1)
+                nxt[i] = b - hb / slope if slope < -1e-9 else b + hb
+            else:
+                nxt[i] = s[i] + h[i]               # plain step: s ← g(s)
+        s = nxt
+        out, g = run(s, False)                     # measure g(s): the span not held
+    unsettled = [f"{spec.nodes[i].src} {i}: its colspan span did not settle in {SPAN_ROUNDS} solves "
+                 f"(assumed {fmt_num(s[i])}, solved {fmt_num(g[i])}); its room is reserved from the center "
+                 f"of a span ≥ {fmt_num(s[i])}" for i in spans if abs(g[i] - s[i]) > SPAN_TOL]
+    out, _ = run(s, True)
+    m.warnings += unsettled
+    return out
+
+
 def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
     m = _Model(spec)
     extra = list(reqs) + (list(note_block.requirements) if note_block is not None else [])
@@ -1190,22 +1270,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
         raise SolveError(probs)
 
     # ---- x ---------------------------------------------------------------------------
-    # A colspan node's center (X_b1 + X_b2) / 2 is no single variable: the first solve
-    # reserves its half width from both end tracks (left of b1, right of b2), the next
-    # from its center for the span that solve found, held as b2 − b1 ≥ span (DESIGN 4.3 #7)
-    spans = [nid for nid, n in spec.nodes.items() if n.col2 and n.xy is None]
-    w0 = len(m.warnings)
-    for _ in range(4):
-        m.build("x")
-        xv, xpred, xcons = _solve_axis(m, "x", m.cons["x"] + mapped["x"])
-        got = {nid: round(xv[f"col:{spec.nodes[nid].col2}"] - xv[f"col:{spec.nodes[nid].col}"], 6) for nid in spans}
-        if not spans or all(abs(got[i] - m.span.get(i, 0.0)) <= _EPS for i in spans):
-            break
-        m.span = got
-        m.cons["x"], m.ties["x"], m.flow_rows = [], [], []
-        m.aligned = {k for k in m.aligned if k[0] != "x"}
-        del m.warnings[w0:]
-        mapped["x"] = [_map_req(m, r) for r in extra if r.axis == "x"]
+    xv, xpred, xcons = _solve_x(m, extra)
     xbf, xv = xv, dict(xv)
     _hug(m, "x", xcons, xv)
     for parent, ids in m.flow_rows:

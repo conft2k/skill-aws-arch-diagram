@@ -770,6 +770,69 @@ class ConstraintTest(unittest.TestCase):
         self.assertEqual(rb.x1 - rb.x0, 2 * half + 16)                      # nothing else is wider
         self.assertEqual(check(spec, g), [])
 
+    @staticmethod
+    def span_spec(t_label, flow=False):
+        """t over b1..b2 beside l; a long bottom-row label (w) holds b0 → b2 wide, so the
+        span g(s) found grows by half of every span s assumed (67 → 100.5 → 117.25 …)."""
+        rows = ["main", "bot"] + ([("svc", {"flow": 100})] if flow else [])
+        ec2 = "service/Amazon-EC2"
+        nodes = [dict(id="l", icon=ec2, label="L", parent="vpc", col="b0", row="main"),
+                 dict(id="t", icon=ec2, label=t_label, parent="vpc", col="b1", col2="b2", row="main"),
+                 dict(id="w", icon=ec2, label="A bottom row node with an extremely long label that pushes",
+                      parent="vpc", col="b0", row="bot"),
+                 dict(id="z", icon=ec2, label="Z", parent="vpc", col="b2", row="bot")]
+        if flow:
+            nodes += [dict(id=f"f{k}", icon="service/Amazon-Simple-Storage-Service", label=f"F{k}", parent="vpc",
+                           row="svc", flow_index=k) for k in range(2)]
+        return build("spanconv", ["b0", "b1", "b2"], rows,
+                     [dict(id="cloud", type="cloud"), dict(id="vpc", type="vpc", label="VPC", parent="cloud")], nodes)
+
+    def test_colspan_span_reaches_its_fixed_point(self):
+        """The span is the fixed point g(s) = s, not where 4 rounds of s ← g(s) stopped:
+        t's center sits exactly the label pitch from l, b2 − b1 is 134, and a flow row in the
+        same box is still centered (every round rebuilds the x model whole)."""
+        calls = []
+        orig = LS._solve_axis
+
+        def counting(m, axis, cons):
+            calls.append(axis)
+            return orig(m, axis, cons)
+
+        LS._solve_axis = counting
+        try:
+            g = LS.solve(self.span_spec("A colspan node with a very long label line", flow=True), [])
+        finally:
+            LS._solve_axis = orig
+        self.assertEqual(g.cols["b2"] - g.cols["b1"], 134)
+        self.assertEqual(g.nodes["t"].cx, (g.cols["b1"] + g.cols["b2"]) / 2)
+        self.assertLessEqual(calls.count("x"), 4)                       # s = 0, plain step, secant, the answer
+        vpc, f = g.groups["vpc"].rect, [g.nodes["f0"].cx, g.nodes["f1"].cx]
+        self.assertAlmostEqual((f[0] + f[1]) / 2, vpc.cx, delta=1)
+        self.assertEqual(g.warnings, [])
+
+    def test_colspan_span_overshoot_brackets(self):
+        """When the reservation stops pulling b1 left (b1 reaches b0), the secant step
+        overshoots; regula falsi comes back to the smallest span that holds (284)."""
+        g = LS.solve(self.span_spec("Short", flow=True), [])
+        self.assertEqual(g.cols["b1"], g.cols["b0"])
+        self.assertAlmostEqual(g.cols["b2"] - g.cols["b1"], 284, delta=LS.SPAN_TOL)
+        self.assertEqual(g.warnings, [])
+
+    def test_colspan_span_cap(self):
+        """Out of rounds: a warning names the node, and the answer still holds its span and
+        centers its flow row (nothing of the last round's model is lost)."""
+        rounds = LS.SPAN_ROUNDS
+        LS.SPAN_ROUNDS = 1
+        try:
+            g = LS.solve(self.span_spec("A colspan node with a very long label line", flow=True), [])
+        finally:
+            LS.SPAN_ROUNDS = rounds
+        self.assertEqual([w for w in g.warnings if "did not settle" in w and " t:" in w], g.warnings)
+        self.assertEqual(len(g.warnings), 1)
+        self.assertGreaterEqual(g.cols["b2"] - g.cols["b1"], 67)
+        vpc, f = g.groups["vpc"].rect, [g.nodes["f0"].cx, g.nodes["f1"].cx]
+        self.assertAlmostEqual((f[0] + f[1]) / 2, vpc.cx, delta=1)
+
     def test_pane_note_block(self):
         spec = nfw_spec()
         nb = NoteBlock("pane", w=300, h=400, requirements=[
