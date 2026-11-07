@@ -516,6 +516,18 @@ class Plan(unittest.TestCase):
             math.ceil(M.layout_text_width("고객 라우터", 14) / 2)
         self.assertEqual(gut[0].d, want)
         self.assertFalse(gut[0].soft)
+        # only the nearest sibling toward the other end: the leg drops before it
+        ec2 = "service/Amazon-EC2"
+        spec = layout_spec.load({
+            "name": "gut", "cols": ["a", "b", "c", "d"], "rows": ["top", "bot"],
+            "nodes": [{"id": "x", "icon": ec2, "label": "X", "sub": ["a long line under the source"], "at": ["a", "top"]},
+                      {"id": "s1", "icon": ec2, "label": "S1", "at": ["b", "top"]},
+                      {"id": "s2", "icon": ec2, "label": "S2", "at": ["c", "top"]},
+                      {"id": "t", "icon": ec2, "label": "T", "at": ["d", "bot"]}],
+            "edges": [{"e": "x -> t"}]})
+        self.assertEqual(R.shapes(spec)[0], "HVH")
+        gut = [(r.a, r.b) for r in R.plan(spec) if "bend gutter past" in r.why]
+        self.assertEqual(gut, [("node:x", "node:s1")])
         # a VHV's labelled horizontal piece asks for its label run in a document only
         spec = layout_spec.load(spec_path("tgw"))
         run = [r for r in R.plan(spec) if r.why.startswith("label 'VPC attachment' run on the bend")]

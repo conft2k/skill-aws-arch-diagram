@@ -587,19 +587,22 @@ def _gutter_reqs(spec: Spec, nid: str, other: _End, d: int, owner: str, add) -> 
     """A HVH leaving node `nid` sideways (toward d) and turning down: its vertical runs
     between nid and the first sibling on nid's row toward the other end, past both label
     stacks, so those two keep their whole footprints (widest lines) a sibling gap apart.
-    (The solver separates side-by-side nodes by the label lines level with each other
-    only.)"""
+    Only that nearest sibling: the leg runs before it, and the ones past it keep their own
+    spacing from it. (The solver separates side-by-side nodes by the label lines level with
+    each other only.)"""
     n = spec.nodes[nid]
     if n.on or n.xy is not None or n.col is None or n.row is None or other.cext is None:
         return
     ci, _ = _indices(spec)
     lo, hi = ci[n.col], ci[n.col2 or n.col]
+    near: Dict[int, list] = {}                      # the first sibling's column toward d → siblings
     for o in spec.nodes.values():
         if o.id == nid or o.parent != n.parent or o.on or o.xy is not None or o.col is None or o.row != n.row:
             continue
         olo, ohi = ci[o.col], ci[o.col2 or o.col]
-        if not (hi < olo <= other.cext[1] if d > 0 else other.cext[0] <= ohi < lo):
-            continue
+        if hi < olo <= other.cext[1] if d > 0 else other.cext[0] <= ohi < lo:
+            near.setdefault(olo if d > 0 else -ohi, []).append(o)
+    for o in near[min(near)] if near else ():
         need = spec.const.sibling_gap + _half(spec, n) + _half(spec, o)
         a, b = (nid, o.id) if d > 0 else (o.id, nid)
         add("x", f"node:{a}", f"node:{b}", need, f"bend gutter past {nid}'s labels | {o.id}", owner)
