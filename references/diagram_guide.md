@@ -396,7 +396,9 @@ it even when only an SVG or PNG is wanted:
 
 No `<path>` outside markers, no other transforms (scale, rotate), no CSS classes or
 `style=""`, no stroked text. Colors as `#RRGGBB`. The full-canvas white background rect
-is dropped (the slide is white). One draft is one slide; the export scales it to fit a
+is dropped (the slide is white) when it is the first thing drawn, unstroked and fully
+opaque; any other background colour, and a canvas-sized rect drawn later or elsewhere,
+stays a shape. One draft is one slide; the export scales it to fit a
 16:9 slide, so the canvas size decides the slide's text size (see "Text size").
 
 ### Skeleton

@@ -151,6 +151,20 @@ def resolve_icon(href):
     raise ValueError(f"image href {href[:60]!r} is external (use bundle:set/name)")
 
 
+def blank_backdrop(el, it, vw, vh):
+    """True when rect item `it` (from <rect> `el`) paints nothing the white slide does not:
+    it covers the whole viewBox (its box is in viewBox-origin coordinates), has no stroke,
+    and its fill is none or white at full opacity. Only the first painted element can be
+    the background; a white rect drawn later masks the shapes under it and must stay."""
+    x, y, w, h = it["box"]
+    if x > 0 or y > 0 or x + w < vw or y + h < vh or it["stroke"] is not None:
+        return False
+    if it["fill"] is None:
+        return True
+    opaque = all(num(el.get(a), 1.0) >= 1 for a in ("opacity", "fill-opacity"))
+    return it["fill"] == RGBColor(0xFF, 0xFF, 0xFF) and opaque
+
+
 def collect(svg_root):
     """Flatten the SVG into drawing items in document order, plus every problem found."""
     items, problems = [], []
@@ -162,6 +176,7 @@ def collect(svg_root):
         problems.append("the root <svg> needs a viewBox (or width and height)")
         return (vx, vy, vw, vh), items, problems
     badges = set()
+    backdrop = []  # [True] once the first painted item proves a blank full-canvas rect
 
     def walk(el, ox, oy):
         tag = el.tag.replace(NS, "")
@@ -200,6 +215,8 @@ def collect(svg_root):
                 items.append({"k": "rect", "box": (x, y, w, h), "fill": color(g("fill", "#000")),
                               "stroke": color(g("stroke")), "sw": num(g("stroke-width"), 1),
                               "dash": g("stroke-dasharray"), "r": num(g("rx") or g("ry"))})
+                if len(items) == 1 and blank_backdrop(el, items[0], vw, vh):
+                    backdrop.append(True)
             elif tag == "image":
                 href = g("href") or g(XLINK) or ""
                 x, y = num(g("x")) + ox, num(g("y")) + oy
@@ -246,9 +263,9 @@ def collect(svg_root):
         if it["k"] == "rect" and it["r"] > 0 and (round(it["box"][0], 2), round(it["box"][1], 2)) in badges:
             problems.append(f"rounded group container at ({it['box'][0]:g},{it['box'][1]:g}) — "
                             "group containers are square-cornered, drop rx/ry")
-    # The full-canvas white background is the slide's own background.
-    items = [it for it in items if not (it["k"] == "rect" and it["box"][2] >= vw and it["box"][3] >= vh
-                                        and it["stroke"] is None)]
+    # A blank full-canvas background painted first is the slide's own (white) background.
+    if backdrop:
+        del items[0]
     return (0.0, 0.0, vw, vh), items, problems
 
 
