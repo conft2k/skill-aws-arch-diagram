@@ -27,6 +27,13 @@ clean, since the detour it drew may still pass the check (a shape the spec asked
 the router refused is not counted: no widening is planned for it). The round with the
 fewest problems (a slide that comes out too small counts as one), then the fewest edges
 drawn in another shape, is written.
+Each retained feedback round, fixed-answer repair and text scale keeps every rule's
+violation count from increasing, including rules not enabled for candidate selection.
+The CLI first chooses the existing default draft, then guards further feedback and
+repairs against that result, so a guard cannot restore an earlier, unfinished drawing.
+Feedback rounds are judged after repairing a new header crossing. Unavailable rule
+information leaves the drawing checks in charge; the summary reports the first checker
+failure once, even when a later check succeeds.
 
 The retained draft's remaining LINE IN HEADER problems get at most five further feedback
 rounds: mark those edges' header bands as routing obstacles, then, if no acceptable route
@@ -110,6 +117,55 @@ class Build:
         self.decisions = decisions or layout_solve.Decisions()
         self.diag_pairs = tuple(diag_pairs)
         self.routing_alternatives = dict(routing_alternatives or {})
+
+
+class RuleGuard:
+    """Share rule information across later stages; a checker bug never costs a draft."""
+
+    def __init__(self, protect: bool = True):
+        self.protect = protect
+        self.error = None
+        self._checked = {}
+
+    def failed(self, error):
+        if self.error is None:
+            self.error = repr(error)
+
+    def check(self, spec: Spec, geom: Geometry, data: bytes):
+        key = (id(spec), id(geom), data)
+        if key in self._checked:
+            return self._checked[key][2]
+        try:
+            import rules
+            with layout_text.font_context(spec.font_factor, spec.font_steps):
+                violations = rules.check(spec, geom, data)
+        except Exception as error:  # noqa: BLE001 — rules are unavailable, not a refusal
+            self.failed(error)
+            return None
+        # Retain the objects too, so ids cannot be reused by a later build.
+        self._checked[key] = (spec, geom, violations)
+        return violations
+
+    def counts(self, spec: Spec, geom: Geometry, data: bytes):
+        if not self.protect:
+            return None
+        violations = self.check(spec, geom, data)
+        if violations is None:
+            return None
+        return Counter(v.rule for v in violations)
+
+    @staticmethod
+    def adds(before, after):
+        if before is None or after is None:
+            return False
+        return bool(after - before)
+
+    def header_counts(self, spec: Spec, geom: Geometry, data: bytes):
+        if self.protect:
+            return self.counts(spec, geom, data)
+        violations = self.check(spec, geom, data)
+        return (None if violations is None else
+                Counter((v.rule, v.code) for v in violations if v.code != "B2"))
 
 
 def slide_text_pt(spec: Spec, svg: bytes) -> Tuple[float, Optional[Tuple[float, str]], Tuple[float, float]]:
@@ -434,7 +490,8 @@ def emit(spec: Spec, geom: Geometry, elements: Sequence[Element], source: str) -
 # =======================================================================================
 # In-process check (check_layout --fix, then what is left)
 
-def fix_pass(data: bytes, scratch: Path) -> Tuple[bytes, int]:
+def fix_pass(data: bytes, scratch: Path, spec: Optional[Spec] = None,
+             geom: Optional[Geometry] = None, rule_guard: Optional[RuleGuard] = None) -> Tuple[bytes, int]:
     """check_layout --fix on the bytes (its fixed-answer repairs, re-checked, ≤ 5 passes)."""
     fixed = 0
     for _ in range(5):
@@ -446,18 +503,24 @@ def fix_pass(data: bytes, scratch: Path) -> Tuple[bytes, int]:
         if not real:
             break
         CL.write_edits(scratch, data, adv.order, [e for _, h in real for e in h.auto])
-        data = scratch.read_bytes()
+        candidate = scratch.read_bytes()
+        if rule_guard is not None:
+            before = rule_guard.counts(spec, geom, data)
+            after = rule_guard.counts(spec, geom, candidate)
+            if rule_guard.adds(before, after):
+                break
+        data = candidate
         fixed += len(real)
     return data, fixed
 
 
-def fixed_build(b: Build, scratch: Path) -> Tuple[bytes, int]:
+def fixed_build(b: Build, scratch: Path, rule_guard: Optional[RuleGuard] = None) -> Tuple[bytes, int]:
     """Reuse a build's identical fixed-answer pass during header repair and output."""
     cached = getattr(b, "_fixed_draft", None)
-    if cached is None or cached[0] != b.svg:
-        cached = (b.svg, fix_pass(b.svg, scratch))
+    if cached is None or cached[0] != b.svg or cached[1] is not rule_guard:
+        cached = (b.svg, rule_guard, fix_pass(b.svg, scratch, b.spec, b.geom, rule_guard))
         b._fixed_draft = cached
-    return cached[1]
+    return cached[2]
 
 
 class Problem:
@@ -809,33 +872,33 @@ def header_room(b: Build, p: Problem, n: int) -> Optional[Requirement]:
 
 
 def repair_headers(b: Build, rnd: int, used: Sequence[Requirement], skipped: Dict[int, int],
-                   source: str, scratch: Path, max_rounds: int = MAX_ROUNDS):
+                   source: str, scratch: Path, max_rounds: int = MAX_ROUNDS,
+                   rule_guard: Optional[RuleGuard] = None):
     """Repair B2 on the retained draft, preserving its other checks, rules and slide fit.
 
     Earlier rounds can clear transient header crossings by resolving their original
     problems. Start here only if the retained, auto-repaired draft still has B2, so
     inputs whose final draft had no B2 keep their existing output.
     """
+    rule_guard = rule_guard if rule_guard is not None else RuleGuard()
     raw_probs = problems_of(b.svg)[0]
     if not any(p.iss.kind in {"LINE IN HEADER", "TITLE OFFSET", "CIDR IN TITLE",
                               "CIDR OFF HEADER", "SMALL TEXT"} for p in raw_probs):
         return rnd, b, list(used), skipped
-    initial = fixed_build(b, scratch)[0]
+    initial = fixed_build(b, scratch, rule_guard)[0]
     probs = problems_of(initial)[0]
     headers = [p for p in probs if p.iss.kind == "LINE IN HEADER"]
     if not headers:
         return rnd, b, list(used), skipped
-    import rules
-
     def judge(candidate):
-        data = fixed_build(candidate, scratch)[0]
+        data = fixed_build(candidate, scratch, rule_guard)[0]
         probs = problems_of(data)[0]
         other = Counter(p.iss.kind for p in probs if p.iss.kind != "LINE IN HEADER")
-        viol = Counter((v.rule, v.code) for v in rules.check(candidate.spec, candidate.geom, data) if v.code != "B2")
+        viol = rule_guard.header_counts(candidate.spec, candidate.geom, data)
         return probs, other, viol, bool(slide_problem(candidate.spec, data))
 
     base_checks = Counter(p.iss.kind for p in probs if p.iss.kind != "LINE IN HEADER")
-    base_rules = Counter((v.rule, v.code) for v in rules.check(b.spec, b.geom, initial) if v.code != "B2")
+    best_rules = rule_guard.header_counts(b.spec, b.geom, initial)
     base_small = bool(slide_problem(b.spec, initial))
     best = (len(headers), rnd, b, list(used), dict(skipped))
     extra = {(r.axis, r.a, r.b): r for r in used}
@@ -851,9 +914,11 @@ def repair_headers(b: Build, rnd: int, used: Sequence[Requirement], skipped: Dic
             break
         probs, checks, violations, small = judge(b)
         headers = [p for p in probs if p.iss.kind == "LINE IN HEADER"]
-        if not (checks - base_checks or violations - base_rules or (small and not base_small)):
+        if not (checks - base_checks or rule_guard.adds(best_rules, violations) or (small and not base_small)):
             if len(headers) < best[0]:
                 best = (len(headers), rnd + step, b, list(extra.values()), dict(skip))
+                if rule_guard.protect:
+                    best_rules = violations
             if not headers:
                 break
         elif not headers:
@@ -1028,15 +1093,22 @@ def slide_problem(spec: Spec, svg: bytes) -> Optional[str]:
             "move the regional services row into a column, or split the slide")
 
 
-def rule_lines(spec: Spec, geom: Geometry, data: bytes) -> List[str]:
+def rule_lines(spec: Spec, geom: Geometry, data: bytes,
+               rule_guard: Optional[RuleGuard] = None) -> List[str]:
     """The user rules' verdict on the written draft (scripts/rules.py), one `rule:` line per
     violation — report only: neither the draft nor the exit status depends on it."""
-    try:
-        import rules
-        with layout_text.font_context(spec.font_factor, spec.font_steps):
-            return rules.lines(rules.check(spec, geom, data))
-    except Exception as e:  # noqa: BLE001 — a checker bug must not cost the draft
-        return [f"rule: checker error {e!r}"]
+    rule_guard = rule_guard if rule_guard is not None else RuleGuard()
+    violations = rule_guard.check(spec, geom, data)
+    lines = []
+    if violations is not None:
+        try:
+            import rules
+            lines = rules.lines(violations)
+        except Exception as error:  # noqa: BLE001 — summary failure still leaves the draft
+            rule_guard.failed(error)
+    if rule_guard.error is not None:
+        lines.append(f"rule: checker error {rule_guard.error}")
+    return lines
 
 
 def result_line(n: int, verdict: Sequence[str], document_on_slide: bool = False) -> str:
@@ -1075,46 +1147,74 @@ def result_line(n: int, verdict: Sequence[str], document_on_slide: bool = False)
 # CLI
 
 def render_checked(spec: Spec, source: str, scratch: Path, no_check: bool = False,
-                   max_rounds: int = MAX_ROUNDS):
+                   max_rounds: int = MAX_ROUNDS, rule_guard: Optional[RuleGuard] = None,
+                   chosen=None):
     """One font size, with the existing routing feedback and fixed-answer repairs."""
+    rule_guard = rule_guard if rule_guard is not None else RuleGuard()
     with layout_text.font_context(spec.font_factor, spec.font_steps):
-        extra: Dict[Tuple[str, str, str], Requirement] = {}
-        skip: Dict[int, int] = {}
-        best, place = None, None
+        extra: Dict[Tuple[str, str, str], Requirement] = (
+            {(r.axis, r.a, r.b): r for r in chosen[5]} if chosen is not None else {})
+        skip: Dict[int, int] = dict(chosen[6]) if chosen is not None else {}
+        best, place, best_rules = None, None, None
+        base_round = chosen[4] if chosen is not None else 0
+        if chosen is not None:
+            chosen[0]._fixed_draft = (chosen[0].svg, rule_guard, (chosen[1], chosen[2]))
         for rnd in range(max_rounds + 1):
             try:
-                b = build(spec, list(extra.values()), dict(skip), place, source)
+                b = (chosen[0] if chosen is not None and rnd == 0 else
+                     build(spec, list(extra.values()), dict(skip), place, source))
             except M.LayoutError:
                 if best is None:
                     raise
                 break
             place = b.nb.place if b.nb.place != "none" else None
             if no_check:
-                best = ((0, 0, 0), rnd, b, [], {})
+                best = ((0, 0, 0), base_round + rnd, b, [], {})
                 break
-            probs = [p for p in problems_of(b.feedback_svg)[0] if p.iss.kind != "LINE IN HEADER"]
+            feedback_data = (chosen[1] if rnd == 0 else b.svg) if chosen is not None else b.feedback_svg
+            probs = [p for p in problems_of(feedback_data)[0] if p.iss.kind != "LINE IN HEADER"]
             wide = int(spec.mode == "document" and b.geom.canvas_w > K.DOC_WIDE)
-            judged = b.feedback_svg
+            judged = feedback_data
             if spec.mode == "slide" and any(p.iss.kind in TEXT_SIZE_FIXES for p in probs):
-                judged = fix_pass(b.feedback_svg, scratch)[0]
+                judged = fix_pass(feedback_data, scratch, b.spec, b.geom, rule_guard)[0]
             score = (problem_count(probs) + (1 if slide_problem(spec, judged) else 0), wide, shape_misses(b))
             if best is None or score < best[0]:
-                best = (score, rnd, b, list(extra.values()), dict(skip))
+                data = (chosen[1] if chosen is not None and rnd == 0 else
+                        fixed_build(b, scratch, rule_guard)[0] if chosen is not None else b.svg)
+                violations = rule_guard.counts(b.spec, b.geom, data)
+                kept = (base_round + rnd, b, list(extra.values()), dict(skip))
+                if (best is not None and rule_guard.adds(best_rules, violations)
+                        and violations["R-border"] > best_rules["R-border"]):
+                    # Judge a feedback round after its header repair: a temporary
+                    # B2 that the existing repair clears must not block that round.
+                    kept = repair_headers(b, rnd, list(extra.values()), dict(skip),
+                                          source, scratch, max_rounds, rule_guard)
+                    kb = kept[1]
+                    violations = rule_guard.counts(kb.spec, kb.geom,
+                                                   fixed_build(kb, scratch, rule_guard)[0])
+                if best is None or not rule_guard.adds(best_rules, violations):
+                    best = (score, *kept)
+                    best_rules = violations
             if score == (0, 0, 0) or rnd == max_rounds or not feedback(b, probs, extra, skip):
                 break
         _, rnd, b, used, skipped = best
         if not no_check:
-            rnd, b, used, skipped = repair_headers(b, rnd, used, skipped, source, scratch, max_rounds)
-        data, fixed = (b.svg, 0) if no_check else fixed_build(b, scratch)
+            rnd, b, used, skipped = repair_headers(b, rnd, used, skipped, source, scratch,
+                                                  max_rounds, rule_guard)
+        data, fixed = (b.svg, 0) if no_check else fixed_build(b, scratch, rule_guard)
         probs = [] if no_check else problems_of(data)[0]
         return b, data, fixed, probs, rnd, used, skipped
 
 
-def other_rule_counts(spec: Spec, b: Build, data: bytes):
-    """Scaling may improve fit but must not introduce more violations of other rules."""
-    import rules
-    with layout_text.font_context(spec.font_factor, spec.font_steps):
-        return Counter(v.rule for v in rules.check(spec, b.geom, data) if v.rule != "R-fit")
+def other_rule_counts(spec: Spec, b: Build, data: bytes,
+                      rule_guard: Optional[RuleGuard] = None):
+    """Text scale may remove fit violations, but must not introduce any violation."""
+    rule_guard = rule_guard if rule_guard is not None else RuleGuard()
+    if not rule_guard.protect:
+        violations = rule_guard.check(spec, b.geom, data)
+        return (None if violations is None else
+                Counter(v.rule for v in violations if v.rule != "R-fit"))
+    return rule_guard.counts(spec, b.geom, data)
 
 
 def trunk_badge_branches(spec: Spec, data: bytes):
@@ -1162,9 +1262,17 @@ def trunk_badge_branches(spec: Spec, data: bytes):
     return out
 
 
-def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = False):
+def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = False,
+                    rule_guard: Optional[RuleGuard] = None, chosen=None):
     """Render, then try at most two uniform font enlargements; keep a safe improvement."""
-    result = render_checked(spec, source, scratch, no_check)
+    rule_guard = rule_guard if rule_guard is not None else RuleGuard()
+    if chosen is None:
+        result = render_checked(spec, source, scratch, no_check, MAX_ROUNDS, rule_guard)
+    else:
+        result = render_checked(spec, source, scratch, no_check, min(2, MAX_ROUNDS), rule_guard, chosen)
+        if result[1] == chosen[1]:
+            # This selected draft already exhausted its text-scale attempts.
+            return result
     if spec.text_scale != "auto":
         return result
     for _ in range(2):
@@ -1179,21 +1287,22 @@ def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = Fal
         try:
             # The initial render gets the full feedback budget. Font retries have a
             # smaller budget: unresolved collisions safely keep that initial result.
-            candidate = render_checked(trial, source, scratch, no_check, min(2, MAX_ROUNDS))
+            candidate = render_checked(trial, source, scratch, no_check, min(2, MAX_ROUNDS), rule_guard)
         except M.LayoutError:
             break
         cb, cd, _, cp, *_ = candidate
         new_actual = drawn_text(trial, cd)[0][0]
         if new_actual < actual or len(cp) > len(probs):
             break
-        if trunk_badge_branches(b.spec, data) != trunk_badge_branches(trial, cd):
-            break
-        if not no_check:
-            try:
-                before, after = other_rule_counts(b.spec, b, data), other_rule_counts(trial, cb, cd)
-            except Exception:  # report-only checker failure must not cost the previous draft
+        try:
+            if trunk_badge_branches(b.spec, data) != trunk_badge_branches(trial, cd):
                 break
-            if any(count > before[rule] for rule, count in after.items()):
+        except Exception as error:  # noqa: BLE001 — branch information is unavailable too
+            rule_guard.failed(error)
+        if not no_check:
+            before = other_rule_counts(b.spec, b, data, rule_guard)
+            after = other_rule_counts(trial, cb, cd, rule_guard)
+            if rule_guard.adds(before, after):
                 break
         result = candidate
     return result
@@ -1226,10 +1335,43 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     source = str(a.spec)
 
+    rule_guard = RuleGuard()
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            b, data, fixed, _, rnd, used, skipped = render_readable(
-                spec, source, Path(tmp) / "round.svg", a.no_check)
+            scratch = Path(tmp) / "round.svg"
+            default_guard = RuleGuard(protect=False)
+            default = render_readable(spec, source, scratch, a.no_check, default_guard)
+            if default_guard.error is not None:
+                rule_guard.error = default_guard.error
+            result = default
+            # A completed default already used the feedback/text-scale budgets.
+            # Only unresolved check problems warrant further guarded repairs.
+            if not a.no_check and default[3]:
+                candidate = render_readable(default[0].spec, source, scratch, False,
+                                            rule_guard, default)
+                db, dd, _, dp, *_ = default
+                cb, cd, _, cp, *_ = candidate
+                before = rule_guard.check(db.spec, db.geom, dd)
+                after = rule_guard.check(cb.spec, cb.geom, cd)
+                if before is None or after is None:
+                    if len(cp) <= len(dp):
+                        result = candidate
+                else:
+                    improves = (len(after) < len(before) or
+                                (len(after) == len(before) and len(cp) < len(dp)))
+                    try:
+                        import rules
+                        old_score = rules.score(before, dp, db.geom, db.spec, shape_misses(db))
+                        new_score = rules.score(after, cp, cb.geom, cb.spec, shape_misses(cb))
+                    except Exception as error:  # noqa: BLE001 — keep the chosen draft
+                        rule_guard.failed(error)
+                    else:
+                        if (improves and len(cp) <= len(dp)
+                                and not rule_guard.adds(Counter(v.rule for v in before),
+                                                       Counter(v.rule for v in after))
+                                and new_score < old_score):
+                            result = candidate
+            b, data, fixed, _, rnd, used, skipped = result
     except M.LayoutError as e:
         print("\n".join(e.problems))
         print(f"{len(e.problems)} problem{'s' if len(e.problems) != 1 else ''}")
@@ -1275,7 +1417,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             for line in b.geom.explain:
                 if line.startswith(pre):
                     print(f"  {line}")
-    verdict = rule_lines(spec, b.geom, data)
+    verdict = rule_lines(spec, b.geom, data, rule_guard)
     for line in verdict:
         print(line)
     print(result_line(n, verdict, document_on_slide))
