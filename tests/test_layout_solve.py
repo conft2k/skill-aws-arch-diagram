@@ -618,18 +618,36 @@ class ContainerSeparationTest(unittest.TestCase):
         return LP.load(dict(name="containment", cols=["app", "logs"], rows=["top", "bottom"],
                             groups=groups, nodes=nodes), mode=mode)
 
-    def test_shared_tracks_refuse_false_containment_in_both_modes(self):
+    def test_shared_tracks_relax_false_containment_in_both_modes(self):
         for accounts in (False, True):
             for mode in ("document", "slide"):
                 with self.subTest(accounts=accounts, mode=mode):
-                    with self.assertRaises(SolveError) as ctx:
-                        LS.solve(self.fixture(accounts, mode), [])
-                    message = str(ctx.exception)
-                    self.assertIn("declared containment cannot be drawn", message)
-                    self.assertIn("cols=", message)
-                    self.assertIn("rows=", message)
-                    for owner in (("netacct", "logacct") if accounts else ("region", "phz")):
-                        self.assertIn(owner, message)
+                    sp = self.fixture(accounts, mode)
+                    g = LS.solve(sp, [])
+                    if accounts:
+                        self.assertFalse(g.groups["netacct"].rect.overlaps(g.groups["logacct"].rect))
+                    else:
+                        self.assertFalse(g.groups["region"].rect.overlaps(g.nodes["phz"].footprint()))
+                    for n in sp.nodes.values():
+                        self.assertTrue(contains(g.groups[n.parent].rect, g.nodes[n.id].footprint()))
+                    self.assertTrue(any("write" in w and ("dx" in w or "dy" in w) for w in g.warnings))
+
+    def test_container_shift_rechecks_xy_peer_label_collision(self):
+        sp = LP.load(dict(name="pin-peer", cols=["a"], rows=["r"],
+                         groups=[{"id": "cloud", "type": "cloud"},
+                                 {"id": "region", "type": "region", "in": "cloud",
+                                  "min_w": 300, "min_h": 600}],
+                         nodes=[{"id": "inside", "icon": "service/Amazon-EC2", "label": "Inside",
+                                 "in": "region", "at": ["a", "r"]},
+                                {"id": "pin", "icon": "service/Amazon-Simple-Storage-Service", "label": "Pin",
+                                 "in": "cloud", "xy": [150, 200]},
+                                {"id": "peer", "icon": "service/Amazon-EC2", "label": "Peer",
+                                 "in": "cloud", "xy": [360, 150]}]))
+        g = LS.solve(sp, [])
+        self.assertFalse(g.nodes["pin"].footprint().overlaps(g.nodes["peer"].footprint()))
+        self.assertFalse(g.groups["region"].rect.overlaps(g.nodes["pin"].footprint()))
+        issues = CL.run_checks(ET.fromstring(to_svg(sp, g, LS.draw(sp, g))))
+        self.assertFalse([i for i in issues if i.kind in ("TEXT OVERLAP", "TEXT NEAR ICON")])
 
     def test_flexible_sibling_is_separated_without_changing_parent(self):
         sp = self.fixture()

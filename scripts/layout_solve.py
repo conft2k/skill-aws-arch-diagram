@@ -153,8 +153,9 @@ def _span_gap(a, b) -> int:
 
 
 class _Model:
-    def __init__(self, spec: Spec, avoid: Sequence[Tuple[str, str, str, str]] = ()):
+    def __init__(self, spec: Spec, avoid: Sequence[Tuple[str, str, str, str]] = (), relaxed=()):
         self.spec = spec
+        self.relaxed = set(relaxed)       # grid centers promoted to movable pins, per axis
         self.mc = spec.const
         self.S = spec.S
         self.ci = {t.id: i for i, t in enumerate(spec.cols)}
@@ -298,8 +299,13 @@ class _Model:
         colspan node is its first track + span/2 on the left and its last − span/2 on the
         right (with no span known yet: the end tracks themselves)."""
         n = self.spec.nodes[nid]
-        if n.xy is not None or (axis == "x" and nid in self.flow) or (axis == "y" and nid in self.flowc):
+        if (axis, nid) in self.relaxed or n.xy is not None or (axis == "x" and nid in self.flow) or (axis == "y" and nid in self.flowc):
             return (f"node:{nid}", 0.0)
+        return self.grid_ref(nid, axis, side)
+
+    def grid_ref(self, nid, axis, side):
+        """The original grid center, before a conflicting placement is relaxed."""
+        n = self.spec.nodes[nid]
         if axis == "x":
             if n.col2:
                 # its center is X_b1 + s/2 = X_b2 − s/2 while the span stays s (≥ s holds)
@@ -358,6 +364,12 @@ class _Model:
                 ref, txt = self.xy_ref(c, axis)
                 self.add(axis, ref, v, 0, f"xy {txt}", f"node:{nid}", pin="lo")
                 self.add(axis, v, ref, 0, f"xy {txt}", f"node:{nid}", pin="hi")
+            elif (axis, nid) in self.relaxed:
+                v = (f"node:{nid}", 0.0)
+                ref = self.grid_ref(nid, axis, "lo")
+                why = f"grid {'dx' if axis == 'x' else 'dy'} {fmt_num(n.dx if axis == 'x' else n.dy)}"
+                self.add(axis, ref, v, 0, why, f"node:{nid}", pin="lo")
+                self.add(axis, v, ref, 0, why, f"node:{nid}", pin="hi")
         if axis == "x":
             for nid, sp in sorted(self.span.items()) if self.hold_span else ():
                 n = spec.nodes[nid]
@@ -1632,13 +1644,23 @@ def _pin_warnings(m: _Model, axis: str, cons: Sequence[Requirement], val: Dict[s
             nid = r.owner[5:]
             whys[nid] = tuple(dict.fromkeys(whys.get(nid, ()) + r.moved_by))
     groups: Dict[str, list] = {}
+    out = []
     for nid, n in m.spec.nodes.items():
         if n.xy is None:
+            if (axis, nid) in m.relaxed:
+                sh = _xy_shift(m, nid, axis, val)
+                if abs(sh) > 0.5:
+                    key = "dx" if axis == "x" else "dy"
+                    old = n.dx if axis == "x" else n.dy
+                    way = ("right" if sh > 0 else "left") if axis == "x" else ("down" if sh > 0 else "up")
+                    why = "; ".join(whys.get(nid, ())) or "declared container separation"
+                    out.append(f"{_loc(m.spec, f'node:{nid}')}: grid {key} {fmt_num(old)} moved "
+                               f"{fmt_num(abs(sh))} px {way} to {fmt_num(old + sh)} to keep {why}; "
+                               f"write {key}: {fmt_num(old + sh)} to place it without this warning")
             continue
         sh = _xy_shift(m, nid, axis, val)
         if abs(sh) > 0.5:
             groups.setdefault(n.src, []).append((nid, _up(sh) if sh > 0 else -_up(-sh)))
-    out = []
     for src_loc, moves in groups.items():
         n = m.spec.nodes[moves[0][0]]
         c = n.xy[i]
@@ -1852,6 +1874,12 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
     a warning."""
     avoid: List[Tuple[str, str, str, str]] = []
     res = _solve_once(spec, reqs, note_block, diag_x, avoid)
+    res, avoid = _repair_xy(spec, reqs, note_block, diag_x, avoid, res)
+    return _separate_containers(spec, reqs, note_block, diag_x, avoid, res)[1]
+
+
+def _repair_xy(spec, reqs, note_block, diag_x, avoid, res, relaxed=()):
+    """Repeat collision avoidance after any solve that may have moved a center."""
     stuck: List[tuple] = []
     why = "keeping them apart contradicts the drawing in every order and axis"
     for _ in range(AVOID_ROUNDS):
@@ -1860,7 +1888,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
             break
         for cand in _avoid_variants(clashes):
             try:
-                res2 = _solve_once(spec, reqs, note_block, diag_x, avoid + cand)
+                res2 = _solve_once(spec, reqs, note_block, diag_x, avoid + cand, relaxed)
             except SolveError:
                 continue
             avoid, res = avoid + cand, res2
@@ -1872,14 +1900,10 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
         stuck = _xy_clashes(*res)
         why = f"still there after {AVOID_ROUNDS} rounds"
     geom = res[1]
-    geom.warnings += [_avoid_warning(spec, a) for a in avoid]
+    geom.warnings += [_avoid_warning(spec, a) for a in avoid if a[3].startswith("node:")]
     geom.warnings += [f"{_loc(spec, c[0])}: its moved xy lands on {split_eid(c[1])[1]}, {why}; "
                       f"give it an xy clear of {split_eid(c[1])[1]}" for c in stuck]
-    # Track ranges are only a hint for choosing a separating axis. Overlapping ranges
-    # do not make siblings nested: their declared parents still have to be respected.
-    res = _separate_containers(spec, reqs, note_block, diag_x, avoid, res)
-    geom = res[1]
-    return geom
+    return res, avoid
 
 
 def _container_clashes(m: _Model, geom: Geometry):
@@ -1901,9 +1925,8 @@ def _container_clashes(m: _Model, geom: Geometry):
 def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
     """Add the missing disjunction only for actual intersections, preserving clean drafts.
 
-    Try each axis and order using the same hard containment constraints as the ordinary
-    solve. Shared tracks can make all four impossible; refuse with the input owners and
-    ranges instead of emitting a diagram that claims a different container hierarchy.
+    Try each axis and order. If shared tracks conflict, promote the sibling's grid
+    centers to movable pins: containment stays hard, placement moves minimally and warns.
     """
     if next(_container_clashes(res[0], res[1]), None) is None:
         return res
@@ -1913,6 +1936,7 @@ def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
     limit = sum(len(gs) * (len(gs) - 1) // 2 + len(gs) * len(m.child_nodes[parent])
                 for parent, gs in m.child_groups.items())
     warnings = list(res[1].warnings)
+    relaxed = set(m.relaxed)
     for _ in range(limit):
         clash = next(_container_clashes(res[0], res[1]), None)
         if clash is None:
@@ -1929,13 +1953,39 @@ def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
             for lo, hi in ((first, second), (second, first)):
                 pair = (axis, lo.key, hi.key, owner)
                 try:
-                    trial = _solve_once(spec, reqs, note_block, diag_x, avoid + [pair])
+                    trial = _solve_once(spec, reqs, note_block, diag_x, avoid + [pair], relaxed)
                 except SolveError as e:
                     failures.extend(e.problems[:2])
                     continue
                 # Account siblings read side by side whenever x is feasible.
                 vertical = int(axis == "y" and a.gtype == b.gtype == "account")
-                candidates.append((vertical, trial[1].canvas_w * trial[1].canvas_h, pair, trial))
+                candidates.append((vertical, trial[1].canvas_w * trial[1].canvas_h, pair, trial, relaxed))
+        if not candidates:
+            # A grid track is a preferred position, like xy, rather than a reason to
+            # draw an incorrect hierarchy. Relax only one conflicting sibling branch.
+            for axis in ("x", "y"):
+                ac = ab.x0 + ab.x1 if axis == "x" else ab.y0 + ab.y1
+                bc = bb.x0 + bb.x1 if axis == "x" else bb.y0 + bb.y1
+                first, second = (a, b) if ac <= bc else (b, a)
+                for lo, hi in ((first, second), (second, first)):
+                    pair = (axis, lo.key, hi.key, owner)
+                    for moving in (hi, lo):
+                        ids = [nid for nid, n in spec.nodes.items()
+                               if (nid == moving.nid or (moving.gid and m._inside(nid, moving.gid)))
+                               and n.xy is None
+                               and not (axis == "x" and nid in m.flow)
+                               and not (axis == "y" and nid in m.flowc)]
+                        flex = relaxed | {(axis, nid) for nid in ids}
+                        if flex == relaxed:
+                            continue
+                        try:
+                            trial = _solve_once(spec, reqs, note_block, diag_x, avoid + [pair], flex)
+                        except SolveError:
+                            continue
+                        shift = sum(abs(_xy_shift(trial[0], nid, axis, trial[2 if axis == "x" else 3]))
+                                    for nid in ids)
+                        vertical = int(axis == "y" and a.gtype == b.gtype == "account")
+                        candidates.append((vertical, shift, pair, trial, flex))
         if not candidates:
             def tracks(it):
                 obj = spec.groups[it.gid] if it.gid else spec.nodes[it.nid]
@@ -1949,8 +1999,10 @@ def _separate_containers(spec, reqs, note_block, diag_x, avoid, res):
                 "columns/rows (or adjust xy/dx/dy/span) for the sibling containers",
                 *list(dict.fromkeys(failures))[:4],
             ])
-        _, _, pair, res = min(candidates, key=lambda c: (c[0], c[1], c[2]))
+        _, _, pair, res, relaxed = min(candidates, key=lambda c: (c[0], c[1], c[2]))
         avoid = avoid + [pair]
+        res, avoid = _repair_xy(spec, reqs, note_block, diag_x, avoid, res, relaxed)
+        m = res[0]
         warnings += res[1].warnings
     if next(_container_clashes(res[0], res[1]), None) is not None:
         raise SolveError([f"declared containment still has intersecting siblings after {limit} "
@@ -1973,8 +2025,8 @@ def _avoid_variants(clashes) -> List[List[Tuple[str, str, str, str]]]:
     return [pairs(False, False), pairs(False, True), pairs(True, False), pairs(True, True)]
 
 
-def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: bool, avoid):
-    m = _Model(spec, avoid)
+def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: bool, avoid, relaxed=()):
+    m = _Model(spec, avoid, relaxed)
     extra = list(reqs) + (list(note_block.requirements) if note_block is not None else [])
     mapped = {"x": [], "y": []}
     probs = []
@@ -2001,7 +2053,7 @@ def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: boo
         # a pair x keeps apart for less than y would: solve again with it on x (the rows
         # it no longer pushes stay where the rest puts them); m2's build("y") puts every
         # other pair its x does not keep apart on y (m2.diag_y), the new ones included
-        m2 = _Model(spec, avoid)
+        m2 = _Model(spec, avoid, relaxed)
         m2.diag_x = pick
         m = m2
         xbf, xpred, xcons, xv, nodes_x = _x_twins(m, extra)
@@ -2049,7 +2101,13 @@ def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: boo
 
 def _xy_shift(m: _Model, nid: str, axis: str, val: Dict[str, float]) -> float:
     """How far the solve moved an xy node's center on one axis from what its xy asks."""
-    (v, o), _ = m.xy_ref(m.spec.nodes[nid].xy[0 if axis == "x" else 1], axis)
+    n = m.spec.nodes[nid]
+    if n.xy is None:
+        if (axis, nid) not in m.relaxed:
+            return 0.0
+        v, o = m.grid_ref(nid, axis, "lo")
+    else:
+        (v, o), _ = m.xy_ref(n.xy[0 if axis == "x" else 1], axis)
     return val[f"node:{nid}"] - (val.get(v, 0.0) + o)
 
 
@@ -2066,14 +2124,14 @@ def _xy_clashes(m: _Model, geom: Geometry, xv, yv) -> List[Tuple[str, str, str, 
     have = {(a[1], a[2]) for a in m.avoid} | {(a[2], a[1]) for a in m.avoid}
     spec = m.spec
     sh = {nid: {ax: _xy_shift(m, nid, ax, xv if ax == "x" else yv) for ax in ("x", "y")}
-          for nid, n in spec.nodes.items() if n.xy is not None}
+          for nid, n in spec.nodes.items() if n.xy is not None or any((ax, nid) in m.relaxed for ax in ("x", "y"))}
     # how far each xy center moved: its own pin's move plus, through each reference to
     # another xy node (`t: [q.cx, …]`), what that one moved on the referenced axis
     eff = {nid: dict(v) for nid, v in sh.items()}
     for _ in range(len(eff) + 1):
         grew = False
         for nid, n in spec.nodes.items():
-            if nid not in eff:
+            if nid not in eff or n.xy is None:
                 continue
             for i, c in enumerate(n.xy):
                 ax = "x" if i == 0 else "y"
@@ -2291,7 +2349,7 @@ def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]
 
 def _node_center(m: _Model, nid: str, axis: str, val) -> float:
     n = m.spec.nodes[nid]
-    if n.xy is not None:
+    if n.xy is not None or (axis, nid) in m.relaxed:
         return val[f"node:{nid}"]
     if axis == "x":
         if nid in m.flow:
