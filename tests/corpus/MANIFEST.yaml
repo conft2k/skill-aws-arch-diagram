@@ -1101,7 +1101,7 @@ cases:
   - path: qa/t4-shared-lane.layout.yaml
     rules: [R-flow]
     what: "5-node reduction: DLQ label reads as another flow while the engine reports Layout OK / exit 0"
-    bad: {R-flow: {slide: edge:3}}   # ticket 06 review: the 90% effective-text-size floor restores F5 on titled slides; document and slide-no-title still pass
+    good: [R-flow]   # ticket 06 target exception: the 15.61pt titled-slide winner exceeds 10pt, so F5 is removed again; document and slide-no-title also pass
   # bend 옆 8–12px 교차가 있습니다(T3 원본 remote-access, hybrid-dns. 축소본에는 F3가 남지 않습니다).
   # Smallest submitted F3 reproduction: hybrid-dns has 15 nodes, versus remote-access's 16.
   - path: qa/t3-hybrid-dns.layout.yaml

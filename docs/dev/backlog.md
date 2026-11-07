@@ -148,3 +148,16 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
   `good`에 모드별 map을 지원하면 document run을 되살릴 수 있습니다.
 - **범례(note):** 줄바꿈이 홉 이름(`GWLBe → EC2` 등) 가운데서 일어날 수 있습니다.
 - **글자 확대 기록:** `w4-text-fit-validation.md`의 수치는 88872ab 기준입니다. 병합 후 수치는 위 "지금 상태"에 있습니다.
+
+## 뒤에 그린 불투명 배경의 라벨 가림
+
+- 재현: `tests/corpus/rt/gw-ret.layout.yaml`, document. `edge:9:label`의 `응답`
+  baseline y=671 뒤에 노트 배경이 x=16, y=668, w=1187, h=116으로 그려져 글자의 일부를 가린다.
+  같은 `edge:9` 반환선의 y=680 수평 구간도 이 배경 아래에 가려진다.
+- `check_layout.collect`는 이 stroke 있는 rect의 테두리만 segment로 수집한다.
+  `LINE OVER TEXT`는 테두리 교차 1건을 보고하지만, 채워진 배경의 부분 가림과 paint order를
+  별도 문제로 판정하지 않는다. F5/L1도 가려지기 전의 text box와 연결선 거리/방향을 사용한다.
+  그래서 이 가림은 canvas clipping count에 들어가지 않는다.
+- 후속 작업: 뒤에 그린 opaque fill이 앞선 라벨/배지 글자나 연결선을 일부 또는 전부 가리는 check를 추가하고
+  후보 verdict에 연결한다. 이번 티켓은 검사를 바꾸지 않았다.
+  `tests/test_select.py::test_gw_ret_response_label_is_not_covered_by_note_background`를 strict xfail로 보존했다.

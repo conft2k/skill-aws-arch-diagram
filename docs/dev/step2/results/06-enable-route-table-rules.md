@@ -1,7 +1,7 @@
 # Ticket 06: R-rt 선택 검증
 
 이 문서는 90% 글자 한도 도입 전의 검증 기록이다.
-최신 결과와 사용자 결정에 따른 되돌림은 [리뷰 수정 검증](06-text-size-review-fix.md)에 있다.
+최신 결과와 사용자 결정에 따른 되돌림은 [목표 크기 예외 검증](06-target-size-exception.md)에 있다.
 
 기준은 main `511fd73`의 `main-511fd73.json`과 `main-511fd73-drafts/`이다. 기준과 최종 실행 모두 `-j 6`이다. 전체 corpus 실행 동안 이 작성자의 pytest·예제·렌더를 겹치지 않았다.
 

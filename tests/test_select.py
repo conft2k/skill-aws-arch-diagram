@@ -227,3 +227,66 @@ def test_better_rules_cannot_override_the_text_size_limit(monkeypatch, rule, rat
     guard = layout.RuleGuard(selection=True)
     guard.min_text_size = layout.drawn_text(spec, before.svg)[0][0] * 0.9
     assert guard.accepts(before, before.svg, after, after.svg) is accepted
+
+
+@pytest.mark.parametrize("rule", ["R-border", "R-flow", "R-rt"])
+@pytest.mark.parametrize("mode", ["document", "slide"])
+@pytest.mark.parametrize("above_target", [True, False])
+def test_target_size_controls_the_text_shrink_exception(monkeypatch, rule, mode, above_target):
+    spec = layout_spec.load({
+        "name": "target-exception", "text_scale": 2,
+        "cols": ["a", {"id": "b", "min_gap_before": 950}], "rows": ["r"],
+        "nodes": [{"id": n, "icon": "service/AWS-Lambda", "label": n, "at": [n, "r"]}
+                  for n in ("a", "b")], "edges": [{"e": "a -> b"}],
+    }, mode=mode)
+    before = layout.build(spec, [], {}, None, "target-exception.json")
+    original, _, target, _ = layout.drawn_text(spec, before.svg)[0]
+    desired = target + 1 if above_target else target - 0.5
+    ratio = desired / original
+    assert ratio < 0.9
+    root = ET.fromstring(before.svg)
+    x, y, width, height = map(float, root.attrib["viewBox"].split())
+    root.set("viewBox", f"{x} {y} {width / ratio} {height}")
+    after = copy.copy(before)
+    after.geom = copy.copy(before.geom)
+    after.geom.canvas_w = width / ratio
+    after.svg = ET.tostring(root)
+    assert layout.drawn_text(spec, after.svg)[0][0] == pytest.approx(desired)
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
+        rules.Violation(rule, ("edge:0",), "readability defect")
+    ] if data == before.svg else [])
+    guard = layout.RuleGuard(selection=True)
+    guard.min_text_size = original * 0.9
+    assert guard.accepts(before, before.svg, after, after.svg) is above_target
+
+
+def test_shared_lane_target_sized_winner_restores_label_attribution(tmp_path, capsys):
+    source = ROOT / "tests/corpus/qa/t4-shared-lane.layout.yaml"
+    before = default(source, tmp_path, "slide")
+    _, draft, text = invoke(source, tmp_path, capsys, "--mode", "slide")
+    original = layout.drawn_text(before[0].spec, before[1])[0][0]
+    actual, _, target, _ = layout.drawn_text(before[0].spec, draft)[0]
+    assert "rule: R-flow" not in text
+    assert target <= actual < original * 0.9
+    assert not CL.run_checks(ET.fromstring(draft))
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError,
+                   reason="Backlog: check_layout lacks text occlusion by later opaque fills")
+def test_gw_ret_response_label_is_not_covered_by_note_background(tmp_path, capsys):
+    source = ROOT / "tests/corpus/rt/gw-ret.layout.yaml"
+    _, draft, _ = invoke(source, tmp_path, capsys, "--mode", "document")
+    root = ET.fromstring(draft)
+    order = {id(el): n for n, el in enumerate(root.iter())}
+    texts = [t for t in CL.collect(root)[0]
+             if t["s"] == "응답" and (t["own"] or "").startswith("edge:")]
+    assert len(texts) == 2
+    for text in texts:
+        for rect in root.iter(f"{{{layout.SVG_NS}}}rect"):
+            if (order[id(rect)] <= order[id(text["el"])]
+                    or rect.get("fill", "none") == "none"):
+                continue
+            x, y, w, h = (float(rect.get(k, 0)) for k in ("x", "y", "width", "height"))
+            a, b, c, d = text["box"]
+            assert not (max(x, a) < min(x + w, c) and max(y, b) < min(y + h, d)), (
+                f"{text['own']} at y={text['y']} is occluded by later rect at y={y}")

@@ -83,7 +83,7 @@ WIDEN = 16              # px a feedback round adds to a gap
 MAX_SKIP = 3            # candidates an edge may skip before its gap is widened instead
 SELECTION_RULES = frozenset(("R-border", "R-flow", "R-rt"))
 MAX_CANDIDATES = {"document": 12, "slide": 16}
-MIN_TEXT_RETENTION = 0.9  # selection keeps at least 90% of the completed default's text size
+MIN_TEXT_RETENTION = 0.9  # below-target text keeps at least 90% of the completed default's size
 # The router's warning for an edge drawn in another shape than plan() reserved space for.
 SHAPE_MISS = re.compile(r"drew (\S+) instead of")
 # A shape the spec asked for and the router refused (the warning says what to change).
@@ -225,9 +225,11 @@ class RuleGuard:
         return b < a
 
     def accepts_text(self, b: Build, data: bytes) -> bool:
-        """One fixed floor for all groups and rounds, measured at the reader's size."""
-        return (self.min_text_size is None or
-                drawn_text(b.spec, data)[0][0] >= self.min_text_size - 1e-9)
+        """Target-sized text follows the verdict; below target, retain the fixed floor."""
+        if self.min_text_size is None:
+            return True
+        actual, _, target, _ = drawn_text(b.spec, data)[0]
+        return actual >= min(self.min_text_size, target) - 1e-9
 
 
 def slide_text_pt(spec: Spec, svg: bytes) -> Tuple[float, Optional[Tuple[float, str]], Tuple[float, float]]:

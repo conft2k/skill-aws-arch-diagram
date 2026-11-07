@@ -1,5 +1,8 @@
 # Ticket 06 review fix: 실제 글자 크기 10% 축소 한도
 
+이 문서는 목표 이상인 글자의 예외를 도입하기 전 기록이다.
+최신 결과와 gw-ret 가림 조사는 [목표 크기 예외 검증](06-target-size-exception.md)에 있다.
+
 main `af80829`(티켓 05) 위로 `git rebase main`을 먼저 수행했다. 충돌은 없었고 기존 06 커밋은 `93df8a5`가 됐다. 기본 worktree git 메타데이터가 읽기 전용이라 작업 파일은 같은 worktree에 두고 임시 git-dir/공유 common-dir로 실제 rebase했다. 티켓 05의 `spec_fix`·unresolved 경고와 메시지 코드는 유지했다.
 
 기준은 요청한 main `511fd73`의 `~/.cache/skill-design/baseline/main-511fd73.json`과 `main-511fd73-drafts/`다. 이번 수정의 전체 corpus는 **1회**, 기준과 같은 **-j 6**으로 실행했다. Corpus 동안 이 작성자의 pytest·예제·렌더는 겹치지 않았다.
