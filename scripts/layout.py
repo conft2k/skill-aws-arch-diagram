@@ -28,7 +28,7 @@ the router refused is not counted: no widening is planned for it). The round wit
 fewest problems (a slide that comes out too small counts as one), then the fewest edges
 drawn in another shape, is written.
 
-Output: a summary (canvas, the size 12px text gets on a 16:9 slide, the note, the icon
+Output: a summary (canvas, the size the smallest text gets on a 16:9 slide, the note, the icon
 refs, warnings), then check_layout's problem lines, each with the spec items behind it and
 a spec change to try, and last `Layout OK` or `N problems`. Exit status 0 when the draft
 is clean, 1 when problems remain or the spec is invalid. --explain also prints, per track
@@ -86,6 +86,29 @@ class Build:
         self.warnings, self.svg = warnings, svg
 
 
+def drawn_texts(elements: Sequence[Element]) -> List[Tuple[float, str]]:
+    """(font-size, text) of each <text> the elements draw, a raw fragment's included (a
+    missing or unreadable font-size is svg2pptx's 16)."""
+    out: List[Tuple[float, str]] = []
+    for e in elements:
+        if e.kind == "text":
+            out.append((float(e.attrs.get("font-size", 16)), e.text or ""))
+        elif e.kind == "raw":
+            for t in ET.fromstring(f'<svg xmlns="{SVG_NS}">{e.text}</svg>').iter(f"{{{SVG_NS}}}text"):
+                try:
+                    fs = float(t.get("font-size") or 16)
+                except ValueError:
+                    fs = 16.0
+                out.append((fs, "".join(t.itertext())))
+    return out
+
+
+def slide_text_pt(spec: Spec, b: Build) -> Tuple[float, Optional[Tuple[float, str]]]:
+    """(pt, (font-size, text)) of the smallest text b draws, at the size svg2pptx gives it on a
+    16:9 slide (layout_const.smallest_pt; inf when b draws no text)."""
+    return K.smallest_pt(b.geom.canvas_w, b.geom.canvas_h, spec.title, drawn_texts(b.elements))
+
+
 def value(var: str, geom: Geometry, axis: str) -> float:
     """A Requirement variable's value on a solved geometry (layout_model section 4)."""
     if var == "origin":
@@ -105,7 +128,7 @@ def value(var: str, geom: Geometry, axis: str) -> float:
 def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
           source: str) -> Build:
     b = _build(spec, extra, skip, place, source)
-    if b.geom.diag_y and slide_problem(spec, b.geom):
+    if b.geom.diag_y and slide_problem(spec, b):
         # the solve weighs a diagonal pair's x and y growth px for px, but a 1108 × 540
         # slide has half the room down: with the pairs put on y leaving the text under
         # 10pt, build again with every pair on x and keep the larger text (both passes
@@ -114,8 +137,7 @@ def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place:
             alt = _build(spec, extra, skip, place, source, diag_x=True)
         except M.LayoutError:
             return b
-        if K.slide_pt(alt.geom.canvas_w, alt.geom.canvas_h, spec.title) > \
-                K.slide_pt(b.geom.canvas_w, b.geom.canvas_h, spec.title):
+        if slide_text_pt(spec, alt)[0] > slide_text_pt(spec, b)[0]:
             return alt
     return b
 
@@ -697,10 +719,11 @@ def summary(spec: Spec, b: Build, out_path: Path) -> List[str]:
     g, nb = b.geom, b.nb
     W, H = g.canvas_w, g.canvas_h
     lines = [f"draft: {out_path}"]
-    pt = K.slide_pt(W, H, spec.title)
+    pt, t = slide_text_pt(spec, b)
     lines.append(f"canvas: {M.fmt_num(W)} × {M.fmt_num(H)} ({spec.mode}); on a 16:9 slide "
-                 f"({'titled' if spec.title else 'untitled'}) 12px text → {pt:.1f}pt"
-                 + ("" if spec.mode != "slide" else (" (OK ≥ 10)" if pt >= K.SLIDE_MIN_PT else " (< 10pt)")))
+                 f"({'titled' if spec.title else 'untitled'}) "
+                 + ("no text" if t is None else f"the smallest text ({M.fmt_num(t[0])}px) → {pt:.1f}pt"
+                    + ("" if spec.mode != "slide" else (" (OK ≥ 10)" if pt >= K.SLIDE_MIN_PT else " (< 10pt)"))))
     if nb.place == "none":
         lines.append("note: none")
     else:
@@ -723,19 +746,21 @@ def summary(spec: Spec, b: Build, out_path: Path) -> List[str]:
     return lines
 
 
-def slide_problem(spec: Spec, geom: Geometry) -> Optional[str]:
+def slide_problem(spec: Spec, b: Build) -> Optional[str]:
+    """SLIDE TOO SMALL when the smallest text b draws comes out under 10pt on the slide."""
     if spec.mode != "slide":
         return None
-    pt = K.slide_pt(geom.canvas_w, geom.canvas_h, spec.title)
-    if pt >= K.SLIDE_MIN_PT:
+    pt, t = slide_text_pt(spec, b)
+    if t is None or pt >= K.SLIDE_MIN_PT:
         return None
-    lim_h = K.SLIDE_MAX_H[bool(spec.title)]
-    over_w, over_h = geom.canvas_w - K.SLIDE_MAX_W, geom.canvas_h - lim_h
-    which = (f"{M.fmt_num(over_w)}px too wide" if over_w >= over_h * K.SLIDE_MAX_W / lim_h
+    geom, px = b.geom, t[0]
+    lim_w, lim_h = K.slide_max(spec.title, px)
+    over_w, over_h = geom.canvas_w - lim_w, geom.canvas_h - lim_h
+    which = (f"{M.fmt_num(over_w)}px too wide" if over_w >= over_h * lim_w / lim_h
              else f"{M.fmt_num(over_h)}px too tall")
-    return (f"SLIDE TOO SMALL 12px text comes out at {pt:.1f}pt (< {K.SLIDE_MIN_PT}) at "
-            f"{M.fmt_num(geom.canvas_w)} × {M.fmt_num(geom.canvas_h)}: {which} for "
-            f"{K.SLIDE_MAX_W} × {lim_h} — shorten the widest column's labels (see --explain), "
+    return (f"SLIDE TOO SMALL smallest text ({M.fmt_num(px)}px, {t[1]!r}) comes out at {pt:.1f}pt "
+            f"(< {K.SLIDE_MIN_PT}) at {M.fmt_num(geom.canvas_w)} × {M.fmt_num(geom.canvas_h)}: {which} for "
+            f"{lim_w} × {lim_h} — shorten the widest column's labels (see --explain), "
             "move the regional services row into a column, or split the slide")
 
 
@@ -801,7 +826,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # (the miss feedback widens every gap between an edge's ends): too wide is compared
             # after the problems and before the misses.
             wide = int(spec.mode == "document" and b.geom.canvas_w > K.DOC_WIDE)
-            score = (problem_count(probs) + (1 if slide_problem(spec, b.geom) else 0), wide, shape_misses(b))
+            score = (problem_count(probs) + (1 if slide_problem(spec, b) else 0), wide, shape_misses(b))
             if best is None or score < best[0]:
                 best = (score, rnd, b, list(extra.values()), dict(skip))
             if score == (0, 0, 0) or rnd == MAX_ROUNDS:
@@ -817,7 +842,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     data, fixed = (b.svg, 0) if a.no_check else fix_pass(b.svg, out)
     out.write_bytes(data)
     probs, hints = ([], []) if a.no_check else problems_of(data, hints=True)[0::2]
-    sp = slide_problem(spec, b.geom)
+    sp = slide_problem(spec, b)
     n = len(probs) + (1 if sp else 0)
     for line in summary(spec, b, out):
         print(line)

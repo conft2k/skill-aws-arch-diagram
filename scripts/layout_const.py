@@ -1,9 +1,9 @@
 """Constants for the layout engine (layout.py): mode tables, group styles, text, lines, notes.
 
-Pure data plus three tiny pure helpers (mode(), style(), top_inset(), group_type_of(),
-slide_pt()); no imports from the rest of the skill, so every layout_* module and the tests
-can import it freely. The contract (data model, function signatures, z order, ids, text
-width) is in layout_model.py's docstring.
+Pure data plus a few tiny pure helpers (mode(), style(), top_inset(), group_type_of(),
+slide_pt(), slide_max(), smallest_text(), smallest_pt()); no imports from the rest of the
+skill, so every layout_* module and the tests can import it freely. The contract (data
+model, function signatures, z order, ids, text width) is in layout_model.py's docstring.
 
 Sources, cited per value:
   QR <n>    references/quick_reference.md, line n
@@ -23,8 +23,9 @@ Every length is in canvas px (SVG user units of a viewBox "0 0 W H"), at icon si
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 MODES_ORDER = ("document", "slide")
 
@@ -432,17 +433,41 @@ LINES_END = 4             # canvas ends last baseline + 4 (ex gwlb 540 + 4 = 544
 # --------------------------------------------------------------------------------------
 # Canvas and slide fit (QR 185-192; svg2pptx MARGIN 0.25 in, TITLE_H 0.75 in, 13.333 × 7.5 in)
 
+# The largest canvas on which 12px text (MIN_FONT: the smallest a draft may use, and the
+# note's size) comes out at ≥ 10pt; a draft whose smallest text is F px fits F / 12 times it.
 SLIDE_MAX_W = 1108                     # QR 190: ≤ 1108 × 540 titled for text ≥ 10pt (slide_pt rounded down)
-SLIDE_MAX_H = {True: 540, False: 600}  # titled / untitled (QR 190-191)
+SLIDE_MAX_H = {True: 540, False: 600}  # titled / untitled (QR 190-191; untitled 604.8 kept at 600)
 SLIDE_AVAIL_W_PT = 924                 # (13.333 in − 2 × 0.25 in) × 72
 SLIDE_AVAIL_H_PT = {True: 450, False: 504}   # 7.5 in − 2 × 0.25 in (− 0.75 in title) in pt
 SLIDE_MIN_PT = 10                      # svg2pptx MIN_PT
 SLIDE_FLOOR_PT = 8                     # svg2pptx FLOOR_PT
 
 
-def slide_pt(w: float, h: float, title: bool = True) -> float:
-    """Point size a 12px label gets when svg2pptx fits a w × h canvas on the slide."""
-    return MIN_FONT * min(SLIDE_AVAIL_W_PT / w, SLIDE_AVAIL_H_PT[bool(title)] / h)
+def slide_pt(w: float, h: float, title: bool = True, px: float = MIN_FONT) -> float:
+    """Point size px-size text gets when svg2pptx fits a w × h canvas on the slide: its
+    Deck.pt(px) = px × k / 12700, k = min(avail w / w, avail h / h) EMU per canvas px."""
+    return px * min(SLIDE_AVAIL_W_PT / w, SLIDE_AVAIL_H_PT[bool(title)] / h)
+
+
+def slide_max(title: bool = True, px: float = MIN_FONT) -> Tuple[int, int]:
+    """The largest canvas (w, h) on which px-size text still comes out at ≥ SLIDE_MIN_PT:
+    SLIDE_MAX_* (set for 12px text) scaled by px / 12."""
+    return (math.floor(SLIDE_MAX_W * px / MIN_FONT), math.floor(SLIDE_MAX_H[bool(title)] * px / MIN_FONT))
+
+
+def smallest_text(texts: Iterable[Tuple[float, str]]) -> Optional[Tuple[float, str]]:
+    """(font-size, text) of the smallest text drawn among (font-size, text) pairs, or None:
+    what svg2pptx puts on the slide, a non-blank <text> of font-size > 0 (its collect())."""
+    return min(((fs, s.strip()) for fs, s in texts if fs > 0 and s and s.strip()),
+               key=lambda t: t[0], default=None)
+
+
+def smallest_pt(w: float, h: float, title: bool, texts: Iterable[Tuple[float, str]]
+                ) -> Tuple[float, Optional[Tuple[float, str]]]:
+    """(pt, smallest) for the smallest text drawn on a w × h slide canvas: the size svg2pptx
+    gives it (slide_pt) and its (font-size, text); no text at all is no text too small (inf)."""
+    t = smallest_text(texts)
+    return (math.inf if t is None else slide_pt(w, h, title, t[0])), t
 
 
 # --------------------------------------------------------------------------------------

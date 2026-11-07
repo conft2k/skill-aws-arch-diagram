@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import layout  # noqa: E402
+import layout_const as K  # noqa: E402
 import layout_model as M  # noqa: E402
 import layout_spec  # noqa: E402
 import rules  # noqa: E402
@@ -227,13 +228,27 @@ class LabelRules(unittest.TestCase):
 
 
 class FitRules(unittest.TestCase):
+    CIDR = '<text x="40" y="40" font-size="12" fill="#232F3E">10.0.0.0/16</text>'
+
     def test_slide_points(self):
-        small = rules.fit_rules(spec(mode="slide"), rules.Drawn.parse(svg(w=1000, h=500)))
+        small = rules.fit_rules(spec(mode="slide"), rules.Drawn.parse(svg(self.CIDR, w=1000, h=500)))
         self.assertEqual(small, [])
-        big = rules.fit_rules(spec(mode="slide"), rules.Drawn.parse(svg(w=2000, h=1000)))
+        big = rules.fit_rules(spec(mode="slide"), rules.Drawn.parse(svg(self.CIDR, w=2000, h=1000)))
         self.assertEqual([(v.rule, v.tier) for v in big], [("R-fit", rules.TIER_FIT)])
         self.assertGreater(big[0].cost, 0)
-        self.assertEqual(rules.fit_rules(spec(), rules.Drawn.parse(svg(w=2000, h=1000))), [])
+        self.assertEqual(rules.fit_rules(spec(), rules.Drawn.parse(svg(self.CIDR, w=2000, h=1000))), [])
+
+    def test_the_smallest_text_drawn_sets_the_points(self):
+        """R-fit weighs the smallest text the draft draws, at the size svg2pptx gives it: a
+        674 × 550 titled slide takes 14px to 11.45pt (fits) and 12px to 9.82pt (short)."""
+        sp = spec(mode="slide")
+        fourteen = node("a", 100, 100, label="EC2")
+        self.assertEqual(rules.fit_rules(sp, rules.Drawn.parse(svg(fourteen, w=674, h=550))), [])
+        short = rules.fit_rules(sp, rules.Drawn.parse(svg(fourteen, self.CIDR, w=674, h=550)))
+        self.assertEqual([v.rule for v in short], ["R-fit"])
+        self.assertIn("smallest text (12px, '10.0.0.0/16') comes out at 9.82pt", short[0].message)
+        self.assertAlmostEqual(short[0].cost, K.SLIDE_MIN_PT - 12 * 450 / 550, places=6)
+        self.assertEqual(rules.fit_rules(sp, rules.Drawn.parse(svg(w=2000, h=1000))), [])   # no text at all
 
 
 class RouteTableRules(unittest.TestCase):

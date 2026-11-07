@@ -50,7 +50,7 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            LINE OVER TEXT and LINE NEAR TEXT do not reach (flowcol/t7-xyref slide: ALB →
            AZ2 EC2 at x=308 between the App subnet's badge and its title). B2 is judged here
            only: check_layout does not report it, so the engine's feedback does not move it.
-  R-fit    a slide's 12px text comes out at ≥ K.SLIDE_MIN_PT (cost: the points short).
+  R-fit    a slide's smallest drawn text comes out at ≥ K.SLIDE_MIN_PT (cost: the points short).
 
 User decisions (2026-11-07, rules-design §6, after the tgw / nlb-mtls / latest2 cases): the
 RT1 only-table pass, the F5 exemption for spec-placed labels and badges and L1's any-nearby-
@@ -853,10 +853,10 @@ def fit_rules(spec, d: Drawn) -> List[Violation]:
     if spec.mode != "slide":
         return []
     w, h = d.canvas[2], d.canvas[3]      # collect: (min-x, min-y, w, h)
-    pt = K.slide_pt(w, h, spec.title)
-    if pt >= K.SLIDE_MIN_PT:
+    pt, t = K.smallest_pt(w, h, spec.title, ((x["fs"], x["s"]) for x in d.texts))
+    if t is None or pt >= K.SLIDE_MIN_PT:
         return []
-    return [Violation("R-fit", ("canvas",), f"FIT 12px text comes out at {pt:.2f}pt on a "
+    return [Violation("R-fit", ("canvas",), f"FIT smallest text ({_f(t[0])}px, {t[1]!r}) comes out at {pt:.2f}pt on a "
                       f"{'titled' if spec.title else 'untitled'} slide (< {K.SLIDE_MIN_PT}) at {_f(w)} × {_f(h)}",
                       K.SLIDE_MIN_PT - pt, TIER_FIT, code="FIT")]
 

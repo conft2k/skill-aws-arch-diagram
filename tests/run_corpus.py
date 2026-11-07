@@ -11,10 +11,10 @@ process per -j). A filter keeps the entries whose path contains it (substring).
 
 Per run it records: load (ok / rejected, with the spec's problem lines), the result (drawn /
 layout-error / crash / timeout, past --timeout s), check_layout's problem codes on the final
-draft (plus SLIDE TOO SMALL), the engine's warnings, the canvas size, the size 12px text gets
-on a 16:9 slide, the feedback rounds and the wall time. It prints one row per entry, then
-the counts per problem code, the slowest runs and the total time, and writes the full JSON
-report to --out (default <system temp dir>/corpus-report.json).
+draft (plus SLIDE TOO SMALL), the engine's warnings, the canvas size, the size the smallest
+text gets on a 16:9 slide, the feedback rounds and the wall time. It prints one row per
+entry, then the counts per problem code, the slowest runs and the total time, and writes the
+full JSON report to --out (default <system temp dir>/corpus-report.json).
 
 An entry's `expect` (one value, or a map mode → value) says what each run must end in:
 `load` — the spec loads and a draft is drawn; `reject` — layout_spec refuses the spec at load;
@@ -315,15 +315,15 @@ def _run_one(entry: Dict[str, Any], mode: str, out_dir: str, rec: Dict[str, Any]
     g = b.geom
     rec["result"] = "drawn"
     rec["canvas"] = [round(g.canvas_w, 1), round(g.canvas_h, 1)]
-    pt = K.slide_pt(g.canvas_w, g.canvas_h, spec.title)
-    rec["pt"] = round(pt, 2)
+    pt = layout.slide_text_pt(spec, b)[0]
+    rec["pt"] = round(pt, 2) if pt != float("inf") else None
     rec["slide_small"] = rec["mode"] != "document" and pt < K.SLIDE_MIN_PT
     rec["title"] = bool(spec.title)
     rec["warnings"] = [l[len("warning: "):] for l in cap["summary"] if l.startswith("warning: ")]
     probs = cap.get("final", [])
     rec["codes"] = [p.iss.kind for p in probs]
     rec["problems"] = [p.iss.msg for p in probs]
-    sp = layout.slide_problem(spec, g)
+    sp = layout.slide_problem(spec, b)
     if sp:
         rec["codes"].append("SLIDE TOO SMALL")
         rec["problems"].append(sp)
@@ -397,7 +397,7 @@ def cell(r: Dict[str, Any]) -> str:
     if r["result"] in ("crash", "layout-error", "timeout"):
         return {"crash": "CRASH", "layout-error": "LERR", "timeout": "TIMEOUT"}[r["result"]]
     s = "ok" if not r["codes"] else f"{len(r['codes'])}p"
-    if r["mode"] != "document":
+    if r["mode"] != "document" and r["pt"] is not None:
         s += f" {r['pt']:.2f}pt" + ("<" if r.get("slide_small") else "")
     return s
 

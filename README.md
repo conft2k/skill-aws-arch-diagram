@@ -176,7 +176,7 @@ spec 형식은 [`references/layout_spec.md`](references/layout_spec.md)에 있�
 cp docs/examples/specs/nlb-reference-architecture.layout.yaml arch.layout.yaml
 python3 scripts/layout.py arch.layout.yaml -o arch.draft.svg
 #   draft: arch.draft.svg
-#   canvas: 888 × 806 (document); on a 16:9 slide (titled) 12px text → 6.7pt
+#   canvas: 888 × 806 (document); on a 16:9 slide (titled) the smallest text (12px) → 6.7pt
 #   note: panel, summary, 856 × 44 at (16,746)
 #   icons (13 nodes): resource/Users, service/Amazon-Route-53, ...
 #   Layout OK

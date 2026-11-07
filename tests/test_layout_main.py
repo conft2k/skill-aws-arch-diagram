@@ -92,8 +92,8 @@ class SlideDiagonals(unittest.TestCase):
     weighing keeps VPC B below the table (1036 × 578, 9.3pt), the retry puts it beside
     (1102 × 538, 10pt)."""
 
-    def pt(self, spec, g):
-        return K.slide_pt(g.canvas_w, g.canvas_h, spec.title)
+    def pt(self, spec, b):
+        return layout.slide_text_pt(spec, b)[0]
 
     def test_slide_too_small_on_y_goes_on_x(self):
         with mock.patch.object(layout_solve, "_stacked_between", return_value=[]):
@@ -101,10 +101,10 @@ class SlideDiagonals(unittest.TestCase):
             weighed = layout._build(spec, [], {}, None, "x.layout.yaml")
         self.assertNotIn("att", [t.id for t in spec.cols])
         self.assertGreater(weighed.geom.diag_y, 0)                 # the weighing put pairs on y
-        self.assertIsNotNone(layout.slide_problem(spec, weighed.geom))
+        self.assertIsNotNone(layout.slide_problem(spec, weighed))
         self.assertEqual(b.geom.diag_y, 0)                          # build kept the all-x pass
-        self.assertIsNone(layout.slide_problem(spec, b.geom))
-        self.assertGreater(self.pt(spec, b.geom), self.pt(spec, weighed.geom))
+        self.assertIsNone(layout.slide_problem(spec, b))
+        self.assertGreater(self.pt(spec, b), self.pt(spec, weighed))
         g, gap = b.geom, spec.const.sibling_gap
         rt = g.nodes["rtsp"].footprint()
         for v in ("vpca", "vpcb"):                                  # the Spoke RT beside both spokes
@@ -117,7 +117,7 @@ class SlideDiagonals(unittest.TestCase):
         """A slide that fits (≥ 10pt) keeps what the weighing chose: no second pass."""
         with mock.patch.object(layout, "_build", wraps=layout._build) as w:
             spec, b = built("slides/nlb-reference-architecture")
-        self.assertIsNone(layout.slide_problem(spec, b.geom))
+        self.assertIsNone(layout.slide_problem(spec, b))
         self.assertEqual(w.call_count, 1)
 
 
@@ -915,6 +915,51 @@ def xy_built(d, mode):
     return spec, layout.build(spec, [], {}, None, "x.layout.yaml")
 
 
+class SlideTextSize(unittest.TestCase):
+    """SLIDE TOO SMALL weighs the smallest text the draft draws, at the size svg2pptx gives
+    it on the slide — not a 12px text the draft may not have. r2-overlay-mixed's smallest is
+    14px: its 674 × 550 titled slide comes out at 11.45pt (12px would be 9.8pt), no warning;
+    tw-long draws 12px text on 554 × 544 titled, 9.9pt, still warned. The deck agrees."""
+
+    def drawn(self, case):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "t.draft.svg"
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                layout.main([str(CORPUS / f"{case}.layout.yaml"), "-o", str(out), "--mode", "slide"])
+            return buf.getvalue(), self.deck_min_pt(out)
+
+    @staticmethod
+    def deck_min_pt(draft):
+        """The smallest run size on the slide svg2pptx makes of the draft (title band on)."""
+        import svg2pptx
+        from pptx import Presentation
+        with redirect_stdout(io.StringIO()):
+            data, _ = svg2pptx.convert([draft], ["t"])
+
+        def runs(shapes):
+            for sh in shapes:
+                if sh.shape_type == 6:          # group
+                    yield from runs(sh.shapes)
+                elif sh.has_text_frame and sh.name != "Title":
+                    yield from (r.font.size.pt for p in sh.text_frame.paragraphs for r in p.runs if r.text.strip())
+        return min(runs(Presentation(io.BytesIO(data)).slides[0].shapes))
+
+    def test_larger_smallest_text_fits(self):
+        text, deck_pt = self.drawn("flowcol/r2-overlay-mixed")
+        self.assertIn("canvas: 674 × 550 (slide); on a 16:9 slide (titled) the smallest text (14px) → 11.5pt "
+                      "(OK ≥ 10)", text)
+        self.assertNotIn("SLIDE TOO SMALL", text)
+        self.assertAlmostEqual(deck_pt, 14 * 450 / 550, delta=0.01)       # 11.45pt in the deck
+
+    def test_text_under_10pt_still_warns(self):
+        text, deck_pt = self.drawn("twin/tw-long")
+        self.assertIn("SLIDE TOO SMALL smallest text (12px, ", text)
+        self.assertIn("comes out at 9.9pt (< 10) at 554 × 544: 4px too tall for 1108 × 540", text)
+        self.assertAlmostEqual(deck_pt, 12 * 450 / 544, delta=0.01)       # 9.93pt in the deck
+        self.assertLess(deck_pt, K.SLIDE_MIN_PT)
+
+
 class XyMoved(unittest.TestCase):
     """An `xy` center the drawing cannot meet (inside its box's pad, below its label room,
     past the canvas margin) is moved to the nearest center that meets it, with a warning
@@ -1183,10 +1228,22 @@ class Lanes(unittest.TestCase):
         """alb -> ec2.2 is drawn as a UHVH back into EC2's right side, where ec2.2 ..> cw
         leaves: it used to end at that very point (224,290 430,290 430,426 382,426 against
         382,426 462,426 …, 48px on top of each other, the solid arrow reading as carrying on
-        as the dashed line); now it takes a port of its own, PORT_PITCH toward ALB."""
+        as the dashed line); now it takes a port of its own, PORT_PITCH toward ALB. The UHVH
+        stays only while the round that widens for the HVH (548 high) would take the slide's
+        smallest text under 10pt: a 12px label on igw -> alb here; with 14px text the
+        smallest, that round fits (11.5pt) and draws the HVH asked for."""
         for align in ("bottom", "top"):
-            with self.subTest(align=align):
+            with self.subTest(align=align, smallest="14px"):
                 rc, text, data = run_main(lanes_spec(align))
+                self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+                self.assertIn("the smallest text (14px) → 11.5pt (OK ≥ 10)", text)
+                self.assertNotIn("drew UHVH instead of HVH", text)
+                self.assertEqual(len(edge_points(data, 3)), 4)
+            with self.subTest(align=align, smallest="12px"):
+                d = lanes_spec(align)
+                d["edges"][1]["label"] = "HTTPS"
+                rc, text, data = run_main(d)
+                self.assertIn("drew UHVH instead of HVH", text)
                 self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
                 u, out = edge_points(data, 3), edge_points(data, 5)
                 self.assertEqual(len(u), 4, u)
@@ -1800,7 +1857,7 @@ class CLI(unittest.TestCase):
                                     Path(tmp) / "a.svg", "--explain")
         self.assertEqual(rc, 0)
         self.assertIn("canvas: ", text)
-        self.assertIn("12px text → ", text)
+        self.assertIn("on a 16:9 slide (titled) the smallest text (12px) → ", text)
         self.assertIn("note: pane, 3 steps", text)
         self.assertIn("icons (8 nodes): ", text)
         self.assertIn("x col ", text)

@@ -267,14 +267,22 @@ class OffCanvasOutOfBox(unittest.TestCase):
         self.assertIn("from the layout spec", h.text)
 
     def test_grow_past_the_slide_limit(self):
-        """A 1100-wide canvas grown past 1108: 12px text under 10pt on a slide, said so."""
-        root = ET.fromstring('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 500">'
-                             '<rect x="0" y="0" width="1100" height="500" fill="#FFFFFF"/>'
-                             + ICON.format(x=1000, y=80) + ICON.format(x=1000, y=180)
-                             + POLY.format(pts="1052,104 1110,104 1110,204 1052,204") + '</svg>')
-        _, _, h = hint_of(root, kind="LINE OFF CANVAS")
+        """A 1100-wide canvas grown past 1108: its smallest text, 12px, under 10pt on a slide,
+        said so; with 14px the smallest, 1126 still fits (11.5pt) and nothing is said."""
+        def grown(fs):
+            return ET.fromstring('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 500">'
+                                 '<rect x="0" y="0" width="1100" height="500" fill="#FFFFFF"/>'
+                                 + ICON.format(x=1000, y=80) + ICON.format(x=1000, y=180)
+                                 + f'<text x="1024" y="146" font-size="{fs}" text-anchor="middle" '
+                                 'fill="#232F3E">Lambda</text>'
+                                 + POLY.format(pts="1052,104 1110,104 1110,204 1052,204") + '</svg>')
+        _, _, h = hint_of(grown(12), kind="LINE OFF CANVAS")
         self.assertIn("grow the viewBox width to 1126", h.text)
-        self.assertIn("on a 16:9 slide that takes 12px text under 10pt", h.text)
+        self.assertIn("on a 16:9 slide that takes the smallest text (12px) under 10pt "
+                      "(≤ 1108 × 540 with a title band, × 600 without)", h.text)
+        _, _, h = hint_of(grown(14), kind="LINE OFF CANVAS")
+        self.assertIn("grow the viewBox width to 1126", h.text)
+        self.assertNotIn("16:9", h.text)
 
 
 NS_LINE = "{http://www.w3.org/2000/svg}line"

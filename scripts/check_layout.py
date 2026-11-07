@@ -1404,14 +1404,18 @@ def union(a, b):
 
 # A connector's detour problems (a move must clear them, not cut the line off its net).
 DETOURS = {"LINE OFF CANVAS", "LINE LEAVES BOX"}
-# Largest canvas a 16:9 slide fits with 12px text at 10pt or more (layout_const SLIDE_MAX_*).
-SLIDE_FIT = f"≤ {K.SLIDE_MAX_W} × {K.SLIDE_MAX_H[True]} with a title band, × {K.SLIDE_MAX_H[False]} without"
 
 
-def slide_fits(w, h, title):
-    """Does a w × h canvas fit a 16:9 slide (title: with a title band) with 12px text at
+def slide_fit(px=K.MIN_FONT):
+    """Largest canvas a 16:9 slide fits with px-size text at 10pt or more (layout_const.slide_max)."""
+    (w, h), (_, h0) = K.slide_max(True, px), K.slide_max(False, px)
+    return f"≤ {w} × {h} with a title band, × {h0} without"
+
+
+def slide_fits(w, h, title, px=K.MIN_FONT):
+    """Does a w × h canvas fit a 16:9 slide (title: with a title band) with px-size text at
     ≥ 10pt (layout_const.slide_pt, what svg2pptx scales it to)?"""
-    return K.slide_pt(w, h, title) >= K.SLIDE_MIN_PT
+    return K.slide_pt(w, h, title, px) >= K.SLIDE_MIN_PT
 
 
 # Problems no move can clear (a move that leaves them is still a clean move).
@@ -2122,8 +2126,10 @@ class Advisor:
         w, h = (math.ceil(cw + d + 16), ch) if side == "right" else (cw, math.ceil(ch + d + 16))
         text = (f" — or grow the viewBox {'width' if side == 'right' else 'height'} to "
                 f"{fnum(w if side == 'right' else h)} (and the white background rect)")
-        if any(slide_fits(cw, ch, t) and not slide_fits(w, h, t) for t in (True, False)):
-            text += f"; on a 16:9 slide that takes 12px text under 10pt ({SLIDE_FIT}), so move the run instead"
+        small = K.smallest_text((t["fs"], t["s"]) for t in self.texts)
+        if small and any(slide_fits(cw, ch, t, small[0]) and not slide_fits(w, h, t, small[0]) for t in (True, False)):
+            text += (f"; on a 16:9 slide that takes the smallest text ({fnum(small[0])}px) under 10pt "
+                     f"({slide_fit(small[0])}), so move the run instead")
         return text
 
     def h_line_off_canvas(self, iss, s, run, side, d, r, box_d=None):

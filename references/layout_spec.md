@@ -441,7 +441,8 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 - **Spec errors** (exit 1, nothing written): one line each, located — `nodes[1] alb: icon:
   alias 'alb' has no match scoring ≥ 95; write the full ref — candidates: …`, then `N
   problems in the spec`. Fix them all, re-run.
-- **Summary**: `draft:` path, `canvas: W × H (mode); on a 16:9 slide 12px text → N pt`,
+- **Summary**: `draft:` path, `canvas: W × H (mode); on a 16:9 slide the smallest text (Fpx) → N pt` (the smallest
+  font-size the draft draws, at the size svg2pptx gives it; `SLIDE TOO SMALL` under 10pt),
   `note:` place and size, `icons`, `alias` resolutions, `warning:` lines (read them —
   an LB inside a template, note text past the canvas, a phase-2 key drawn another way;
   `drew X instead of Y`: something blocks the planned shape — the engine re-solves with
