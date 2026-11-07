@@ -59,6 +59,11 @@ AWS가 만들거나 보증한 도구가 아닙니다. 아이콘은 AWS 소유이
 | ![Direct Connect 전용 VIF로 Bedrock을 사설 호출하는 참조 아키텍처](docs/examples/bedrock-dx-reference-architecture.png) | ![레인으로 접은 서버리스 이벤트 기반 주문 파이프라인](docs/examples/serverless-order-pipeline.png) |
 | 온프레미스의 Claude Code가 DX 전용 VIF → Direct Connect gateway → VGW → bedrock-runtime · bedrock · sts 인터페이스 엔드포인트로 Bedrock을 사설 호출. Route 53 Resolver inbound로 이름 해석, 서울은 global 교차 리전 추론, 같은 DX gateway의 두 번째 리전 엔드포인트, 인터넷을 거치는 aws sso login 구간까지 단계별로 표시 | 긴 파이프라인을 레인으로 접은 예: 요청 레인(CloudFront · AWS WAF → API Gateway(Cognito authorizer) → Lambda → DynamoDB → Streams → Pipes → 이벤트 버스, 기본 동작은 OAC로 S3 정적 웹 오리진), 규칙에서 갈라지는 분석 레인(SQS → Lambda → Data Firehose → S3)과 처리 레인(Step Functions → 결제 Lambda · SNS → 구독 Lambda → SES, 두 AZ VPC의 재고 Lambda → RDS Proxy(IAM 인증) → Aurora PostgreSQL, Secrets Manager 인터페이스 엔드포인트). 주문 → 결제 → 재고 예약 → 메일 흐름을 단계 번호로 표시 |
 
+| 중앙 집중형 이그레스 |
+|---|
+| ![Security VPC를 거치는 중앙 집중형 이그레스 참조 아키텍처](docs/examples/centralized-egress.png) |
+| 똑같이 그린 App VPC A · B(AZ별 App 서브넷 EC2 → TGW 서브넷 TGW ENI, IGW 없음)의 인터넷행 트래픽이 Transit Gateway를 거쳐 Security VPC의 AZ별 TGW ENI → 방화벽 엔드포인트(AWS Network Firewall 하나) → NAT 게이트웨이 → IGW로 나가는 구성. Spoke RT는 spoke attachment 옆에, Firewall RT는 Security VPC attachment(appliance mode) 옆에 두고, App VPC A의 EC2 → 인터넷 흐름을 단계 번호로 표시 |
+
 ## 설치
 
 macOS와 Linux를 지원합니다.

@@ -63,6 +63,11 @@ their SVGs and a render of each slide are in [`docs/examples/slides/`](docs/exam
 | ![Private Amazon Bedrock access over a Direct Connect private VIF](docs/examples/bedrock-dx-reference-architecture.png) | ![Serverless event-driven order pipeline folded into lanes](docs/examples/serverless-order-pipeline.png) |
 | Claude Code on premises calls Bedrock privately: DX private VIF → Direct Connect gateway → VGW → interface endpoints for bedrock-runtime, bedrock and sts, names resolved through a Route 53 Resolver inbound endpoint; global cross-Region inference from Seoul, a second-Region endpoint behind the same DX gateway, and the internet-bound aws sso login sign-in, each as a numbered step | A long pipeline folded into lanes: a request lane (CloudFront with AWS WAF → API Gateway with a Cognito authorizer → Lambda → DynamoDB → Streams → Pipes → event bus, the default behavior to an S3 static web origin with OAC), then an analytics lane (SQS → Lambda → Data Firehose → S3) and a fulfillment lane (Step Functions → payment Lambda · SNS → subscriber Lambda → SES, a stock Lambda in a two-AZ VPC → RDS Proxy (IAM auth) → Aurora PostgreSQL, Secrets Manager over interface endpoints) fed by one rule; the order → payment → stock reservation → mail flow as numbered steps |
 
+| Centralized egress |
+|---|
+| ![Centralized egress through a Security VPC](docs/examples/centralized-egress.png) |
+| Two identically drawn App VPCs (an App subnet EC2 → a TGW ENI in the TGW subnet per AZ, no IGW) send Internet traffic through a Transit Gateway into a Security VPC: TGW ENI → firewall endpoint (one AWS Network Firewall) → NAT gateway per AZ → IGW. The Spoke RT sits beside the spoke attachments and the Firewall RT beside the Security VPC attachment (appliance mode); the App VPC A EC2 → Internet flow is numbered |
+
 ## Install
 
 macOS and Linux are supported.
