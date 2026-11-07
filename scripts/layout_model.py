@@ -366,6 +366,15 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     label line below (above) that port its half width + OBST_CLEAR + 1 (+ the port split:
     PORT_TOPBOT for two lines, PORT_PITCH per extra line) from its center, so the vertical
     line clears a neighbour's long last line (hard; the narrow band below the stack only).
+ r. Diagonal siblings (W2; disjoint on both axes, decision DESIGN 4.3 #2 said "rows first"):
+    the axis with the wider track gap, ties → y, for two nodes. A pair with a box in it that
+    this sends to y goes on x instead when the solved x already keeps it its x gap apart,
+    or when x needs no more room than y (solve(): y solved without the open pairs, every
+    pair x needs more room for put on y and y solved again with those held until none
+    moves; the rest re-solve x with their x separation). On x such a pair only keeps its
+    row order on y: the later rows' top ≥ the earlier one's (nfw: VPC B beside the TGW,
+    the slide spec's empty `att` column no longer needed; a Spoke RT above-left of a
+    Security VPC no longer pushes its rows, and the spoke VPC AZ sharing them, down).
 """
 from __future__ import annotations
 

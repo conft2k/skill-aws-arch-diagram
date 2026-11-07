@@ -11,8 +11,8 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                baseline and footprint bottom; border nodes use their mask.
   constraints  `b − a ≥ d` per axis, each a layout_model.Requirement with why/owner:
                1 containment (pad, top insets, label_bottom), 2 siblings in one parent
-               (separated on the axis their track ranges are disjoint on; rows first for
-               diagonal pairs), 3 neighbour pitch, 4 header and CIDR widths, 5 IGW/VGW pinned
+               (separated on the axis their track ranges are disjoint on; a diagonal pair on
+               the wider track gap, ties → rows, unless the solved x keeps it apart), 3 neighbour pitch, 4 header and CIDR widths, 5 IGW/VGW pinned
                on the VPC border (mask kept MASK_CLEAR from borders), 6 the AZ gap row,
                7 colspan (reserved from its center for the span a first solve found), 8 flow rows
                (own x variables, pitch, centered in the parent afterwards) and flow columns
@@ -175,6 +175,17 @@ class _Model:
         # empty on the first x solve, which reserves from both end tracks (solve())
         self.span: Dict[str, float] = {}
         self.hold_span = True            # build("x") holds b2 − b1 ≥ span (False: _solve_x measures g(span))
+        self.xv: Dict[str, float] = {}           # the solved x (set before build("y"))
+        self.nodes_x: Dict[str, float] = {}      # node centers on the solved x
+        # diagonal sibling pairs (disjoint on both axes) that the track gaps would separate on
+        # y but the solved x does not keep apart: build("y") leaves them out while diag_open
+        # is a list (solve() then weighs x against y), else separates them on y; diag_x are
+        # the pairs (frozenset of item keys) solve() chose to keep apart on x instead
+        self.diag_open: Optional[List[Tuple[_Item, _Item, str]]] = None
+        self.diag_x: set = set()
+        # soft requirements dropped first when a positive cycle holds one (id → requirement,
+        # kept alive so the ids stay unique): the twins' equal spacing
+        self.yields: Dict[str, Dict[int, Requirement]] = {"x": {}, "y": {}}
 
     # ---- helpers --------------------------------------------------------------------
 
@@ -286,6 +297,7 @@ class _Model:
         tracks = spec.cols if axis == "x" else spec.rows
         pre = "col" if axis == "x" else "row"
         L, R = ("L", "R") if axis == "x" else ("T", "B")
+        self.yields[axis] = {}
         # track order and min_gap_before
         for prev, t in zip(tracks, tracks[1:]):
             self.add(axis, (f"{pre}:{prev.id}", 0), (f"{pre}:{t.id}", 0), max(0.0, t.min_gap_before),
@@ -501,13 +513,63 @@ class _Model:
                     self._align(axis, a.gid, b.gid)
                 if not _disjoint(ra, rb):
                     continue
+                first, second = (a, b) if ra[1] < rb[0] else (b, a)
                 if _disjoint(oa, ob):
-                    # diagonal: separate on the axis with the wider track gap (ties → rows)
+                    # diagonal: separate on the axis with the wider track gap (ties → rows).
+                    # A pair with a box in it that this sends to y goes on x instead when the
+                    # solved x already keeps it apart, or when solve() finds x takes no more
+                    # room (diag_x) — its columns order it, so a node beside a box needs no
+                    # rows between them and never pushes the box's rows (and every box on
+                    # them) down; it then only keeps its row order (_diag_order)
                     here, there = _span_gap(ra, rb), _span_gap(oa, ob)
+                    box = bool(a.gid or b.gid)
+                    if box and frozenset((a.key, b.key)) in self.diag_x:
+                        if axis == "x":
+                            self._sep(axis, first, second, owner)
+                        else:
+                            self._diag_order(first, second, owner)
+                        continue
                     if here < there or (here == there and axis == "x"):
                         continue
-                first, second = (a, b) if ra[1] < rb[0] else (b, a)
+                    if box and self._x_apart(first, second):
+                        self._diag_order(first, second, owner)
+                        continue
+                    if box and self.diag_open is not None:
+                        self.diag_open.append((first, second, owner))
+                        continue
                 self._sep(axis, first, second, owner)
+
+    def _diag_order(self, first: _Item, second: _Item, owner):
+        """A diagonal pair kept apart on x: the one on the later rows goes beside the other,
+        never above it (its top level with the other's or below)."""
+        self.add("y", self.lo(first, "y"), self.lo(second, "y"), 0,
+                 f"diagonal order {first.key} | {second.key} (apart on x)", owner)
+
+    def _x_extent(self, it: _Item) -> Tuple[float, float]:
+        """An item's left / right on the solved x (a node: its footprint, a mask)."""
+        if it.gid:
+            return self.xv[f"group:{it.gid}.L"], self.xv[f"group:{it.gid}.R"]
+        c, h = self.nodes_x[it.nid], self.foot[it.nid].h
+        return c - h, c + h
+
+    def x_short(self, a: _Item, b: _Item) -> float:
+        """How much more x the solved x needs to keep a diagonal pair its x gap apart
+        (≤ 0: it does)."""
+        if b.xr[1] < a.xr[0]:
+            a, b = b, a
+        (_, a1), (b0, _) = self._x_extent(a), self._x_extent(b)
+        g, _ = self._gap("x", a, b)
+        return g - (b0 - a1)
+
+    def y_short(self, a: _Item, b: _Item, yv: Dict[str, float]) -> float:
+        """How much more y keeps b (below) its y gap under a on yv (≤ 0: it is)."""
+        g, _ = self._gap("y", a, b)
+        (va, oa), (vb, ob) = self.hi(a, "y"), self.lo(b, "y")
+        return g - ((yv[vb] + ob) - (yv[va] + oa))
+
+    def _x_apart(self, a: _Item, b: _Item) -> bool:
+        """The solved x keeps a and b at least their x gap apart (y only, after x)."""
+        return bool(self.xv) and self.x_short(a, b) <= _EPS
 
     def _float_units(self, parent):
         """The y blocks of parent's children that have no row of their own: each flow
@@ -1137,6 +1199,9 @@ def _solve_axis(m: _Model, axis: str, cons: List[Requirement]):
                      f"({c.a} → {c.b} ≥ {fmt_num(c.d)}) in a cycle that needs {fmt_num(excess)} px more than 0"
                      for c in cycle if c.owner != "canvas" or c.why != "coordinate ≥ 0"]
             raise SolveError(probs or [f"canvas: contradictory {axis} constraints"])
+        # a requirement that yields (a twin's spacing) goes first and alone; the caller's
+        # soft requirements stay while dropping those breaks the cycle
+        soft = [c for c in soft if id(c) in m.yields[axis]] or soft
         drop = {id(c) for c in soft}
         for c in soft:
             m.warnings.append(f"{_loc(m.spec, c.owner)}: dropped soft requirement {c.why!r} ({axis}) "
@@ -1332,23 +1397,27 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
     if probs:
         raise SolveError(probs)
 
-    # ---- x ---------------------------------------------------------------------------
-    xv, xpred, xcons = _solve_x(m, extra)
-    xbf, xv = xv, dict(xv)
-    _hug(m, "x", xcons, xv)
-    for parent, ids in m.flow_rows:
-        if parent is None:
-            continue
-        mem = {f"node:{i}" for i in ids}
-        want = (xv[f"group:{parent}.L"] + xv[f"group:{parent}.R"]) / 2 - (xv[f"node:{ids[0]}"] + xv[f"node:{ids[-1]}"]) / 2
-        shift = math.floor(min(want, _shift_slack(xcons, xv, mem)) + 1e-9)
-        if shift > 0:
-            for v in mem:
-                xv[v] += shift
-    nodes_x = {nid: _node_center(m, nid, "x", xv) for nid in spec.nodes}
+    # ---- x, then the diagonal pairs ---------------------------------------------------
+    xbf, xpred, xcons, xv, nodes_x = _x_stage(m, extra)
+    m.xv, m.nodes_x, m.diag_open = xv, nodes_x, []
+    m.build("y")
+    m.y_after_x(xv, nodes_x)
+    pick = _diagonals(m, m.cons["y"] + mapped["y"])
+    if pick:
+        # a pair x keeps apart for less than y would: solve again with it on x (the rows
+        # it no longer pushes stay where the rest puts them)
+        m2 = _Model(spec)
+        m2.diag_x = pick
+        m = m2
+        xbf, xpred, xcons, xv, nodes_x = _x_stage(m, extra)
+        m.xv, m.nodes_x = xv, nodes_x
+        m.build("y")
+    else:
+        for first, second, owner in m.diag_open:
+            m._sep("y", first, second, owner)
+        m.diag_open = None
 
     # ---- y ---------------------------------------------------------------------------
-    m.build("y")
     m.y_after_x(xv, nodes_x)
     ycons_in = m.cons["y"] + mapped["y"]
     for _ in range(6):
@@ -1365,6 +1434,58 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
     geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)
     geom.warnings = list(m.warnings)
     return geom
+
+
+def _x_stage(m: _Model, extra: Sequence[Requirement]):
+    """Solve x, hug it, center the flow rows: (bellman-ford x, its pred, its constraints,
+    the final x, node centers)."""
+    spec = m.spec
+    xv, xpred, xcons = _solve_x(m, extra)
+    xbf, xv = xv, dict(xv)
+    _hug(m, "x", xcons, xv)
+    for parent, ids in m.flow_rows:
+        if parent is None:
+            continue
+        mem = {f"node:{i}" for i in ids}
+        want = (xv[f"group:{parent}.L"] + xv[f"group:{parent}.R"]) / 2 - (xv[f"node:{ids[0]}"] + xv[f"node:{ids[-1]}"]) / 2
+        shift = math.floor(min(want, _shift_slack(xcons, xv, mem)) + 1e-9)
+        if shift > 0:
+            for v in mem:
+                xv[v] += shift
+    nodes_x = {nid: _node_center(m, nid, "x", xv) for nid in spec.nodes}
+    return xbf, xpred, xcons, xv, nodes_x
+
+
+def _diagonals(m: _Model, ycons: List[Requirement]) -> set:
+    """The diagonal sibling pairs build("y") left open (m.diag_open: the track gaps say y,
+    the solved x does not keep them apart): a pair goes on x when that takes no more room
+    than y would (ties → x) — its columns already order it, so it needs no rows between
+    them, and a node beside a box stops pushing the box's rows (and every box sharing them)
+    down. y is weighed with the pairs already put on y held: solve y with those, put every
+    pair x would take more room for on y, again until none moves; the rest go on x (two
+    nodes pushing one box both move, one that x cannot move keeps the other on y, where it
+    then costs nothing). Returns the x pairs' keys."""
+    if not m.diag_open:
+        return set()
+    w0 = len(m.warnings)
+    open_ = list(m.diag_open)
+    on_y: List[Tuple[_Item, _Item, str]] = []
+    while open_:
+        n0 = len(m.cons["y"])
+        for first, second, owner in on_y:
+            m._sep("y", first, second, owner)
+        held = m.cons["y"][n0:]
+        del m.cons["y"][n0:]
+        yv, _, kept = _solve_axis(m, "y", list(ycons) + held)
+        yv = dict(yv)
+        _hug(m, "y", kept, yv)
+        moved = [p for p in open_ if m.x_short(p[0], p[1]) > m.y_short(p[0], p[1], yv) + _EPS]
+        if not moved:
+            break
+        on_y += moved
+        open_ = [p for p in open_ if p not in moved]
+    del m.warnings[w0:]              # the y solve proper reports its own
+    return {frozenset((first.key, second.key)) for first, second, _ in open_}
 
 
 def _node_center(m: _Model, nid: str, axis: str, val) -> float:

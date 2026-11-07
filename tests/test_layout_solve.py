@@ -220,6 +220,59 @@ def mini_spec(mode="document"):
     return build("mini", ["igw", "pub", "app"], ["az1", "main", "az2"], groups, nodes, mode)
 
 
+def egress_spec(mode="document", rtsp_row="a1", b_labels=None, eni_gap=0):
+    """Centralized egress (bench v2-2): App VPC A over rows a1, a2 and App VPC B over b1, b2,
+    each an AZ template of App + TGW subnets; the Security VPC's AZs on a2 and b1; the TGW
+    on main with the Spoke RT at [tgw, a1] (above-left of the Security VPC: a diagonal pair)
+    and the Firewall RT at [tgw, b2]. b_labels: VPC B's subnet labels (another structure);
+    eni_gap: the eni column's min_gap_before (the room the bench's labelled TGW → ENI routes
+    open between the TGW and the Security VPC; no routes are planned here)."""
+    def spoke(v, rows, labels):
+        tg, tn = per(
+            [dict(id=f"az{v}", type="az", label="Availability Zone {n}", parent=f"vpc{v}"),
+             dict(id=f"app{v}", type="private", label=labels[0], parent=f"az{v}"),
+             dict(id=f"tsn{v}", type="private", label=labels[1], parent=f"az{v}")],
+            [dict(id=f"ec2{v}", icon="service/Amazon-EC2", label="EC2", sub=["0.0.0.0/0 → TGW"],
+                  parent=f"app{v}", col="ec2"),
+             dict(id=f"eni{v}", icon="resource/AWS-Transit-Gateway_Attachment", label="TGW ENI",
+                  parent=f"tsn{v}", col="sptgw")],
+            rows, f"az{v}")
+        return [dict(id=f"vpc{v}", type="vpc", label=f"App VPC {v.upper()}", cidr=f"10.{ord(v) - 96}.0.0/16",
+                     parent="region")] + tg, tn
+    ga, na = spoke("a", ["a1", "a2"], ["App subnet", "TGW subnet"])
+    gb, nb = spoke("b", ["b1", "b2"], b_labels or ["App subnet", "TGW subnet"])
+    tg, tn = per(
+        [dict(id="az", type="az", label="Availability Zone {n}", parent="sec"),
+         dict(id="tgwsn", type="private", label="TGW subnet", parent="az"),
+         dict(id="fwsn", type="private", label="Firewall subnet", parent="az")],
+        [dict(id="eni", icon="resource/AWS-Transit-Gateway_Attachment", label="TGW ENI", parent="tgwsn", col="eni"),
+         dict(id="fwe", icon="resource/AWS-Network-Firewall_Endpoints", label="Firewall endpoint", parent="fwsn",
+              col="fw")],
+        ["a2", "b1"], "az")
+    groups = [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud")] + \
+        ga + gb + [dict(id="sec", type="vpc", label="Security VPC", cidr="10.100.0.0/16", parent="region")] + tg
+    nodes = na + nb + tn + [
+        dict(id="tgw", icon="service/AWS-Transit-Gateway", label="TGW", parent="region", col="tgw", row="main"),
+        dict(id="rtsp", icon="resource/Amazon-Route-53_Route-Table", label="Spoke RT",
+             sub=["App VPC A · B attachment 연결", "0.0.0.0/0 → Security VPC"], parent="region", col="tgw",
+             row=rtsp_row),
+        dict(id="rtfw", icon="resource/Amazon-Route-53_Route-Table", label="Firewall RT",
+             sub=["Security VPC attachment 연결", "10.1.0.0/16 → App VPC A", "10.2.0.0/16 → App VPC B"],
+             parent="region", col="tgw", row="b2")]
+    return build("egress", ["ec2", "sptgw", "tgw", ("eni", {"min_gap_before": eni_gap}), "fw"],
+                 ["a1", "a2", "main", "b1", "b2"], groups, nodes, mode)
+
+
+def corner_spec(label, gap_rows=0):
+    """A top-level node at [c1, r1] and a VPC holding one node at [c2, r2]: a diagonal pair
+    (disjoint columns and rows). gap_rows: r2's min_gap_before (rows already far apart)."""
+    groups = [dict(id="vpc", type="vpc", label="VPC")]
+    nodes = [dict(id="rt", icon="resource/Amazon-Route-53_Route-Table", label=label),
+             dict(id="ec2", icon="service/Amazon-EC2", label="EC2", parent="vpc", col="c2", row="r2")]
+    nodes[0].update(col="c1", row="r1")
+    return build("corner", ["c1", "c2"], ["r1", ("r2", {"min_gap_before": gap_rows})], groups, nodes)
+
+
 def flowcol_spec(mode="slide", pitch=100, align="center", n=4):
     """mini_spec plus regional services in a flow column right of the VPC (alb slide)."""
     base = mini_spec(mode)
@@ -359,13 +412,16 @@ class ExampleTest(unittest.TestCase):
         # it to 132 for the TGW fan-out (a W3 route requirement), so everything that spans
         # or sits below it gets TOL_GAP. x: no routes are planned in this test (the example
         # leaves 120-150 px corridors for labelled arrows), so only leaf widths are bounded.
-        gap = 24
-        grp("cloud", "AWS Cloud", tol_x=0, tol_h=gap)
-        grp("region", "Region ap-northeast-2", tol_x=4, tol_h=gap)      # decision a: 16, example 20
+        # Heights through the gap row get 40: VPC B (az2, spoke) beside the TGW (main, tgw)
+        # is a diagonal pair the solved x keeps apart, so it no longer pushes row az2 below
+        # the TGW's label, and nothing here opens the gap row the example's routes need.
+        gap, gap_h = 24, 40
+        grp("cloud", "AWS Cloud", tol_x=0, tol_h=gap_h)
+        grp("region", "Region ap-northeast-2", tol_x=4, tol_h=gap_h)    # decision a: 16, example 20
         grp("vpca", "VPC A", tol_x=12, tol_w=24)
         grp("sna", "App subnet", 0, tol_x=16, tol_w=24)
         grp("vpcb", "VPC B", tol_y=gap)
-        grp("insp", "Inspection VPC", tol_h=gap)
+        grp("insp", "Inspection VPC", tol_h=gap_h)
         grp("az.1", "Availability Zone 1", tol_y=4)
         grp("tgwsn.1", "TGW subnet", 0, tol_y=4, tol_w=24)
         grp("fwsn.1", "Firewall subnet", 0, tol_y=4, tol_w=24)
@@ -1076,6 +1132,67 @@ class DrawTest(unittest.TestCase):
                     spec = mk(mode)
                     g = LS.solve(spec, [])
                     self.assertEqual(check(spec, g), [])
+
+
+class DiagonalTest(unittest.TestCase):
+    """Siblings disjoint on both axes: a box and a node beside it on x when x takes no more
+    room than y, so the node does not push the box's rows (and every box on them) down."""
+
+    @staticmethod
+    def az_gaps(g, v):
+        a1, a2 = g.groups[f"az{v}.1"].rect, g.groups[f"az{v}.2"].rect
+        return a2.y0 - a1.y1, a1.h, a2.h
+
+    def test_spoke_rt_beside_the_security_vpc(self):
+        """bench v2-2: the Spoke RT at [tgw, a1] made the Security VPC (from a2) start below
+        its label, pushing row a2 and VPC A's AZ 2 29 px down (VPC A gap 45, VPC B 16).
+        With the routes' room between the TGW and the Security VPC (eni_gap 260: x already
+        keeps them apart; 200: x is 28 px short, y would need 29) it sits beside it; with
+        less (180: x 48 short) it stays below (TwinTest).
+        """
+        for mode, gap in (("document", 260), ("slide", 260), ("document", 200)):
+            with self.subTest(mode=mode, eni_gap=gap):
+                spec = egress_spec(mode, eni_gap=gap)
+                g = LS.solve(spec, [])
+                rt, sec = g.nodes["rtsp"].footprint(), g.groups["sec"].rect
+                self.assertGreaterEqual(sec.x0 - rt.x1, spec.const.sibling_gap - 0.01)
+                self.assertLess(sec.y0, rt.y1)                # beside it, not below its label
+                self.assertGreaterEqual(sec.y0, rt.y0)        # and never above it
+                self.assertEqual(self.az_gaps(g, "a"), self.az_gaps(g, "b"))
+                self.assertEqual(self.az_gaps(g, "a")[0], spec.const.sibling_gap)
+                self.assertEqual(check(spec, g), [])
+
+    def test_beside_when_x_is_cheaper(self):
+        spec = corner_spec("RT")
+        g = LS.solve(spec, [])
+        rt, vpc = g.nodes["rt"].footprint(), g.groups["vpc"].rect
+        self.assertGreaterEqual(vpc.x0 - rt.x1, spec.const.sibling_gap - 0.01)
+        self.assertLess(vpc.y0, rt.y1)
+        self.assertGreaterEqual(vpc.y0, rt.y0)
+
+    def test_below_when_x_takes_more_room(self):
+        """A label wider than the room y needs: the box goes below it (x not widened)."""
+        spec = corner_spec("Route table with a label far wider than the VPC")
+        g = LS.solve(spec, [])
+        rt, vpc = g.nodes["rt"].footprint(), g.groups["vpc"].rect
+        self.assertLess(vpc.x0, rt.x1)
+        self.assertGreaterEqual(vpc.y0 - g.nodes["rt"].stack().y1, K.LABEL_CLEAR - 0.01)
+
+    def test_below_when_rows_are_already_apart(self):
+        """y costs nothing (r2 already far below r1): stay below, x not widened."""
+        spec = corner_spec("RT", gap_rows=400)
+        g = LS.solve(spec, [])
+        rt, vpc = g.nodes["rt"].footprint(), g.groups["vpc"].rect
+        self.assertLess(vpc.x0, rt.x1)
+        self.assertGreater(vpc.y0, rt.y1)
+
+    def test_two_nodes_keep_the_track_rule(self):
+        """Two diagonal nodes still separate on y on a tie (rows stay readable)."""
+        groups = []
+        nodes = [dict(id="p", icon="service/Amazon-EC2", label="Primary", col="c", row="r1"),
+                 dict(id="q", icon="service/Amazon-EC2", label="Standby", col="d", row="r2")]
+        g = LS.solve(build("pair", ["c", "d"], ["r1", "r2"], groups, nodes), [])
+        self.assertGreaterEqual(g.nodes["q"].icon.y0 - g.nodes["p"].stack().y1, K.DOCUMENT.stack_gap - 0.01)
 
 
 if __name__ == "__main__":

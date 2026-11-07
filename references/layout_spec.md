@@ -55,7 +55,14 @@ and the engine spaces the tracks by what lies between them. Name columns after t
 (`users, igw, pub, app, db`) and, for two AZs, use rows `[az1, main, az2]`: `main` is the
 gap row between the AZs where Users, the IGW and the load balancer sit. Stacked AZ boxes
 get the full AZ gap only when a node of their VPC (or one on its border) sits on a row
-between them; with nothing between, they are just siblings (16px apart). An item is a name
+between them; with nothing between, they are just siblings (16px apart). A box and a node
+(or two boxes) of one parent on different columns *and* different rows — diagonal, like a
+route table at `[tgw, a1]` above-left of a VPC that starts on `a2` — sit beside each other
+when x keeps them apart for no more room than y would: their columns already order them, so
+the node never pushes the box's rows (and every other box on those rows) down, and only the
+box stays no higher than the node. Otherwise, and for two diagonal nodes, they separate on
+the axis whose tracks are farther apart (equal: on y). No empty column is needed to keep a
+VPC beside the TGW. An item is a name
 or `{id, min_gap_before: px, min_w: px, flow: px, align: top|center|bottom}`.
 `min_gap_before` is the least distance from the previous track's center to this one's. Two columns whose nodes share no row may
 land on the same x (only their order is kept) — a column outside the AZ boxes next to
