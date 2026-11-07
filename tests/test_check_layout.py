@@ -593,11 +593,20 @@ class NodeLabelStack(unittest.TestCase):
                    POLY.format(pts="104,146 104,196"))
         self.assertEqual([i.msg for i in CL.run_checks(root)], [])
 
-    def connector_label(self, y):
-        """A flow passing under q's stack at y + 7, labelled 'writes · DynamoDB' centered under q."""
+    def test_line_from_the_node_beside_its_stack(self):
+        """q's other flow leaves its right side and runs down within LABEL_REACH of the third
+        line (the rr-loose svc draft): a line of q's own still, Layout OK."""
+        root = svg(ICON.format(x=80, y=40), self.STACK, ICON.format(x=80, y=200), ICON.format(x=180, y=200),
+                   '<text x="104" y="266" font-size="14" text-anchor="middle">Lambda</text>',
+                   '<text x="204" y="266" font-size="14" text-anchor="middle">Worker</text>',
+                   POLY.format(pts="104,146 104,196"), POLY.format(pts="128,64 156,64 156,224 176,224"))
+        self.assertEqual([i.msg for i in CL.run_checks(root)], [])
+
+    def connector_label(self, y, label="writes · DynamoDB"):
+        """A flow passing under q's stack at y + 7, labelled centered under q."""
         return svg(ICON.format(x=80, y=40), self.STACK, ICON.format(x=380, y=148),
                    POLY.format(pts=f"20,{y + 7} 376,{y + 7}"),
-                   f'<text x="104" y="{y}" font-size="12" text-anchor="middle">writes · DynamoDB</text>')
+                   f'<text x="104" y="{y}" font-size="12" text-anchor="middle">{label}</text>')
 
     def test_connector_label_under_the_stack(self):
         """Centered under q but more than STACK_STEP under its last line: a connector label."""
@@ -605,9 +614,39 @@ class NodeLabelStack(unittest.TestCase):
         self.assertEqual(len(iss), 1, [i.msg for i in iss])
         self.assertIn("connector label 'writes · DynamoDB'", iss[0].msg)
 
-    def test_next_line_of_the_stack(self):
-        """The same line STACK_STEP under the last one continues the stack: q's own."""
-        self.assertEqual(kinds(self.connector_label(138 + CL.STACK_STEP), "SERVICE AS TEXT"), [])
+    def test_label_of_a_flow_passing_under_the_stack(self):
+        """The same line STACK_STEP under the last one, but with a flow that doesn't end on q
+        passing right under it: that flow's label, not q's fourth line."""
+        iss = kinds(self.connector_label(138 + CL.STACK_STEP), "SERVICE AS TEXT")
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+        self.assertIn("connector label 'writes · DynamoDB'", iss[0].msg)
+
+    def test_cidr_of_a_flow_passing_under_the_stack(self):
+        """A bare CIDR there labels the flow, not q: it floats (CIDR OFF HEADER)."""
+        iss = kinds(self.connector_label(138 + CL.STACK_STEP, "10.0.0.0/16"), "CIDR OFF HEADER")
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+        self.assertIn("'10.0.0.0/16' floats inside a box", iss[0].msg)
+
+    def test_next_line_over_a_stem_of_its_own(self):
+        """A fourth line STACK_STEP under the third, with q's own stem leaving right under it:
+        still q's own line."""
+        root = svg(ICON.format(x=80, y=40), self.STACK,
+                   '<text x="104" y="154" font-size="12" text-anchor="middle">writes · DynamoDB</text>',
+                   ICON.format(x=80, y=220), POLY.format(pts="104,162 104,216"))
+        self.assertEqual(kinds(root, "SERVICE AS TEXT"), [])
+        self.assertEqual(kinds(root, "LOOSE END"), [])
+
+    def test_side_label_of_a_stem_is_not_centered_into_the_stack(self):
+        """'SQS' beside q's stem, 8px right of it under the stack: SERVICE AS TEXT asks to draw
+        SQS as a node — centering it under q would put it on the stem."""
+        root = svg(ICON.format(x=80, y=40),
+                   '<text x="104" y="106" font-size="14" text-anchor="middle">Orders</text>'
+                   '<text x="104" y="122" font-size="12" text-anchor="middle">orders queue</text>',
+                   ICON.format(x=80, y=240), POLY.format(pts="104,130 104,236"),
+                   '<text x="112" y="140" font-size="12">SQS</text>')
+        iss = kinds(root, "SERVICE AS TEXT")
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+        self.assertIn("draw 'SQS' as a node", CL.Advisor(root).hint(iss[0]).text)
 
     def test_text_near_icon(self):
         """A node's own stack may sit close to its icon; a connector label beside an icon, or

@@ -119,6 +119,7 @@ is not reported, nor is a small junction dot (circle, r ≤ 6) sitting on its ow
 the render rather than a blind fix. Only translate() transforms are understood,
 which is all the skill's diagrams use.
 """
+import collections
 import functools
 import math
 import re
@@ -394,30 +395,61 @@ def beyond(run, box, strict):
     return best[:3] if best else None
 
 
-def label_stack(box, texts, tol=3):
+def label_stack(box, texts, tol=3, cut=()):
     """The labels centered (within tol px) under an icon box: the lines with a baseline within
     STACK_REACH of its bottom (a label and its first sub line), then each next centered line
-    while it sits at most STACK_STEP under the one before (a label with two or more sub lines)."""
+    while it sits at most STACK_STEP under the one before (a label with two or more sub lines)
+    and no segment in cut runs within LABEL_REACH of it (there it is that line's label: a flow
+    passing under the stack, labelled at its midpoint)."""
     x0, _, x1, y1 = box
     under = sorted((t for t in texts if abs(t["cx"] - (x0 + x1) / 2) <= tol and t["y"] > y1), key=lambda t: t["y"])
     out = []
     for t in under:
-        if t["y"] <= y1 + STACK_REACH or (out and t["y"] - out[-1]["y"] <= STACK_STEP):
+        if t["y"] <= y1 + STACK_REACH or (out and t["y"] - out[-1]["y"] <= STACK_STEP and not any(
+                seg_hits_box(s["p"], s["q"], expand(t["box"], LABEL_REACH)) for s in cut)):
             out.append(t)
         else:
             break
     return out
 
 
-def footprints(icons, texts):
-    """Each node icon (badges and junction dots aside) with its box grown over the labels
-    centered under it (label_stack) — the stack a connector end attaches to: [(icon, box)]."""
+def node_stacks(icons, texts, segs, tol=3):
+    """Each node's label_stack ({id(icon element): lines}), its chain past STACK_REACH cut at a
+    line by a connector that doesn't end on that node (one leaving it may run beside its stack). Which node a connector end
+    attaches to is read off the uncut stacks' footprints (STACK_REACH and STACK_STEP alone),
+    so the order is fixed: uncut stacks → their footprints → each end's node → the cut stacks."""
+    nodes = [i for i in icons if not i["badge"]]
+    feet = []
+    for i in nodes:
+        b = i["box"]
+        for t in label_stack(b, texts):
+            b = union(b, t["box"])
+        feet.append((i, b))
+    runs = {}
+    for s in segs:
+        if s["kind"] == "connector":
+            runs.setdefault(id(s["el"]), []).append(s)
+    ends_on = []                                # (a connector's segments, ids of the nodes it ends on)
+    for run in runs.values():
+        pts = collections.Counter(pt for s in run for pt in (s["p"], s["q"]))
+        owners = {id(i["el"]) for pt, n in pts.items() if n == 1 for i in [end_icon(pt, feet)] if i is not None}
+        ends_on.append((run, owners))
+    return {id(i["el"]): label_stack(i["box"], texts, tol,
+                                     [s for run, own in ends_on if id(i["el"]) not in own for s in run])
+            for i in nodes}
+
+
+def footprints(icons, texts, segs, stacks=None):
+    """Each node icon (badges and junction dots aside) with its box grown over its own label
+    lines (stacks: node_stacks) — the stack a connector end attaches to: [(icon, box)]."""
+    if stacks is None:
+        stacks = node_stacks(icons, texts, segs)
     out = []
     for i in icons:
         if i["badge"]:
             continue
         b = i["box"]
-        for t in label_stack(b, texts):
+        for t in stacks[id(i["el"])]:
             b = union(b, t["box"])
         out.append((i, b))
     return out
@@ -677,7 +709,7 @@ def loose_ends(root):
     for s in segs:
         if s["kind"] == "connector":
             paths.setdefault(id(s["el"]), []).append(s)
-    return open_ends(paths, footprints(icons, texts), container_rects(root), texts)
+    return open_ends(paths, footprints(icons, texts, segs), container_rects(root), texts)
 
 
 def stray_dots(root):
@@ -722,9 +754,10 @@ def ref_id(r):
 def run_checks(root):
     texts, segs, masks, icons, (cw, ch) = collect(root)
     issues = []
-    # A node's label and its sub lines (label_stack) name that node: they aren't connector
+    # A node's label and its sub lines (node_stacks) name that node: they aren't connector
     # labels, and they may sit close to their own icon.
-    stacks = {id(i): {id(t) for t in label_stack(i["box"], texts)} for i in icons if not i["badge"]}
+    own_lines = node_stacks(icons, texts, segs)
+    stacks = {id(i): {id(t) for t in own_lines[id(i["el"])]} for i in icons if not i["badge"]}
     node_labels = set().union(*stacks.values())
 
     def add(kind, msg, refs, **ctx):
@@ -813,7 +846,7 @@ def run_checks(root):
         add("LINE ON LINE", f"LINE ON LINE    connector {fmt(s)} runs on top of connector {fmt(o)} for {d:g}px — "
             f"two flows read as one line; give each its own lane ({HUG_CLEAR}px apart) or draw them as one trunk",
             [s, o], s=s, o=o, d=d)
-    feet = footprints(icons, texts)
+    feet = footprints(icons, texts, segs, own_lines)
     # A line alone in its net (no other line's end on it, its ends on no other line) with an
     # end on nothing leads nowhere: a merge branch left short of its trunk, a fork stem off
     # its branches. A net of several lines (a bus and its drops) may keep an open end, and an
@@ -1183,7 +1216,10 @@ class Advisor:
         self.keys = {i.key for i in self.issues}
         self.texts, self.segs, self.masks, self.icons, self.canvas = collect(self.root)
         self.rects = container_rects(self.root)
-        # id(text el) of every node's label and sub lines (label_stack)
+        # every node's label and sub lines (node_stacks), off-center ones too (center_fix)
+        self.stacks = node_stacks(self.icons, self.texts, self.segs)
+        self.loose_stacks = None
+        # id(text el) of every node's label and sub lines
         self.node_labels = {id(t["el"]) for i in self.icons if not i["badge"] for t in self.own_labels(i)}
         self.settled = {}                       # id(element) -> a checked move that clears all its problems
         self.last_keys = set()
@@ -1338,7 +1374,8 @@ class Advisor:
         return edits, f"move {self.tdesc(t)}{extra} {direction(dx, dy)}: {', '.join(parts)}{self.local(t)}"
 
     def own_labels(self, i):
-        return label_stack(i["box"], self.texts)
+        stack = self.stacks.get(id(i["el"]))       # a badge (no node) has the plain label_stack
+        return stack if stack is not None else label_stack(i["box"], self.texts)
 
     def move_icon(self, i, dx, dy):
         el = i["el"]
@@ -1483,6 +1520,12 @@ class Advisor:
             out.append((abs(dx) + abs(dy), edits, text))
         return out
 
+    def off_center_stack(self, n):
+        """n's label lines centered within OFF_CENTER (node_stacks with that tolerance)."""
+        if self.loose_stacks is None:
+            self.loose_stacks = node_stacks(self.icons, self.texts, self.segs, OFF_CENTER)
+        return self.loose_stacks[id(n["el"])]
+
     # --- fixed-answer fixes ------------------------------------------------------------
     def center_fix(self, t):
         """A label a few px off the center line of the icon right above it: center it."""
@@ -1492,7 +1535,7 @@ class Advisor:
             x0, _, x1, _ = n["box"]
             cx = (x0 + x1) / 2
             if 3 < abs(t["cx"] - cx) <= OFF_CENTER and not len(t["el"]) and not t["title"] \
-                    and any(o["el"] is t["el"] for o in label_stack(n["box"], self.texts, OFF_CENTER)):
+                    and any(o["el"] is t["el"] for o in self.off_center_stack(n)):
                 el = t["el"]
                 new_x = fnum(cx - t["off"][0])
                 edits = [("attr", el, "x", new_x)]
@@ -2053,9 +2096,13 @@ class Advisor:
         return self.pick(iss.key, cands)
 
     def h_service_as_text(self, iss, t, phrase, ref):
+        # Centering an off-center line of a stack makes it that node's label — only when the
+        # re-check agrees (a side label beside a stem off the stack centers onto that stem).
         cf = self.center_fix(t)
         if cf:
-            return Hint(cf[1] + " (then it reads as that icon's node label)", cf[0])
+            ok, new = self.trial(cf[0], iss.key)
+            if ok and not new:
+                return Hint(cf[1] + " (then it reads as that icon's node label)", cf[0])
         rest = re.sub(r"\s+", " ", t["s"].replace(phrase, " ")).strip(" -·,()→")
         keep = f" and keep only {rest!r} on the connector" if rest else " and drop the connector label"
         return (f'draw {phrase!r} as a node: <image href="bundle:{ref}" width="48" height="48"/> on this '
@@ -2114,8 +2161,7 @@ class Advisor:
                 # Its own label, too high or off-center: centered, baseline icon bottom + 18.
                 el = a["el"]
                 dy = y1 + NODE_LABEL_DY - a["y"]
-                sub = [c for c in self.texts if c["el"] is not a["el"] and abs(c["cx"] - a["cx"]) <= 3
-                       and 0 < c["y"] - a["y"] <= 20]
+                sub = [c for c in self.own_labels(i) if c["el"] is not a["el"] and c["y"] > a["y"]]
                 edits, _ = self.move_text(a, 0, dy, also=tuple(sub))
                 text = f"set y={fnum(num(el.get('y')) + dy)} on {self.tdesc(a)} (icon bottom + {NODE_LABEL_DY})"
                 if sub:
