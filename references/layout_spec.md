@@ -282,8 +282,10 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   right of the border (a node across a border is `on: <vpc>`, IGW / VGW only). A sibling
   the moved node — or an xy following it (`t: [q.cx, …]`) — then lands on (closer than the
   grid's gap on both axes) is kept apart from it on the axis it moved along, in the order
-  their centers have there (a tie: the sibling gives way — `p` goes right of `q`, the
-  Cloud below KMS), and that is warned too; writing the moved value yourself then also
+  their centers have there — a box counted with its border nodes, so a node moved off the
+  Cloud's right edge goes right of a VPC and its IGW alike (a tie: the sibling gives way —
+  `p` goes right of `q`, the Cloud below KMS); if that order contradicts the drawing the
+  other order, then the other axis is tried. That is warned too; writing the moved value yourself then also
   needs that sibling moved, as the warning says. Only a cycle no `xy` is part of is still
   refused. In a `per` template,
   another item of the template named by its own id means the same instance's

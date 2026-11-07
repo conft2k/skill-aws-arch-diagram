@@ -6,6 +6,7 @@
 import copy
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -993,6 +994,78 @@ class XyMoved(unittest.TestCase):
         p, z = b.geom.nodes["p"], b.geom.nodes["z"]
         self.assertEqual(p.cx, z.cx)
         self.assertGreaterEqual(z.footprint().y0 - p.footprint().y1, spec.const.stack_gap)
+
+    def test_a_moved_xy_beside_a_right_border_node_goes_past_it(self):
+        # Codex review ①: Q moved off the Cloud's right edge lands on the VPC and its IGW on
+        # the VPC's right border; ordered against the VPC with its border node it goes right
+        # of both instead of between them (a contradiction)
+        d = {"name": "right-on-and-xy", "mode": "document", "cols": ["a", "b", "right"], "rows": ["r"],
+             "groups": [{"id": "cloud", "type": "cloud"}, {"id": "vpc", "type": "vpc", "label": "VPC", "in": "cloud"}],
+             "nodes": [{"id": "p", "icon": "service/Amazon-EC2", "label": "P", "in": "vpc", "at": ["b", "r"]},
+                       {"id": "igw", "icon": "resource/Amazon-VPC_Internet-Gateway", "label": "IGW", "on": "vpc",
+                        "at": ["right", "r"]},
+                       {"id": "q", "icon": "service/Amazon-Simple-Storage-Service", "label": "Q", "in": "cloud",
+                        "xy": ["cloud.x1", "row.r"]}]}
+        spec, b = xy_built(d, "document")
+        g = b.geom
+        self.assertEqual((g.nodes["p"].cx, g.nodes["igw"].cx, g.nodes["q"].cx), (72, 172, 272))
+        self.assertEqual(g.nodes["q"].cx, g.groups["cloud"].rect.x1 - 40)
+        for mode, more in XY_MODES:
+            with self.subTest(mode=mode, more=more), tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "t.layout.json"
+                src.write_text(json.dumps(d), encoding="utf-8")
+                rc, text, kinds = main_file(src, mode, *more)
+                self.assertEqual((rc, kinds), (0, []), text)
+                self.assertNotIn("contradictory", text)
+
+    def test_a_follower_chain_is_kept_off_its_siblings_at_every_step(self):
+        # Codex review ②: q → f0 → f1; f1 moved with q through f0 and lands on o
+        d = {"name": "follower-chain", "mode": "document", "cols": ["a", "b", "c"], "rows": ["r", "s", "t"],
+             "groups": [{"id": "cloud", "type": "cloud"}],
+             "nodes": [{"id": "p", "icon": "service/Amazon-EC2", "label": "P", "in": "cloud", "at": ["b", "r"]},
+                       {"id": "o", "icon": "service/Amazon-EC2", "label": "O", "in": "cloud", "at": ["a", "t"]},
+                       {"id": "q", "icon": "service/Amazon-EC2", "label": "Q", "in": "cloud",
+                        "xy": ["cloud.x0", "row.r"]},
+                       {"id": "f0", "icon": "service/Amazon-EC2", "label": "F0", "in": "cloud",
+                        "xy": ["q.cx", "row.s"]},
+                       {"id": "f1", "icon": "service/Amazon-EC2", "label": "F1", "in": "cloud",
+                        "xy": ["f0.cx", "row.t"]}]}
+        for mode, more in XY_MODES:
+            with self.subTest(mode=mode, more=more), tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "t.layout.json"
+                src.write_text(json.dumps(d), encoding="utf-8")
+                rc, text, kinds = main_file(src, mode, *more)
+                self.assertEqual((rc, kinds), (0, []), text)
+                self.assertIn("f1 f1: its moved xy landed on node o", text)
+
+    def test_the_value_to_write_loads_and_lands_where_the_solve_put_it(self):
+        # Codex review ③: `cloud.x0+0` / `-0` moved 40 → `cloud.x0+40` (not `cloud.x0+0+40`);
+        # every suggested value parses and puts the node where the solve moved it
+        cases = [("xy/xy-grp", 1, 0, src, "q") for src in ("cloud.x0", "cloud.x0+0", "cloud.x0-0", "cloud.x0 - 0")]
+        cases += [("xy/t-grp", 1, 1, "sn.y1-40", "e2.1"), ("flowcol/r3-xy-30", 8, 1, 30, "kms")]
+        for case, k, i, src, nid in cases:
+            for mode in ("document", "slide"):
+                with self.subTest(case=case, src=src, mode=mode):
+                    d = layout_spec._read(CORPUS / f"{case}.layout.yaml")[0]
+                    d["nodes"][k]["xy"][i] = src
+                    spec, b = xy_built(d, mode)
+                    w = [x for x in warns(b) if f"xy {'xy'[i]} " in x and " moved " in x]
+                    if not w:
+                        continue                                   # the slide's margin takes r3 as written
+                    new = re.search(r"(?:write|writing) (\S+) in xy\[", w[0]).group(1)
+                    self.assertNotIn("+0", new.replace("+0.", ""), w[0])
+                    d["nodes"][k]["xy"][i] = new
+                    spec2, b2 = xy_built(d, mode)                  # loads: a bad expression raises here
+                    c = "cx" if i == 0 else "cy"
+                    self.assertEqual(getattr(b2.geom.nodes[nid], c), getattr(b.geom.nodes[nid], c), (new, w[0]))
+
+    def test_the_offset_goes_after_a_track_name_with_a_hyphen(self):
+        sp = M.Spec("t", cols=[M.Track("a-1", "col", 0), M.Track("b", "col", 1)], rows=[])
+        txt = layout_solve._xy_text
+        self.assertEqual(txt("col.a-1", layout_spec.parse_expr("col.a-1", sp), 40, sp), "col.a-1+40")
+        self.assertEqual(txt("col.b-1", layout_spec.parse_expr("col.b-1", sp), 40, sp), "col.b+39")
+        self.assertEqual(txt("web-1.cx", layout_spec.parse_expr("web-1.cx"), -8, sp), "web-1.cx-8")
+        self.assertEqual(txt("sn.y1-40", layout_spec.parse_expr("sn.y1-40"), 40, sp), "sn.y1")
 
     def test_a_pin_that_holds_is_not_moved(self):
         d = layout_spec._read(CORPUS / "xy/xy-grp.layout.yaml")[0]
