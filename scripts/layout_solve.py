@@ -1402,7 +1402,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
     m.xv, m.nodes_x, m.diag_open = xv, nodes_x, []
     m.build("y")
     m.y_after_x(xv, nodes_x)
-    pick = _diagonals(m, m.cons["y"] + mapped["y"])
+    pick = _diagonals(m, m.cons["y"] + mapped["y"], extra)
     if pick:
         # a pair x keeps apart for less than y would: solve again with it on x (the rows
         # it no longer pushes stay where the rest puts them)
@@ -1456,35 +1456,58 @@ def _x_stage(m: _Model, extra: Sequence[Requirement]):
     return xbf, xpred, xcons, xv, nodes_x
 
 
-def _diagonals(m: _Model, ycons: List[Requirement]) -> set:
+def _extent(val: Dict[str, float]) -> float:
+    return max(val.values(), default=0.0)
+
+
+def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]) -> set:
     """The diagonal sibling pairs build("y") left open (m.diag_open: the track gaps say y,
-    the solved x does not keep them apart): a pair goes on x when that takes no more room
-    than y would (ties → x) — its columns already order it, so it needs no rows between
-    them, and a node beside a box stops pushing the box's rows (and every box sharing them)
-    down. y is weighed with the pairs already put on y held: solve y with those, put every
-    pair x would take more room for on y, again until none moves; the rest go on x (two
-    nodes pushing one box both move, one that x cannot move keeps the other on y, where it
-    then costs nothing). Returns the x pairs' keys."""
+    the solved x does not keep them apart): a pair goes on x when y would push the drawing
+    a sibling gap or more and x grows it no more than that + a sibling gap — its columns
+    already order it, so it needs no rows between them, and a node beside a box stops
+    pushing the box's rows (and every box sharing them) down; a pair y keeps apart for
+    less (an IGW on the AZ gap row) stays on y. A pair's x cost is how much farther right
+    the x solve reaches with it kept apart on x; its y cost how much farther down the y
+    solve reaches with it kept apart on y, with the pairs already put on y held: put every
+    pair that stays on y there, weigh again until none moves; the rest go on x (two nodes
+    pushing one box both move; one that x cannot move keeps the other on y, where it then
+    costs nothing). Returns the x pairs' keys."""
     if not m.diag_open:
         return set()
     w0 = len(m.warnings)
-    open_ = list(m.diag_open)
-    on_y: List[Tuple[_Item, _Item, str]] = []
-    while open_:
+    x0 = _extent(_solve_axis(m, "x", m.cons["x"] + [_map_req(m, r) for r in extra if r.axis == "x"])[0])
+    xcost = {}
+    for first, second, _ in m.diag_open:
+        mp = _Model(m.spec)
+        mp.diag_x = {frozenset((first.key, second.key))}
+        try:
+            xcost[(first.key, second.key)] = _extent(_solve_x(mp, extra)[0]) - x0
+        except SolveError:
+            xcost[(first.key, second.key)] = float("inf")
+
+    def ysolve(pairs) -> float:
         n0 = len(m.cons["y"])
-        for first, second, owner in on_y:
+        for first, second, owner in pairs:
             m._sep("y", first, second, owner)
         held = m.cons["y"][n0:]
         del m.cons["y"][n0:]
-        yv, _, kept = _solve_axis(m, "y", list(ycons) + held)
-        yv = dict(yv)
-        _hug(m, "y", kept, yv)
-        moved = [p for p in open_ if m.x_short(p[0], p[1]) > m.y_short(p[0], p[1], yv) + _EPS]
+        return _extent(_solve_axis(m, "y", list(ycons) + held)[0])
+
+    open_ = list(m.diag_open)
+    on_y: List[Tuple[_Item, _Item, str]] = []
+    g = m.mc.sibling_gap
+    while open_:
+        y0 = ysolve(on_y)
+        moved = []
+        for p in open_:
+            dy = ysolve(on_y + [p]) - y0
+            if dy < g - _EPS or xcost[(p[0].key, p[1].key)] > dy + g + _EPS:
+                moved.append(p)
         if not moved:
             break
         on_y += moved
         open_ = [p for p in open_ if p not in moved]
-    del m.warnings[w0:]              # the y solve proper reports its own
+    del m.warnings[w0:]              # the solves proper report their own
     return {frozenset((first.key, second.key)) for first, second, _ in open_}
 
 

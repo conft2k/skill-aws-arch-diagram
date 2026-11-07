@@ -1147,9 +1147,8 @@ class DiagonalTest(unittest.TestCase):
         """bench v2-2: the Spoke RT at [tgw, a1] made the Security VPC (from a2) start below
         its label, pushing row a2 and VPC A's AZ 2 29 px down (VPC A gap 45, VPC B 16).
         With the routes' room between the TGW and the Security VPC (eni_gap 260: x already
-        keeps them apart; 200: x is 28 px short, y would need 29) it sits beside it; with
-        less (180: x 48 short) it stays below (TwinTest).
-        """
+        keeps them apart; 200: x grows the drawing about as much as y would) it sits beside
+        it; with no room (eni_gap 0) x costs far more and it stays below (TwinTest)."""
         for mode, gap in (("document", 260), ("slide", 260), ("document", 200)):
             with self.subTest(mode=mode, eni_gap=gap):
                 spec = egress_spec(mode, eni_gap=gap)
