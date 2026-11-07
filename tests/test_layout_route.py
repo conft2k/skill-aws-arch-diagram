@@ -535,6 +535,34 @@ class Plan(unittest.TestCase):
         spec = layout_spec.load(SPECS / "slides/tgw-reference-architecture.layout.yaml")
         self.assertFalse([r for r in R.plan(spec) if "run on the bend" in r.why])
 
+    def test_vhv_label_run_solved(self):
+        """The document's soft VHV label run takes effect: svcs ↔ tgwa grows from the 112 the
+        rest asks to the label + 8 each side past the split port, and the router sets "VPC
+        attachment" on that horizontal piece with 8 to spare at both ends."""
+        import layout_solve as LS
+        spec = layout_spec.load(spec_path("tgw"))
+        reqs = R.plan(spec)
+        run = [r for r in reqs if r.why.startswith("label 'VPC attachment' run on the bend")]
+        self.assertEqual(len(run), 1)
+        pitch = lambda g: g.nodes["tgwa"].cx - g.nodes["svcs"].cx
+        without = LS.solve(spec, [r for r in reqs if r not in run])
+        geom = LS.solve(spec, reqs)
+        self.assertLess(pitch(without), run[0].d)
+        self.assertAlmostEqual(pitch(geom), run[0].d, places=6)
+        n = run[0].owner.split(":")[1]
+        els, _ = R.draw(spec, geom)
+        pts = points(lines_of(els, int(n))[0])
+        horiz = [(p, q) for p, q in zip(pts, pts[1:]) if abs(p[1] - q[1]) < 1e-6]
+        self.assertEqual(len(horiz), 1)
+        (x0, y), (x1, _) = horiz[0]
+        x0, x1 = sorted((x0, x1))
+        text = [e for e in els if e.owner == run[0].owner and e.kind == "text"]
+        self.assertEqual([t.text for t in text], ["VPC attachment"])
+        half = M.layout_text_width("VPC attachment", 12) / 2
+        self.assertGreaterEqual(text[0].attrs["x"] - half - x0, K.LABEL_CLEAR - 1e-6)
+        self.assertGreaterEqual(x1 - text[0].attrs["x"] - half, K.LABEL_CLEAR - 1e-6)
+        self.assertLess(abs(text[0].attrs["y"] - y), 12)                 # on that piece, not beside a leg
+
 
 class Synthetic(unittest.TestCase):
     """Candidate validation on a tiny hand-made geometry."""
@@ -601,6 +629,44 @@ class Synthetic(unittest.TestCase):
         els, warns = R.draw(spec, geom)
         self.assertEqual(warns, [])
         self.assertEqual(len(points(lines_of(els, 0)[0])), 4)
+
+    def test_refused_shape_without_a_hint(self):
+        """No bend hint: the warning names what blocks every bend of the shape and asks for a
+        wider gap instead of a bend value."""
+        spec, geom = self.setup(blocker=False)
+        spec.nodes["y"].row = "s"
+        geom.nodes["y"] = M.NodeGeom("y", 500, 400, M.Box(476, 376, 524, 424),
+                                     [M.TextLine("Y", 500, 442, 14, K.INK, "", "middle")])
+        for i, cy in enumerate((262, 334)):            # two icons with wide labels fill the gutter
+            nid = f"z{i}"
+            spec.nodes[nid] = M.Node(nid, "service/Amazon-S3", "Z", xy=(300.0, float(cy)))
+            geom.nodes[nid] = M.NodeGeom(nid, 300, cy, M.Box(276, cy - 24, 324, cy + 24),
+                                         [M.TextLine("a wide label for z", 300, cy + 42, 14, K.INK, "", "middle")])
+        spec.edges = [M.Edge(0, "x", "y", "--", src="edges[0]", shape="VHV")]
+        warns = R.draw(spec, geom)[1]
+        w = [m for m in warns if "refusing the requested shape: VHV" in m]
+        self.assertEqual(len(w), 1, warns)
+        self.assertRegex(w[0], r"^edges\[0\][^:]*: drew \S+ instead of VHV, refusing the requested shape: VHV — "
+                               r"LINE OVER (ICON|TEXT)")
+        self.assertNotIn("bend_y", w[0])
+        self.assertIn("try widen the gap between the ends (min_gap_before / pad) so a VHV has a clean bend", w[0])
+
+    def test_refused_shape_that_cannot_fit(self):
+        """Ends too close for the shape's bend (no candidate of it at all): the warning says
+        none fits; with from_side / to_side the request is named as such."""
+        spec, geom = self.setup(blocker=False)
+        spec.nodes["y"].row = "s"
+        geom.nodes["y"] = M.NodeGeom("y", 500, 288, M.Box(476, 264, 524, 312),
+                                     [M.TextLine("Y", 500, 330, 14, K.INK, "", "middle")])
+        for kw, asked in (({"shape": "VHV"}, "shape: VHV"),
+                          ({"from_side": "bottom", "to_side": "top"}, "from_side / to_side → VHV")):
+            with self.subTest(asked=asked):
+                spec.edges = [M.Edge(0, "x", "y", "--", src="edges[0]", **kw)]
+                warns = R.draw(spec, geom)[1]
+                w = [m for m in warns if "refusing" in m]
+                self.assertEqual(len(w), 1, warns)
+                self.assertIn(f"refusing the requested {asked} — no VHV fits between the two ends "
+                              f"(no free stretch for its bend); try widen the gap", w[0])
 
     def test_bend_avoids_label(self):
         """HVH: the vertical leg keeps out of a label standing in the gutter."""
