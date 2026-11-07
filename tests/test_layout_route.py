@@ -910,10 +910,19 @@ class DetourPorts(unittest.TestCase):
         widest free gap, never a taken port."""
         ctx, xs, ports = self.setup()
         ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False), (6, "a", 12.0, 6, False), (7, "a", -12.0, 7, False)]
+        self.assertEqual(R._end_off(ctx, xs[0], "b", "top", ports), -20.0)     # toward x (left)
+        # a pitch clear of every port: the center between ±12 ...
+        ctx.drawn_use[("y", "top")] = [(6, "a", 12.0, 6, False), (7, "a", -12.0, 7, False)]
+        self.assertEqual(R._end_off(ctx, xs[0], "b", "top", ports), 0.0)
+        # ... or, packed tighter than a pitch, the widest gap, never a taken port
+        taken = [float(v) for v in range(-18, 19, 3)]
+        ctx.drawn_use[("y", "top")] = [(10 + i, "a", o, 10 + i, False) for i, o in enumerate(taken)]
         v = R._end_off(ctx, xs[0], "b", "top", ports)
-        self.assertEqual(abs(v), 20.0)
-        ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False), (6, "a", 12.0, 6, False)]
-        self.assertEqual(R._end_off(ctx, xs[0], "b", "top", ports), -12.0)
+        self.assertEqual(v, -20.0)
+        ctx.drawn_use[("y", "top")] = [(10 + i, "a", o, 10 + i, False)
+                                       for i, o in enumerate([-20.0, -16.0, -8.0, 0.0, 8.0, 16.0, 20.0])]
+        v = R._end_off(ctx, xs[0], "b", "top", ports)
+        self.assertEqual(v, -4.0)                       # gaps of 8: the middle nearest the center, toward x
 
 
 if __name__ == "__main__":
