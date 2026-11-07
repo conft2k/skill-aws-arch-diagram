@@ -179,7 +179,7 @@ and correct what its output points to; a layout settled in your head first is th
 the engine saves. Follow the [Diagram rules](#diagram-rules): the engine draws them,
 the decisions behind them (one LB node, tiers as columns, what is an icon) are yours.
 
-### 6. Run the engine until "Layout OK"
+### 6. Run the engine until "Layout OK" with no rule violations
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/layout.py arch.layout.yaml -o arch.draft.svg
@@ -190,14 +190,36 @@ layout, routes the edges, places the note, and runs `check_layout.py` in process
 to five feedback rounds of its own. Then it prints a summary (canvas, the pt size 12px
 text gets on a slide, the note's place, the icons, warnings) and each remaining problem
 with a `spec:` line (the spec items behind it) and a `try:` line (the spec change to
-make); the last line is `Layout OK` (exit 0) or `N problems` (exit 1).
+make). It also prints `rule:` lines for the written draft. The last line starts with
+`Layout OK` (exit 0) or `N problems` (exit 1), and names any rule violations still left;
+exit 0 alone is not the delivery criterion.
 `references/layout_spec.md`, "Running it and reading the output", explains every line.
 Change the spec as the `try:` lines say, all problems in one batch, and re-run until
-"Layout OK". Read the `warning:` lines too. On the spec path ignore `fix:` lines — they
+"Layout OK" **and no rule violations remain**. For R-fit, resolve the text-size issue:
+adjust `text_scale`, shorten labels, rearrange tracks or split the diagram. If a document
+spec was run with `--mode slide`, write a slide spec (see `docs/examples/specs/slides/`)
+and check it again. Resolve a `rule: checker error` before delivering.
+Read the `warning:` lines too. On the spec path ignore `fix:` lines — they
 are draft coordinates. When no spec key clears a problem, use the escape hatches in that
 reference ("the way out"); its last one is editing the generated draft by hand, and from
 that first edit on the draft is the source — finish it with `check_layout.py --fix`
 (see [the draft path](#the-draft-path)) and do not regenerate it from the spec.
+
+For a remaining rule, use its named owners to find the spec items and try these existing
+keys ([syntax and constraints](references/layout_spec.md#edges)). Check the PNG after
+the rules pass; moving a label must keep it visibly attached to its own flow.
+
+| Rule left | What to try in the spec |
+|---|---|
+| R-flow F1: flows overlap | Separate ports with `from_offset` / `to_offset`; change `shape` or `bend_x` / `bend_y`. Use `trunk: true` only for instances of one flow meant to merge. |
+| R-flow F2: flows align across a short gap | Change the end sides or offsets, or separate tracks with `min_gap_before`. |
+| R-flow F3: crossing reads as a junction | Move a bend with `bend_x` / `bend_y`, change `shape`, or move the nodes to other tracks so the crossing clears bends and end icons. |
+| R-flow F4: arrowhead target is ambiguous | Check `e:` names the intended node/group; adjust `from_side` / `to_side`, offsets or tracks. If using `points`, correct the endpoint too. |
+| R-flow F5: label/badge belongs to another line | Try `label_at: above` / `right` and `step_at: start` / `end` / `stem` / `branch`; separate nearby routes or tracks. A point placement must still read beside its own line. |
+| R-label L1: label is on the wrong side | Use `label_at: above` for a horizontal piece or `right` for a vertical one; make room with `min_gap_before` or container padding. |
+| R-label L2: badges and legend disagree | Match `step` / `steps` / `step_each` to `note.steps`, with one note row per step number. |
+| R-rt RT1–RT5: table association is unclear | Check `for:` / `via:`; move the table's `at` tracks or `dx` / `dy` beside its associated lines/subnets, within their bracket and clear of other flows. |
+| R-border B2: line crosses a header | Change `shape`, end sides or bends to avoid the badge/title/CIDR band; make room with `pad_top` or `min_gap_before`. |
 
 The engine measures the smallest text at the reader's size: target 10pt on a fitted
 16:9 slide, or 11px in a 760px document/web column (narrower images keep their size).
@@ -293,7 +315,8 @@ Go through this checklist:
       drawing is taller than 0.7 × its width (document) or the pane fits the 1108px
       width (slide); otherwise a document gets the full-width bottom panel and a slide
       gets plain lines left-aligned with the Cloud, ≤ 3 lines. Never a panel on a slide.
-- [ ] `layout.py` (or, on the draft path, `check_layout.py`) prints "Layout OK" and
+- [ ] `layout.py` prints "Layout OK" with no remaining `rule:` violations (resolve R-fit
+      as in step 6); on the draft path, `check_layout.py` prints "Layout OK".
       `export.py` exits 0.
 
 Save the outputs where the user asked (in a repo, usually next to the docs that
@@ -509,7 +532,7 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
 - `references/layout_spec.md` — the layout spec format on one page: keys, CLI output, common patterns, what the engine cannot do yet and the way out.
 - `references/quick_reference.md` — every number and rule for drawing on one page (read this first).
 - `references/diagram_guide.md` — conventions, colors, VPC resources, the draft subset and skeleton, with the reasoning and edge cases (read the sections your diagram touches).
-- `scripts/layout.py` — the layout engine: spec (`<name>.layout.yaml`) → checked draft SVG, with `spec:` / `try:` lines under each remaining problem and "Layout OK" at the end (`--explain` prints what set each track). Its modules: `layout_spec.py` (load and validate a spec; `python3 scripts/layout_spec.py x.layout.yaml` checks one alone), `layout_solve.py` (track and container geometry), `layout_route.py` (edges, labels, badges), `layout_note.py` (the note), `layout_model.py` (data model and module contract), `layout_const.py` (numbers and group styles).
+- `scripts/layout.py` — the layout engine: spec (`<name>.layout.yaml`) → checked draft SVG, with `spec:` / `try:` lines under each remaining problem and a last line that names any remaining rule violations after "Layout OK" or the problem count (`--explain` prints what set each track). Its modules: `layout_spec.py` (load and validate a spec; `python3 scripts/layout_spec.py x.layout.yaml` checks one alone), `layout_solve.py` (track and container geometry), `layout_route.py` (edges, labels, badges), `layout_note.py` (the note), `layout_model.py` (data model and module contract), `layout_const.py` (numbers and group styles).
 - `scripts/find_icon.py` — fuzzy lookup → `set/name` reference (with AWS abbreviation aliases).
 - `scripts/check_layout.py` — flag lines over labels/icons, overlapping or too-close labels, text under 12px, short arrowheads, trunks hugging a border, connectors off the canvas or detouring out of the box both their ends are in, titles off their header row, CIDRs off their line, circled-digit legends, services written as connector labels. A problem with a computed correction carries a `fix:` line under it; `--fix` applies the deterministic ones to the draft in place; the last line is `N problems (M auto-fixable with --fix)` or "Layout OK".
 - `scripts/export.py` — check drafts and write any of SVG, PNG and PPTX in one step.

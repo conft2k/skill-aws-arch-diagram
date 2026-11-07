@@ -36,8 +36,10 @@ rule violation, or taking a previously fitting slide below 10pt.
 
 Output: a summary (canvas, the size the smallest text gets on a 16:9 slide, the note, the icon
 refs, warnings), then check_layout's problem lines, each with the spec items behind it and
-a spec change to try, and last `Layout OK` or `N problems`. Exit status 0 when the draft
-is clean, 1 when problems remain or the spec is invalid. --explain also prints, per track
+a spec change to try, and last `Layout OK` or `N problems`, with any remaining rule
+violations and delivery guidance appended. Exit status 0 when check_layout and slide fit
+pass, 1 when their problems remain or the spec is invalid; rule violations are report-only.
+--explain also prints, per track
 (and per flow-column node), the chain of constraints that set its position. --no-check skips the check (and the
 feedback rounds). The same spec always gives a byte-identical draft.
 
@@ -1008,6 +1010,38 @@ def rule_lines(spec: Spec, geom: Geometry, data: bytes) -> List[str]:
         return [f"rule: checker error {e!r}"]
 
 
+def result_line(n: int, verdict: Sequence[str], document_on_slide: bool = False) -> str:
+    """Keep the check's status, but make unresolved report-only rules visible at the end.
+
+    Use the verdict already printed, so the final line describes that same written draft
+    and a checker failure cannot silently become an unqualified success.
+    """
+    status = f"{n} problem{'s' if n != 1 else ''}" if n else "Layout OK"
+    counts: Counter = Counter()
+    checker_error = False
+    for line in verdict:
+        match = re.match(r"rule: (R-\S+) ([A-Z][A-Z0-9]*)\b", line)
+        if match:
+            counts[(match[1], match[2])] += 1
+        else:
+            checker_error = True
+    if counts:
+        total = sum(counts.values())
+        details = ", ".join(f"{rule} {code} ×{count}" for (rule, code), count in sorted(counts.items()))
+        fit_only = all(rule == "R-fit" for rule, _ in counts)
+        guidance = ("text-size issue only: adjust text_scale, shorten labels, rearrange tracks, "
+                    "or split the diagram before delivering" if fit_only else
+                    "fix them with the spec hints before delivering")
+        if document_on_slide and any(rule == "R-fit" for rule, _ in counts):
+            guidance += "; write a slide spec (see docs/examples/specs/slides/)"
+        status += (f" — {total} rule violation{'s' if total != 1 else ''} "
+                   f"{'remain' if total != 1 else 'remains'} "
+                   f"({details}): {guidance}")
+    if checker_error:
+        status += " — rule checker error: resolve it before delivering"
+    return status
+
+
 # =======================================================================================
 # CLI
 
@@ -1151,6 +1185,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     try:
         spec = layout_spec.load(a.spec, mode=a.mode, title=a.title)
+        # The expanded spec retains the override, so read only the original mode to
+        # distinguish a document converted with --mode slide from a slide-authored spec.
+        document_on_slide = (a.mode == "slide" and
+                             layout_spec._read(a.spec)[0].get("mode", "document") == "document")
     except M.LayoutError as e:
         print("\n".join(e.problems))
         print(f"{len(e.problems)} problem{'s' if len(e.problems) != 1 else ''} in the spec")
@@ -1208,12 +1246,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             for line in b.geom.explain:
                 if line.startswith(pre):
                     print(f"  {line}")
-    for line in rule_lines(spec, b.geom, data):
+    verdict = rule_lines(spec, b.geom, data)
+    for line in verdict:
         print(line)
+    print(result_line(n, verdict, document_on_slide))
     if n:
-        print(f"{n} problem{'s' if n != 1 else ''}")
         return 1
-    print("Layout OK")
     return 0
 
 

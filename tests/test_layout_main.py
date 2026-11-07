@@ -32,6 +32,13 @@ SPECS = ROOT / "docs" / "examples" / "specs"
 NS = "{http://www.w3.org/2000/svg}"
 
 
+def check_status(text):
+    """Geometry regressions assert the unchanged check status; report-only rules may now
+    follow it. ResultSummary tests the complete final line and delivery guidance separately.
+    """
+    return text.strip().splitlines()[-1].split(" — ", 1)[0]
+
+
 def spec_dict(name):
     yaml, loader = layout_spec._yaml_loader()          # YAML 1.2 booleans: `on:` stays a key
     return yaml.load((SPECS / f"{name}.layout.yaml").read_text(encoding="utf-8"), Loader=loader)
@@ -585,7 +592,7 @@ class ShapeMissResolve(unittest.TestCase):
         over = [r for r in rounds if r[0] > K.DOC_WIDE and r[1] == 0]
         self.assertTrue(under and over, rounds)
         self.assertLess(min(r[2] for r in over), min(r[2] for r in under) - 1, rounds)
-        self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+        self.assertEqual((rc, check_status(text)), (0, "Layout OK"), text)
         w = float(root.get("viewBox").split()[2])
         self.assertLessEqual(w, K.DOC_WIDE, rounds)
         self.assertEqual(w, min(under, key=lambda r: r[2])[0], rounds)
@@ -957,7 +964,7 @@ class FlowColumnFixes(unittest.TestCase):
                         if mode == "document":
                             self.assertEqual((rc, out.strip().splitlines()[-1]), (0, "Layout OK"), out)
                         else:                   # this spec is 38-40 px too tall for a titled slide
-                            self.assertEqual(out.strip().splitlines()[-1], "1 problem", out)
+                            self.assertEqual((rc, check_status(out)), (1, "1 problem"), out)
                             self.assertIn("SLIDE TOO SMALL", out)
                         spec, b = built(d)
                         g = b.geom
@@ -1834,7 +1841,7 @@ class InLineFallbacks(unittest.TestCase):
         for name, d in (("xnt", self.xnt()), ("ce-tgw", self.ce_tgw())):
             with self.subTest(name):
                 rc, text, root = main_on(d)
-                self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+                self.assertEqual((rc, check_status(text)), (0, "Layout OK"), text)
                 paths = connectors(root)
                 self.assertEqual(CL.lines_in_line(paths), [])
                 self.assertEqual(CL.lines_on_lines(paths), [])
@@ -1979,6 +1986,83 @@ class VerticalPort(unittest.TestCase):
         self.assertLess(b.geom.nodes["y"].cx, long_end)
 
 
+class ResultSummary(unittest.TestCase):
+    """The last line distinguishes check success from unresolved report-only rules."""
+
+    @staticmethod
+    def simple_spec(gap=300):
+        return {"name": "summary", "text_scale": "off",
+                "cols": ["a", {"id": "b", "min_gap_before": gap}], "rows": ["r"],
+                "nodes": [{"id": i, "icon": "service/AWS-Lambda", "label": i.upper(),
+                           "at": [i, "r"]} for i in ("a", "b")],
+                "edges": [{"e": "a -> b"}]}
+
+    def test_no_rules_keeps_exact_success_line(self):
+        rc, text, _ = main_on(self.simple_spec())
+        self.assertEqual((rc, text.splitlines()[-1]), (0, "Layout OK"))
+        self.assertNotIn("rule:", text)
+
+    def test_flow_rule_remains_visible_with_exit_zero(self):
+        path = ROOT / "tests/corpus/trunk/merge-v3az.layout.yaml"
+        with tempfile.TemporaryDirectory() as tmp:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = layout.main([str(path), "--mode", "document", "-o", str(Path(tmp) / "f3.svg")])
+        text = buf.getvalue()
+        self.assertIn("rule: R-flow F3 ", text)
+        self.assertEqual((rc, text.splitlines()[-1]),
+                         (0, "Layout OK — 1 rule violation remains (R-flow F3 ×1): "
+                          "fix them with the spec hints before delivering"))
+
+    def test_fit_only_is_a_size_issue_with_exit_zero(self):
+        rc, text, _ = main_on(self.simple_spec(1200))
+        self.assertEqual(rc, 0)
+        self.assertEqual(text.splitlines()[-1],
+                         "Layout OK — 1 rule violation remains (R-fit FIT ×1): "
+                         "text-size issue only: adjust text_scale, shorten labels, rearrange tracks, "
+                         "or split the diagram before delivering")
+        self.assertIn("rule: R-fit FIT ", text)
+
+    def test_document_override_guidance_and_slide_failure_status(self):
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                d = self.simple_spec(1500)
+                d["mode"] = mode
+                src, out = Path(tmp) / "summary.json", Path(tmp) / "summary.svg"
+                src.write_text(json.dumps(d), encoding="utf-8")
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = layout.main([str(src), "--mode", "slide", "-o", str(out)])
+                last = buf.getvalue().splitlines()[-1]
+                self.assertEqual(rc, 1)
+                self.assertTrue(last.startswith("1 problem — 1 rule violation remains (R-fit FIT ×1): "), last)
+                tip = "write a slide spec (see docs/examples/specs/slides/)"
+                self.assertEqual(tip in last, mode == "document", last)
+
+    def test_counts_group_by_rule_and_code(self):
+        verdict = ["rule: R-flow F3 first crossing", "rule: R-flow F5 ambiguous label",
+                   "rule: R-flow F3 second crossing", "rule: R-label L1 misplaced label"]
+        self.assertEqual(layout.result_line(0, verdict),
+                         "Layout OK — 4 rule violations remain (R-flow F3 ×2, R-flow F5 ×1, R-label L1 ×1): "
+                         "fix them with the spec hints before delivering")
+
+    def test_checker_failure_cannot_look_complete(self):
+        with mock.patch("rules.check", side_effect=RuntimeError("checker failed")):
+            rc, text, _ = main_on(self.simple_spec())
+        self.assertEqual((rc, text.splitlines()[-1]),
+                         (0, "Layout OK — rule checker error: resolve it before delivering"))
+        self.assertIn("rule: checker error RuntimeError('checker failed')", text)
+
+    def test_no_check_keeps_existing_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "summary.json", Path(tmp) / "summary.svg"
+            src.write_text(json.dumps(self.simple_spec()), encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = layout.main([str(src), "--no-check", "-o", str(out)])
+        self.assertEqual((rc, buf.getvalue().splitlines()[-1]), (0, "check skipped (--no-check)"))
+
+
 class CLI(unittest.TestCase):
     def run_cli(self, *args):
         p = subprocess.run([sys.executable, str(ROOT / "scripts" / "layout.py"), *map(str, args)],
@@ -2008,7 +2092,7 @@ class CLI(unittest.TestCase):
                 c0, t0 = self.child_cpu(), time.time()
                 rc, text = self.run_cli(spec, "-o", out)
                 wall = time.time() - t0
-                self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), f"{spec.name}:\n{text}")
+                self.assertEqual((rc, check_status(text)), (0, "Layout OK"), f"{spec.name}:\n{text}")
                 if c0 is None:
                     self.assertLess(wall, 2 * self.CPU_LIMIT, f"{spec.name} took {wall:.2f}s")
                 else:

@@ -478,8 +478,17 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   `cols: {id: app, min_gap_before: 140}`; for `LINE LEAVES BOX` / `LINE OFF CANVAS` the
   room that side of the box needs, `groups[0] cloud: pad_bottom: 41`). `SLIDE TOO SMALL` lists the constraint chain of
   the overflowing axis.
-- Last line `Layout OK` (exit 0) or `N problems` (exit 1). Change the spec, re-run, until
-  `Layout OK`; then look at the PNG. The same spec always gives a byte-identical draft.
+- **Rules**: `rule: R-flow F3 …` and the other `rule:` lines judge the written draft.
+  They are report-only: they change neither the draft nor the exit status. The last line
+  starts with `Layout OK` (exit 0) or `N problems` (exit 1), followed, when needed, by
+  `— 3 rule violations remain (R-flow F3 ×2, R-flow F5 ×1): fix them with the spec hints before delivering`.
+  Change the spec and re-run until `Layout OK` **and no rule violations remain**; see
+  [the rule-to-spec table in SKILL.md](../SKILL.md#6-run-the-engine-until-layout-ok-with-no-rule-violations).
+  R-fit alone is a text-size issue: adjust `text_scale`, shorten labels, rearrange tracks
+  or split the diagram. For a document spec run with `--mode slide`, write a slide spec
+  (see `docs/examples/specs/slides/`) and check again. A rule checker error also appears
+  in the last line; resolve it before delivering. Then look at the PNG.
+  The same spec always gives a byte-identical draft.
 
 ## Common patterns (all from `docs/examples/specs/`)
 
