@@ -232,6 +232,11 @@ cases:
     rules: [R-flow]
     what: "generic Monitoring box holding two flow columns (default and align bottom), edge alb -> kms into the second"
     from: "r4-port/rf/r2_float_two.layout.json"
+  - path: flowcol/r2-float-two-wide.layout.yaml
+    rules: [R-flow]
+    what: "r2-float-two with cloud pad_right 924: document width warning vs fan-out crossings"
+    note: "f-gport keeps the 1780 px round under the width warning over the 1924 px one, but there ALB -> EC2.1 crosses ALB -> KMS at (293, 293) (2 crossings vs 1); check_layout passes both. For the rule checker (R-flow F3) and step-2 selection"
+    from: "Codex review of f-gport, 2026-11-07"
   - path: flowcol/r2-norows.layout.yaml
     rules: [R-flow]
     what: "no rows at all: only a flow column holding two connected nodes (A -> B) in a region"
