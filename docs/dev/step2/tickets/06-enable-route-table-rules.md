@@ -7,8 +7,13 @@
 **Status:** implemented and validated
 
 Evidence: [ticket 06 validation](../results/06-enable-route-table-rules.md).
+Review fix: [90% effective-text-size floor](../results/06-text-size-review-fix.md).
+
+The review decision applies the same 90% default effective-text-size floor to every
+rule group. It supersedes the original no-worse/fewer-violations corpus gate for
+documented text-limit rollbacks; the pre-review evidence remains in the first report.
 
 - [x] The tier-0 part of the verdict now counts R-rt as well.
-- [x] Corpus (ticket 01 report): 0 cases worse, R-border and R-flow not higher, and check problems not higher. Each R-rt bad-tagged case is listed with its before and after counts, the group's bad-tagged cases have fewer violations in total, and tags the evidence fixes move from bad to good with the reason.
+- [x] Corpus (review-adjusted gate): every selected draft retains at least 90% of the completed default's effective text size. The remaining 06 changes and every 04 winner rolled back by this limit are listed, with per-rule/check deltas. All baseline verdict regressions are explained by text-limit rollbacks, and tags reflect the saved evidence.
 - [x] rt/three-b and the rt/single cases are reported with their before and after verdicts; any that stay bad keep a reason.
 - [x] Runtime stays within the ticket 04 limits.

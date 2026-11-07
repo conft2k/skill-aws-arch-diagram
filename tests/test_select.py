@@ -1,4 +1,5 @@
 """Selection is judged through the CLI's draft, violations and summary."""
+import copy
 import json
 import re
 import sys
@@ -143,14 +144,14 @@ def test_route_table_counts_before_checks_and_fit(tmp_path):
     assert verdict.tier_0_cost == round(sum(v.cost for v in enabled), 3)
 
 
-def test_single_association_moves_near_its_line(tmp_path, capsys):
+def test_single_association_keeps_readable_default_when_moves_shrink_text(tmp_path, capsys):
     source = ROOT / "tests/corpus/rt/nd-single.layout.yaml"
+    before = default(source, tmp_path, "document")
     status, draft, text = invoke(source, tmp_path, capsys, "--mode", "document")
     assert status == 0
-    assert "rule: R-rt" not in text
-    assert "selection: candidate " in text
-    assert "removed R-rt RT2" in text
-    assert "diagonal pairs on x:" in text
+    assert draft == before[1]
+    assert "rule: R-rt RT2" in text
+    assert "selection: default kept" in text
     assert not CL.run_checks(ET.fromstring(draft))
     again = invoke(source, tmp_path, capsys, "--mode", "document")
     assert again[1] == draft
@@ -189,3 +190,40 @@ def test_enabling_route_tables_keeps_the_previous_group_winner(tmp_path, capsys,
     assert len(CL.run_checks(ET.fromstring(after))) <= len(CL.run_checks(ET.fromstring(before)))
     evaluated, budget = map(int, re.search(r"evaluated (\d+)/(\d+) candidates", text).groups())
     assert evaluated <= budget == 16
+
+
+@pytest.mark.parametrize("case", [
+    "rt/nd-single", "bench/engine1-egress", "bench/v2-2-egress", "bench/v2-3-egress",
+])
+def test_selection_keeps_at_least_90_percent_of_default_text(tmp_path, capsys, case):
+    source = ROOT / f"tests/corpus/{case}.layout.yaml"
+    before = default(source, tmp_path, "document")
+    _, draft, _ = invoke(source, tmp_path, capsys, "--mode", "document")
+    original_size = layout.drawn_text(before[0].spec, before[1])[0][0]
+    spec = layout_spec.load(source, mode="document")
+    assert layout.drawn_text(spec, draft)[0][0] >= original_size * 0.9 - 1e-9
+
+
+@pytest.mark.parametrize("rule", ["R-border", "R-flow", "R-rt"])
+@pytest.mark.parametrize("ratio,accepted", [(0.9, True), (0.899, False)])
+def test_better_rules_cannot_override_the_text_size_limit(monkeypatch, rule, ratio, accepted):
+    spec = layout_spec.load({
+        "name": "text-floor", "text_scale": "off",
+        "cols": ["a", {"id": "b", "min_gap_before": 950}], "rows": ["r"],
+        "nodes": [{"id": n, "icon": "service/AWS-Lambda", "label": n, "at": [n, "r"]}
+                  for n in ("a", "b")], "edges": [{"e": "a -> b"}],
+    })
+    before = layout.build(spec, [], {}, None, "text-floor.json")
+    root = ET.fromstring(before.svg)
+    x, y, width, height = map(float, root.attrib["viewBox"].split())
+    root.set("viewBox", f"{x} {y} {width / ratio} {height}")
+    after = copy.copy(before)
+    after.geom = copy.copy(before.geom)
+    after.geom.canvas_w = width / ratio
+    after.svg = ET.tostring(root)
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
+        rules.Violation(rule, ("edge:0",), "readability defect")
+    ] if data == before.svg else [])
+    guard = layout.RuleGuard(selection=True)
+    guard.min_text_size = layout.drawn_text(spec, before.svg)[0][0] * 0.9
+    assert guard.accepts(before, before.svg, after, after.svg) is accepted

@@ -115,7 +115,7 @@ One pass in which the engine reads a draft's check problems, adds space or routi
 _Avoid_: retry, repair loop
 
 **Candidate**:
-One complete drawing of a spec under one set of layout decisions. Candidates are compared by their verdicts.
+One complete drawing of a spec under one set of layout decisions. Candidates are compared by their verdicts. Selection excludes candidates whose effective text size is less than 90% of the completed default drawing's, for every rule group.
 _Avoid_: attempt, variant
 
 **Verdict**:

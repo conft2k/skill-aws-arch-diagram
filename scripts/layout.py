@@ -83,6 +83,7 @@ WIDEN = 16              # px a feedback round adds to a gap
 MAX_SKIP = 3            # candidates an edge may skip before its gap is widened instead
 SELECTION_RULES = frozenset(("R-border", "R-flow", "R-rt"))
 MAX_CANDIDATES = {"document": 12, "slide": 16}
+MIN_TEXT_RETENTION = 0.9  # selection keeps at least 90% of the completed default's text size
 # The router's warning for an edge drawn in another shape than plan() reserved space for.
 SHAPE_MISS = re.compile(r"drew (\S+) instead of")
 # A shape the spec asked for and the router refused (the warning says what to change).
@@ -126,13 +127,14 @@ class RuleGuard:
     """Share rule information across later stages; a checker bug never costs a draft."""
 
     def __init__(self, protect: bool = True, selection: bool = False, build_cache=None,
-                 enabled_rules=None):
+                 enabled_rules=None, min_text_size=None):
         self.protect = protect
         self.selection = selection
         self.error = None
         self._checked = {}
         self.build_cache = build_cache
         self.enabled_rules = SELECTION_RULES if enabled_rules is None else frozenset(enabled_rules)
+        self.min_text_size = min_text_size
         self._problems = {}
 
     def problems(self, data):
@@ -215,10 +217,17 @@ class RuleGuard:
 
     def accepts(self, before: Build, old: bytes, after: Build, new: bytes):
         """Later stages compare complete verdicts, with unavailable rules falling back."""
+        if not self.accepts_text(after, new):
+            return False
         a, b = self.verdict(before, old), self.verdict(after, new)
         if a is None or b is None:
             return True
         return b < a
+
+    def accepts_text(self, b: Build, data: bytes) -> bool:
+        """One fixed floor for all groups and rounds, measured at the reader's size."""
+        return (self.min_text_size is None or
+                drawn_text(b.spec, data)[0][0] >= self.min_text_size - 1e-9)
 
 
 def slide_text_pt(spec: Spec, svg: bytes) -> Tuple[float, Optional[Tuple[float, str]], Tuple[float, float]]:
@@ -1549,6 +1558,10 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
                    _budget=None):
     """Bounded best-improvement hill-climb, retaining the complete default on failure."""
     b, data, _, probs, *_ = default
+    if rule_guard.min_text_size is None:
+        actual = drawn_text(b.spec, data)[0][0]
+        if math.isfinite(actual):
+            rule_guard.min_text_size = actual * MIN_TEXT_RETENTION
     first = rule_guard.check(b.spec, b.geom, data)
     score = rule_guard.verdict(b, data, probs)
     if first is None or score is None or rule_guard.error is not None:
@@ -1561,7 +1574,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         # A new group's greedy move can leave the previous group's better drawing
         # unreachable. Keep that winner as the incumbent, sharing one fixed budget.
         previous = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
-                             enabled_rules=rule_guard.enabled_rules - {"R-rt"})
+                             enabled_rules=rule_guard.enabled_rules - {"R-rt"},
+                             min_text_size=rule_guard.min_text_size)
         previous._checked = rule_guard._checked
         previous._problems = rule_guard._problems
         best, _ = select_drawing(default, source, scratch, previous, original_spec, shared)
@@ -1578,7 +1592,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         # its solves to compare feedback, fixed answers and font tries by Verdict
         # from the first render, without restoring an unfinished drawing.
         guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
-                            enabled_rules=rule_guard.enabled_rules)
+                            enabled_rules=rule_guard.enabled_rules,
+                            min_text_size=rule_guard.min_text_size)
         guarded._checked = rule_guard._checked
         guarded._problems = rule_guard._problems
         result = render_readable(original_spec, source, scratch, rule_guard=guarded)
@@ -1592,7 +1607,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         all_before = rule_guard.verdict(best[0], best[1], best[3], enabled=False)
         if all_after is None or all_before is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
-        if candidate_score < score and candidate_score.checks <= score.checks and all_after < all_before:
+        if (candidate_score < score and candidate_score.checks <= score.checks
+                and all_after < all_before and rule_guard.accepts_text(result[0], result[1])):
             best, score = result, candidate_score
     budget = MAX_CANDIDATES[b.spec.mode]
     tried = {base_decisions, best[0].decisions}
@@ -1649,7 +1665,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
                 # The enabled group steers the search; other rules and checks still
                 # protect the corpus. A changed draft must improve its full Verdict.
                 if (candidate_score < round_score and all_after < all_before
-                        and candidate_score.checks <= score.checks):
+                        and candidate_score.checks <= score.checks
+                        and rule_guard.accepts_text(cb, cd)):
                     round_best = (cb, cd, fixed, cp, best[4], best[5], dict(decisions.skip))
                     round_score, round_index = candidate_score, count
             if count >= budget:
@@ -1660,7 +1677,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
     if best[1] != default[1]:
         # Winner repairs start at its first render and preserve the complete Verdict.
         guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
-                            enabled_rules=rule_guard.enabled_rules)
+                            enabled_rules=rule_guard.enabled_rules,
+                            min_text_size=rule_guard.min_text_size)
         guarded._checked = rule_guard._checked
         guarded._problems = rule_guard._problems
         result = render_readable(best[0].spec, source, scratch, rule_guard=guarded, chosen=best)
@@ -1671,7 +1689,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         best_score = rule_guard.verdict(best[0], best[1], best[3], enabled=False)
         if result_score is None or best_score is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
-        if result_score < best_score and result_score.checks <= best_score.checks:
+        if (result_score < best_score and result_score.checks <= best_score.checks
+                and rule_guard.accepts_text(result[0], result[1])):
             best = result
         after = rule_guard.check(best[0].spec, best[0].geom, best[1])
         removed = Counter((v.rule, v.code) for v in first) - Counter((v.rule, v.code) for v in after)
@@ -1731,6 +1750,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             default_guard = RuleGuard(protect=False, build_cache={})
             rule_guard.build_cache = default_guard.build_cache
             default = render_readable(spec, source, scratch, a.no_check, default_guard)
+            actual = drawn_text(default[0].spec, default[1])[0][0]
+            if math.isfinite(actual):
+                rule_guard.min_text_size = actual * MIN_TEXT_RETENTION
             rule_guard._checked = default_guard._checked
             rule_guard._problems = default_guard._problems
             if default_guard.error is not None:
@@ -1746,7 +1768,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 before = rule_guard.check(db.spec, db.geom, dd)
                 after = rule_guard.check(cb.spec, cb.geom, cd)
                 if before is None or after is None:
-                    if len(cp) <= len(dp):
+                    if len(cp) <= len(dp) and rule_guard.accepts_text(cb, cd):
                         result = candidate
                 else:
                     improves = (len(after) < len(before) or
@@ -1761,7 +1783,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         if (improves and len(cp) <= len(dp)
                                 and not rule_guard.adds(Counter(v.rule for v in before),
                                                        Counter(v.rule for v in after))
-                                and new_score < old_score):
+                                and new_score < old_score and rule_guard.accepts_text(cb, cd)):
                             result = candidate
             if a.no_check:
                 selection = ["selection: default kept (--no-check)"]

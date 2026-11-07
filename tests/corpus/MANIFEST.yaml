@@ -235,7 +235,7 @@ cases:
     from: "gen/rr-rtside__var4__dx30.layout.json"
   - path: rt/nd-single.layout.yaml
     rules: [R-rt, R-label]
-    good: [R-rt]   # ticket 06: document selection separates Spoke RT from its lone VPC on x, bringing it within RT2 reach; both slide modes already pass
+    bad: {R-rt: {document: node:rtsp}}   # ticket 06 review: the 90% effective-text-size floor keeps the readable document default (RT2 241px > 112); both slide modes pass
     what: "nfw doc with VPC B removed: single spoke VPC A (az1) above the Spoke RT"
     from: "gen/rtlone__single__nd_single.layout.json"
   - path: flowcol/base.layout.yaml
@@ -1101,7 +1101,7 @@ cases:
   - path: qa/t4-shared-lane.layout.yaml
     rules: [R-flow]
     what: "5-node reduction: DLQ label reads as another flow while the engine reports Layout OK / exit 0"
-    good: [R-flow]   # ticket 04 reroutes the DLQ flow so its label is attributed to its own line: F5 1→0 in all three modes
+    bad: {R-flow: {slide: edge:3}}   # ticket 06 review: the 90% effective-text-size floor restores F5 on titled slides; document and slide-no-title still pass
   # bend 옆 8–12px 교차가 있습니다(T3 원본 remote-access, hybrid-dns. 축소본에는 F3가 남지 않습니다).
   # Smallest submitted F3 reproduction: hybrid-dns has 15 nodes, versus remote-access's 16.
   - path: qa/t3-hybrid-dns.layout.yaml
