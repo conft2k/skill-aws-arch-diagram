@@ -216,4 +216,5 @@ Decide in this order; exactly one place, always outside the AWS Cloud box:
 `rect`, `image href="bundle:set/name"`, one-line `text`, `line`, `polyline fill="none"`,
 `circle`, `g transform="translate(x,y)"`, `defs` + `marker`. Presentation attributes
 only (no `style=`, no `class=`), `#RRGGBB` colors, no `<path>` outside markers, no
-stroked text: mask with a white rect.
+stroked text: mask with a white rect. No `display="none"` or `visibility="hidden"` /
+`"collapse"`: delete what should not be drawn.

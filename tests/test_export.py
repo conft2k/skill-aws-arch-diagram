@@ -474,6 +474,37 @@ class DraftProblems(unittest.TestCase):
             self.assertFalse(out.exists())
 
 
+    def test_hidden_elements_refused_before_any_output(self):
+        # display="none" / visibility="hidden" | "collapse": CairoSVG draws some into the PNG
+        # (and style= can show them again) while the slide would not, so nothing is written
+        bodies = {
+            "display-style": '<rect x="10" y="10" width="20" height="20" fill="#FF0000" display="none" '
+                             'style="display:inline"/>',
+            "image-display": '<image x="10" y="10" width="32" height="32" href="bundle:service/AWS-Lambda" '
+                             'display="none"/>',
+            "image-hidden": '<image x="10" y="10" width="32" height="32" href="bundle:service/AWS-Lambda" '
+                            'visibility="hidden"/>',
+            "rect-collapse": '<rect x="10" y="10" width="20" height="20" fill="#FF0000" visibility="collapse"/>',
+            "text-collapse": '<text x="10" y="30" font-size="14" fill="#FF0000" visibility="collapse">Hi</text>',
+            "group-display": '<g display="none"><rect x="10" y="10" width="20" height="20" fill="#FF0000"/></g>',
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            ok = draft(Path(tmp) / "ok.draft.svg", "#00FF00")
+            for name, body in bodies.items():
+                with self.subTest(name=name):
+                    bad = Path(tmp) / f"{name}.draft.svg"
+                    bad.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">{body}</svg>',
+                                   encoding="utf-8")
+                    out = Path(tmp) / f"out-{name}"
+                    r = export(ok, bad, "--svg", "--png", "--out-dir", out, "--pptx", out / "deck.pptx")
+                    self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                    self.assertNotIn("Traceback", r.stderr)
+                    self.assertIn(f"{bad}:", r.stdout)
+                    self.assertIn("delete the element", r.stdout)
+                    self.assertIn("Nothing written", r.stderr)
+                    self.assertFalse(out.exists())
+
+
 class PathKey(unittest.TestCase):
     def setUp(self):
         sys.path.insert(0, str(EXPORT.parent))

@@ -180,6 +180,10 @@ def raw_problems(svg: str) -> List[str]:
             probs.append(f"<{tag}> is not in the draft subset (rect, image, text, line, polyline, circle, g)")
         if el.get("style") or el.get("class"):
             probs.append(f"<{tag}> uses style=/class=; write presentation attributes instead")
+        if tag != "g" and ((el.get("display") or "").strip().lower() not in ("", "inline", "inherit")
+                           or (el.get("visibility") or "").strip().lower() not in ("", "visible", "inherit")):
+            probs.append(f"<{tag}> sets display= / visibility= (svg2pptx takes only the defaults); "
+                         "leave a hidden element out of the fragment")
         if tag == "g":
             extra = sorted(k for k in el.keys() if k not in ("id", "transform"))
             if extra:

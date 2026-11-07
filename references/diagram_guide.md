@@ -401,9 +401,12 @@ No `<path>` outside markers, no other transforms (scale, rotate), no CSS classes
 `style=""`, no stroked text. A `<tspan>` may only join characters into its `<text>`: one
 that sets a position, `fill`, `font-weight`, `font-size`, `style` or any other attribute
 but `id` is rejected (a label is one run in one format; give that part its own `<text>`).
-Numbers are bare and finite (no `px`, `nan` or negative sizes). What SVG does not draw is
-left off the slide too: `display="none"`, `visibility="hidden"`, a zero-size rect, circle
-or image, a polyline of fewer than two points, and a zero-width stroke. Colors as `#RRGGBB`. `opacity`, `fill-opacity` and
+Numbers are bare and finite (no `px`, `nan` or negative sizes). No hidden elements:
+`display="none"` and `visibility="hidden"` / `"collapse"` are rejected (the PNG still draws
+some of them), so delete what should not be drawn; only the defaults (`display="inline"`,
+`visibility="visible"`) pass. What SVG does not draw is left off the slide: a zero-size
+rect, circle or image, a polyline of fewer than two points, and a zero-width stroke.
+Colors as `#RRGGBB`. `opacity`, `fill-opacity` and
 `stroke-opacity` (`0.08` or `8%`) on a rect, circle, line, polyline or text become the
 alpha of its fill / line color (fill = `opacity` × `fill-opacity`, line = `opacity` ×
 `stroke-opacity`; 0 is no fill / no line); on an `<image>`, `<g>` or `<svg>` an opacity

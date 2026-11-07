@@ -20,10 +20,11 @@ title, if one is given) and placed as one group, so it moves and resizes as a un
 opacity, fill-opacity and stroke-opacity (numbers or percentages) become the alpha of the
 fill and line colors: fill alpha = opacity x fill-opacity, line alpha = opacity x
 stroke-opacity, and 0 means no fill / no line. What SVG draws nothing of is left off the
-slide the same way: display="none" (with its children), visibility="hidden" / "collapse"
-(inherited), a zero-size rect / circle / image, a polyline of fewer than two points,
-font-size 0, and a zero-width stroke (no line). A <text> is one run in one format, so a
-<tspan> that positions or formats part of it is refused like the cases below; so is a
+slide the same way: a zero-size rect / circle / image, a polyline of fewer than two points,
+font-size 0, and a zero-width stroke (no line). An element hidden with display="none" or
+visibility="hidden" / "collapse" is refused like the cases below (CSS can show it again,
+and the PNG renderer draws some of them), so delete it instead. A <text> is one run in one
+format, so a <tspan> that positions or formats part of it is refused too; so is a
 coordinate, size, stroke width or dash length that is not a finite bare number.
 
 Icons are referenced exactly as in the SVG workflow: `bundle:set/name` hrefs (looked
@@ -246,6 +247,28 @@ def text_run(el, problems, top=None):
     return "".join(parts)
 
 
+def hiding(el, tag):
+    """Problems for el's display / visibility. Only the defaults are accepted (display
+    "inline", visibility "visible", and "inherit" of either): a hidden element is refused, not
+    left out, because style= / class= can show it again and CairoSVG still draws a hidden
+    <image> (and visibility="collapse") into the PNG, so SVG, PNG and PPTX would disagree."""
+    out = []
+    d, v = el.get("display"), el.get("visibility")
+    dv, vv = (d or "").strip().lower(), (v or "").strip().lower()
+    if dv == "none":
+        out.append(f'<{tag}> has display="none" — a hidden element is not converted the same in SVG, PNG '
+                   "and PPTX; delete the element (with what is inside it) if it should not be drawn, "
+                   "otherwise drop display=")
+    elif dv not in ("", "inline", "inherit"):
+        out.append(f"<{tag}> display={d!r} is not supported — drop display= (only the default, inline)")
+    if vv in ("hidden", "collapse"):
+        out.append(f"<{tag}> has visibility={v!r} — a hidden element is not converted the same in SVG, PNG "
+                   "and PPTX; delete the element if it should not be drawn, otherwise drop visibility=")
+    elif vv not in ("", "visible", "inherit"):
+        out.append(f"<{tag}> visibility={v!r} is not supported — drop visibility= (only the default, visible)")
+    return out
+
+
 def has_marker(el, which):
     return bool(re.match(r"url\(#", el.get(which, "")))
 
@@ -288,11 +311,12 @@ def blank_backdrop(it, vw, vh):
 def collect(svg_root, drop_backdrop=True):
     """Flatten the SVG into drawing items in document order, plus every problem found.
     drop_backdrop=False keeps a blank full-canvas background rect (see blank_backdrop).
-    What SVG does not draw is left out the same way: display="none" (with everything inside
-    it), visibility="hidden" / "collapse" (inherited; a child can set it back to visible), a
-    rect / circle / image of zero size, a polyline of fewer than two points and a zero-width
-    stroke. Every item returned converts in Deck.add_slide; an input it could not convert,
-    or would convert differently from SVG, is a problem instead."""
+    What SVG does not draw is left out the same way: a rect / circle / image of zero size, a
+    polyline of fewer than two points and a zero-width stroke. display="none" and
+    visibility="hidden" / "collapse" are problems, not hidden items: CSS (style= / class=,
+    reported too) can show the element again, and CairoSVG still draws some of them into the
+    PNG, so the formats would disagree. Every item returned converts in Deck.add_slide; an
+    input it could not convert, or would convert differently from SVG, is a problem instead."""
     items, problems = [], []
     vb = [num(v) for v in svg_root.get("viewBox", "").replace(",", " ").split()]
     if len(vb) != 4:
@@ -304,13 +328,11 @@ def collect(svg_root, drop_backdrop=True):
     badges = set()
     backdrop = []  # [True] once the first painted item proves a blank full-canvas rect
 
-    def walk(el, ox, oy, shown=True):
+    def walk(el, ox, oy):
         tag = el.tag.replace(NS, "")
         if tag in SKIPPED:
             return
         g = el.get
-        if (g("display") or "").strip().lower() == "none":
-            return  # SVG draws neither it nor anything inside it
         if tag not in DRAWN:
             problems.append(f"<{tag}> is not supported (draw it with rect/line/polyline/circle/text/image)")
             return
@@ -320,23 +342,16 @@ def collect(svg_root, drop_backdrop=True):
             problems.append(f"<{tag}>: {e}")
             return
         ox, oy = ox + dx, oy + dy
-        vis = (g("visibility") or "").strip().lower()
-        if vis in ("hidden", "collapse"):
-            shown = False
-        elif vis == "visible":
-            shown = True
-        elif vis not in ("", "inherit"):
-            problems.append(f"<{tag}> visibility={g('visibility')!r} is not supported (visible, hidden or collapse)")
 
         def add(it):
-            if shown:
-                items.append(it)
-                if drop_backdrop and len(items) == 1 and it["k"] == "rect" and blank_backdrop(it, vw, vh):
-                    backdrop.append(True)
+            items.append(it)
+            if drop_backdrop and len(items) == 1 and it["k"] == "rect" and blank_backdrop(it, vw, vh):
+                backdrop.append(True)
 
         if g("style") or g("class"):
             problems.append(f"<{tag}> uses style=/class= — write presentation attributes "
                             "(fill=, stroke=, font-size=, ...) instead")
+        problems.extend(hiding(el, tag))
         if tag == "svg":
             try:
                 if alpha(g("opacity")) < 1:
@@ -349,7 +364,7 @@ def collect(svg_root, drop_backdrop=True):
                 problems.append(f"<svg> carries {', '.join(inherited)} — inherited attributes are not "
                                 "applied; put fill/font-size/stroke on each element")
         if tag == "g":
-            # display / visibility are applied exactly (above), so they may sit on a group
+            # display / visibility are checked by hiding() (above): only their defaults pass
             extra = sorted(k for k in el.keys() if k not in ("transform", "id", "display", "visibility"))
             if extra:
                 problems.append(f"<g> carries {', '.join(extra)} — inherited attributes are not applied; "
@@ -378,7 +393,7 @@ def collect(svg_root, drop_backdrop=True):
                                     "converted fully opaque; drop the opacity")
                 key, svg, png = resolve_icon(href)
                 if w > 0 and h > 0:
-                    if shown and href.startswith("bundle:group/"):
+                    if href.startswith("bundle:group/"):
                         badges.add((round(x, 2), round(y, 2)))
                     add({"k": "image", "box": (x, y, w, h), "key": key, "svg": svg, "png": png,
                          "name": key.partition("/")[2]})
@@ -418,7 +433,7 @@ def collect(svg_root, drop_backdrop=True):
             problems.append(f"<{tag}>: {e}")
             return
         for child in el:
-            walk(child, ox, oy, shown)
+            walk(child, ox, oy)
 
     walk(svg_root, -vx, -vy)
     for it in items:

@@ -253,6 +253,14 @@ class Raw(unittest.TestCase):
         self.assertIn("<path> is not in the draft subset", cm.exception.problems[0])
         self.assertEqual(layout.raw_problems('<g fill="red"><rect x="1" y="1" width="2" height="2"/></g>'),
                          ["<g> carries fill; svg2pptx takes only id (and translate)"])
+        for attr in ('display="none"', 'visibility="hidden"', 'visibility="collapse"', 'display="block"'):
+            with self.subTest(attr=attr):
+                self.assertEqual(layout.raw_problems(f'<rect x="1" y="1" width="2" height="2" {attr}/>'),
+                                 ["<rect> sets display= / visibility= (svg2pptx takes only the defaults); "
+                                  "leave a hidden element out of the fragment"])
+                self.assertIn("<g> carries", layout.raw_problems(f'<g {attr}/>')[0])
+        for attr in ('display="inline"', 'visibility="visible"'):
+            self.assertEqual(layout.raw_problems(f'<rect x="1" y="1" width="2" height="2" {attr}/>'), [])
 
 
 class PadTop(unittest.TestCase):

@@ -2,7 +2,7 @@
 """Tests of scripts/svg2pptx.py: which full-canvas background rect collect() leaves to the slide,
 how opacity / fill-opacity / stroke-opacity reach the PPTX as color alpha, which root <svg>
 attributes are reported, how render_pptx.py previews that alpha, which <tspan>s are reported,
-how hidden and degenerate shapes are left out, and that what collect() accepts converts.
+that hidden elements are reported, how degenerate shapes are left out, and that what collect() accepts converts.
 
     python3 tests/test_svg2pptx.py
 """
@@ -343,64 +343,89 @@ class TextRun(unittest.TestCase):
 
 
 class Hidden(unittest.TestCase):
-    """What SVG does not draw (display="none", visibility="hidden" / "collapse") is not on the slide."""
+    """An element hidden with display="none" or visibility="hidden" / "collapse" is reported
+    before anything is written: style= / class= can show it again, and CairoSVG still draws
+    a hidden <image> and visibility="collapse" into the PNG, so the formats would disagree."""
 
-    IMG = '<image href="bundle:service/AWS-Lambda" x="0" y="0" width="48" height="48"/>'
+    IMG = '<image href="bundle:service/AWS-Lambda" x="10" y="10" width="32" height="32"/>'
+    LINE = '<line x1="0" y1="0" x2="50" y2="0" stroke="#000"/>'
+    CIRCLE = '<circle cx="20" cy="20" r="5" fill="#000"/>'
+    HIDING = ('display="none"', 'visibility="hidden"', 'visibility="collapse"', 'visibility=" Hidden "')
 
-    def test_display_none_left_out(self):
-        for el in (SHAPE, TEXT, self.IMG, '<line x1="0" y1="0" x2="50" y2="0" stroke="#000"/>',
-                   '<circle cx="20" cy="20" r="5" fill="#000"/>'):
-            with self.subTest(el=el):
-                hidden = el.replace("/>", ' display="none"/>', 1) if el.endswith("/>") else \
-                    el.replace("<text ", '<text display="none" ', 1)
-                self.assertEqual(collect(hidden + SHAPE), collect(SHAPE))
-                self.assertEqual(len(converts(self, hidden + SHAPE)), 1)
+    @staticmethod
+    def with_attr(el, attr):
+        return el.replace("/>", f" {attr}/>", 1) if el.endswith("/>") else el.replace(">", f" {attr}>", 1)
 
-    def test_display_none_review_repro(self):
-        body = '<rect x="10" y="10" width="20" height="20" fill="#FF0000" display="none"/>'
-        self.assertEqual(collect(body), [])
-        self.assertEqual(converts(self, body), [])
+    def assert_hidden_reported(self, body, tag):
+        found = problems(body)
+        hits = [p for p in found if p.startswith(f"<{tag}> has ") and "delete the element" in p]
+        self.assertTrue(hits, found)
+        with tempfile.TemporaryDirectory() as d:
+            draft, deck = Path(d) / "t.draft.svg", Path(d) / "t.pptx"
+            draft.write_text(svg(body), encoding="utf-8")
+            with redirect_stdout(StringIO()):
+                self.assertFalse(svg2pptx.build([draft], [], deck))
+            self.assertFalse(deck.exists())
+        return found
 
-    def test_display_none_group_hides_children(self):
-        self.assertEqual(collect(f'<g id="a" display="none">{SHAPE}{TEXT}<g>{self.IMG}</g></g>'), [])
-        self.assertEqual(collect(f'<g display="none"><rect width="9" height="9" display="inline"/></g>'), [])
-        # other display values draw it
-        self.assertEqual(len(collect(SHAPE.replace("/>", ' display="inline"/>'))), 1)
-        self.assertEqual(len(collect(f'<g display="block">{SHAPE}</g>')), 1)
+    def test_every_element_reported(self):
+        for attr in self.HIDING:
+            for tag, el in (("rect", SHAPE), ("text", TEXT), ("image", self.IMG), ("line", self.LINE),
+                            ("circle", self.CIRCLE), ("polyline", '<polyline points="0,0 9,9" fill="none" '
+                                                                 'stroke="#000"/>'),
+                            ("g", f"<g>{SHAPE}</g>")):
+                with self.subTest(attr=attr, tag=tag):
+                    self.assert_hidden_reported(self.with_attr(el, attr) + SHAPE, tag)
 
-    def test_visibility_hidden_left_out(self):
-        for v in ("hidden", "collapse", " Hidden "):
-            for el in (SHAPE, self.IMG):
-                with self.subTest(v=v, el=el):
-                    self.assertEqual(collect(el.replace("/>", f' visibility="{v}"/>')), [])
-            with self.subTest(v=v, el="text"):
-                self.assertEqual(collect(TEXT.replace("<text ", f'<text visibility="{v}" ')), [])
-        self.assertEqual(len(collect(SHAPE.replace("/>", ' visibility="visible"/>'))), 1)
+    def test_review_repro_style_overrides_display(self):
+        # display="none" used to end the walk before style= was looked at: SVG / PNG drew
+        # the red square (CSS display:inline wins), the slide was empty
+        for tag, body in (
+                ("rect", '<rect x="10" y="10" width="20" height="20" fill="#FF0000" display="none" '
+                         'style="display:inline"/>'),
+                ("g", f'<g display="none" style="display:inline">{SHAPE}</g>'),
+                ("text", '<text x="20" y="50" font-size="14" display="none" style="display:inline">Hi</text>')):
+            with self.subTest(tag=tag):
+                found = self.assert_hidden_reported(body, tag)
+                self.assertTrue(any(p.startswith(f"<{tag}> uses style=/class=") for p in found), found)
+        found = problems(f'<rect x="10" y="10" width="20" height="20" display="none" class="on"/>')
+        self.assertTrue(any(p.startswith("<rect> uses style=/class=") for p in found), found)
 
-    def test_visibility_inherited(self):
-        # inherited from the group; a child can set it back to visible
-        items = collect(f'<g visibility="hidden">{SHAPE}<rect x="0" y="0" width="5" height="5" fill="#000" '
-                        f'visibility="visible"/><g visibility="inherit">{TEXT}</g></g>')
-        self.assertEqual([(it["k"], it["box"]) for it in items], [("rect", (0, 0, 5, 5))])
+    def test_review_repro_hidden_image(self):
+        # CairoSVG draws these icons into the PNG while the slide would leave them out
+        for attr in ('display="none"', 'visibility="hidden"', 'visibility="collapse"'):
+            with self.subTest(attr=attr):
+                self.assert_hidden_reported('<image x="10" y="10" width="32" height="32" '
+                                            f'href="bundle:service/AWS-Lambda" {attr}/>', "image")
+
+    def test_collapse_rect_and_text(self):
+        self.assert_hidden_reported(SHAPE.replace("/>", ' visibility="collapse"/>'), "rect")
+        self.assert_hidden_reported(TEXT.replace("<text ", '<text visibility="collapse" '), "text")
+
+    def test_hidden_group_and_root(self):
+        found = self.assert_hidden_reported(f'<g id="a" display="none">{SHAPE}{TEXT}<g>{self.IMG}</g></g>', "g")
+        self.assertFalse(any("carries" in p for p in found), found)  # one message, not two
+        self.assert_hidden_reported(f'<g visibility="hidden">{SHAPE}<rect x="0" y="0" width="5" '
+                                    f'height="5" fill="#000" visibility="visible"/></g>', "g")
         root = ET.fromstring(svg(SHAPE + TEXT).replace("<svg ", '<svg visibility="hidden" ', 1))
-        self.assertEqual(svg2pptx.collect(root)[1:], ([], []))
+        found = svg2pptx.collect(root)[2]
+        self.assertTrue(any(p.startswith("<svg> has visibility='hidden'") for p in found), found)
 
-    def test_hidden_first_rect_is_not_the_backdrop(self):
-        # only a painted rect can be the slide's background
-        self.assertEqual(kinds('<rect width="200" height="100" fill="#FFFFFF" display="none"/>'
-                               '<rect width="200" height="100" fill="#FFFFFF"/>' + TEXT), [("text", None)])
-        self.assertEqual(kinds(SHAPE.replace("/>", ' visibility="hidden"/>') +
-                               '<rect width="200" height="100" fill="#FFFFFF"/>' + TEXT), [("text", None)])
+    def test_defaults_convert(self):
+        for attr in ('display="inline"', 'display="inherit"', 'visibility="visible"', 'visibility="inherit"',
+                     'display=" Inline "'):
+            for el in (SHAPE, TEXT, self.IMG, f"<g>{SHAPE}</g>"):
+                with self.subTest(attr=attr, el=el):
+                    self.assertEqual(problems(self.with_attr(el, attr)), [])
+                    self.assertEqual(collect(self.with_attr(el, attr)), collect(el))
+        shown = TEXT.replace("<text ", '<text display="inline" ')
+        self.assertEqual(len(converts(self, f'<g visibility="visible">{SHAPE}</g>{shown}')), 2)
 
-    def test_hidden_badge_is_not_a_container(self):
-        body = ('<rect x="10" y="10" width="100" height="60" rx="6" fill="none" stroke="#8C4FFF"/>'
-                '<image href="bundle:group/VPC_32" x="10" y="10" width="32" height="32" display="none"/>')
-        self.assertEqual(problems(body), [])
-        self.assertTrue(problems(body.replace(' display="none"', "")))
-
-    def test_bad_visibility_reported(self):
+    def test_other_values_reported(self):
         found = problems(SHAPE.replace("/>", ' visibility="maybe"/>'))
-        self.assertTrue(any("visibility='maybe'" in p for p in found), found)
+        self.assertTrue(any("visibility='maybe' is not supported" in p for p in found), found)
+        found = problems(f'<g display="block">{SHAPE}</g>')
+        self.assertTrue(any("display='block' is not supported" in p for p in found), found)
 
 
 class Degenerate(unittest.TestCase):
