@@ -77,8 +77,14 @@ stack nodes — is kept off the stack on y: above it when the middle of its rows
 the upper part of the parent's rows (above the middle; an odd middle row counts below),
 else below; with `align: top` everything goes below the stack, with `bottom` above it.
 A flow row in the same parent has no column, so once x is solved each of its nodes that
-comes within the sibling gap of the stack's x is kept off it the same way, as a node pinned
-on that row (a services row on the region's last row goes above a bottom-aligned stack).
+comes within the sibling gap of the stack's x is kept off it on y, as a node pinned on that
+row — except at the parent's edge: a flow row on the parent's first row stays above a
+top-aligned stack and one on its last row below a bottom-aligned stack, so the stack stops
+at the row (the parent grows by at most the overlap) instead of pushing the row a stack
+height inward (a services row on the region's last row stays under the VPC, a
+bottom-aligned stack beside the VPC ends above it). Such a row node keeps twice the column's
+own spacing from the stack (at least that spacing + the sibling gap), so it never reads as
+the column's next node.
 A box holding only flow-column nodes (a `Monitoring` group of them) takes its height from
 them and is aligned in its parent like its first column.
 `flow: true` takes the mode's pitch (160). A flow-column node takes no `dy` (the stack

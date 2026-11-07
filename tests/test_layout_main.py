@@ -570,28 +570,102 @@ class FlowColumnFixes(unittest.TestCase):
         self.assertIn("nodes[4] ec2 ec2.1: dx / dy", tip)
         self.assertNotIn("cw cw: dx / dy", tip)
 
+    @staticmethod
+    def flow_row_spec(mode, align, last, extra=0, stack=True):
+        """flow_column_spec with a services flow row of five nodes in the region, on its last
+        row (last) or its first; `extra` more single-line nodes at the end of the stack;
+        stack=False drops the flow column (and the edges into it)."""
+        d = flow_column_spec()
+        d["mode"] = mode
+        d["cols"][-1]["align"] = align
+        row = {"id": "svcrow", "flow": 100}
+        if last:
+            d["rows"].append(row)
+        else:
+            d["rows"].insert(0, row)
+        for i, ic in (("k1", "AWS-Key-Management-Service"), ("k2", "AWS-Lambda"), ("k3", "Amazon-DynamoDB"),
+                      ("k4", "Amazon-Simple-Queue-Service"), ("k5", "Amazon-Simple-Notification-Service")):
+            d["nodes"].append(svc(i, f"service/{ic}", i.upper(), row="svcrow", **{"in": "region"}))
+        for j in range(extra):
+            d["nodes"].append(svc(f"x{j}", "service/Amazon-Simple-Storage-Service", f"X{j}", col="svc",
+                                  **{"in": "region"}))
+        if not stack:
+            d["nodes"] = [n for n in d["nodes"] if n.get("col") != "svc"]
+            d["edges"] = [e for e in d["edges"] if "cw" not in e["e"]]
+        return d
+
     def test_flow_row_keeps_off_the_stack(self):
         """A flow row and a flow column in one parent: the row has no column, so whether it
-        meets the stack is known only once x is solved; a row node that does is kept off the
-        stack on y like a node pinned on that row (align bottom: above the stack; center:
-        below it), so the two never overlap whatever the align."""
-        for align in ("bottom", "center", "top"):
-            d = flow_column_spec()
-            d["mode"] = "document"
-            d["cols"][-1]["align"] = align
-            d["rows"].append({"id": "svcrow", "flow": 100})
-            for i, ic in (("k1", "AWS-Key-Management-Service"), ("k2", "AWS-Lambda"), ("k3", "Amazon-DynamoDB"),
-                          ("k4", "Amazon-Simple-Queue-Service"), ("k5", "Amazon-Simple-Notification-Service")):
-                d["nodes"].append(svc(i, f"service/{ic}", i.upper(), row="svcrow", **{"in": "region"}))
-            rc, out, _ = run_main(d)
-            self.assertEqual((rc, out.strip().splitlines()[-1]), (0, "Layout OK"), f"{align}\n{out}")
-            spec, b = built(d)
-            g = b.geom
-            for a in ("acm", "cw", "s3"):
-                for k in ("k1", "k2", "k3", "k4", "k5"):
-                    self.assertApart(g, a, k)
-            if align == "bottom":           # the row (the region's last) sits above the stack
-                self.assertGreater(g.nodes["acm"].footprint().y0, g.nodes["k5"].footprint().y1)
+        meets the stack is known only once x is solved; a row node that does (K5) is kept off
+        the stack on y. On the region's first row it stays above the stack and on its last
+        row below it, whatever the align — a top-aligned stack starts under a first-row row
+        and a bottom-aligned one stops over a last-row row instead of taking that edge and
+        pushing the row (and the VPC beside it) a stack height inward — so the stack grows
+        nothing here (the drawing is as tall as without it). The two never overlap, and the
+        row node keeps twice the column's spacing from it, so it never reads as the
+        column's next node."""
+        for mode in ("document", "slide"):
+            for align in ("top", "center", "bottom"):
+                for last in (False, True):
+                    with self.subTest(mode=mode, align=align, row="last" if last else "first"):
+                        d = self.flow_row_spec(mode, align, last)
+                        rc, out, _ = run_main(d)
+                        if mode == "document":
+                            self.assertEqual((rc, out.strip().splitlines()[-1]), (0, "Layout OK"), out)
+                        else:                   # this spec is 38-40 px too tall for a titled slide
+                            self.assertEqual(out.strip().splitlines()[-1], "1 problem", out)
+                            self.assertIn("SLIDE TOO SMALL", out)
+                        spec, b = built(d)
+                        g = b.geom
+                        f = {i: g.nodes[i].footprint() for i in ("acm", "cw", "s3", "k1", "k2", "k3", "k4", "k5")}
+                        for a in ("acm", "cw", "s3"):
+                            for k in ("k1", "k2", "k3", "k4", "k5"):
+                                self.assertApart(g, a, k)
+                        self.assertLess(f["k5"].x0, f["acm"].x1)             # K5 meets the stack on x
+                        vpc = g.groups["vpc"].rect
+                        if last:
+                            gap = f["k5"].y0 - f["s3"].y1
+                            self.assertGreater(f["k5"].y0, vpc.y1)
+                        else:
+                            gap = f["acm"].y0 - f["k5"].y1
+                            self.assertLess(f["k5"].y1, vpc.y0)
+                        col = min(f["cw"].y0 - f["acm"].y1, f["s3"].y0 - f["cw"].y1)
+                        self.assertGreaterEqual(gap, 2 * col)
+                        self.assertGreaterEqual(gap, col + spec.const.sibling_gap)
+                        g0 = built(self.flow_row_spec(mode, align, last, stack=False))[1].geom
+                        self.assertEqual(g.canvas_h, g0.canvas_h)
+
+    def test_flow_row_on_the_edge_stops_a_long_stack(self):
+        """A stack taller than the rest of the region: a last-row flow row stays below it
+        (first-row: above), and the region grows by just the overlap — the stack's far end
+        keeps its usual inset from the region's edge and the row node is exactly twice the
+        column's spacing there from the stack's near end."""
+        for mode in ("document", "slide"):
+            for align in ("top", "center", "bottom"):
+                for last in (False, True):
+                    with self.subTest(mode=mode, align=align, row="last" if last else "first"):
+                        spec, b = built(self.flow_row_spec(mode, align, last, extra=4))
+                        g = b.geom
+                        n = g.nodes
+                        f = {i: v.footprint() for i, v in n.items()}
+                        reg = g.groups["region"].rect
+                        r = dict(flow_column_spec(), mode=mode)      # no flow row: the stack at the edge
+                        r["cols"][-1]["align"] = "top" if last else "bottom"
+                        ref = built(r)[1].geom
+                        rf, rr = {i: v.footprint() for i, v in ref.nodes.items()}, ref.groups["region"].rect
+                        if last:                 # x3 ↓ K5; ACM where a top stack's starts
+                            up, lo = "x3", "k5"
+                            self.assertEqual(f["acm"].y0 - reg.y0, rf["acm"].y0 - rr.y0)
+                        else:                    # K5 ↓ ACM; x3 where a bottom stack's ends
+                            up, lo = "k5", "acm"
+                            self.assertEqual(reg.y1 - n["x3"].last_baseline, rr.y1 - ref.nodes["s3"].last_baseline)
+                        for i in ("acm", "cw", "s3", "x0", "x1", "x2", "x3"):
+                            self.assertApart(g, i, "k5")
+                            self.assertGreater(f[i].y0, f["k5"].y1) if not last else \
+                                self.assertLess(f[i].y1, f["k5"].y0)
+                        h = f[up].y1 - n[up].cy - (f[lo].y0 - n[lo].cy)    # footprint bottom − icon top
+                        sp = max(100, h + spec.const.stack_gap) - h
+                        self.assertAlmostEqual(f[lo].y0 - f[up].y1, sp + max(spec.const.sibling_gap, sp), delta=1)
 
 
 class ShortOverlayTitle(unittest.TestCase):

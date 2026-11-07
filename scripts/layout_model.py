@@ -302,8 +302,13 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     rows above and below the middle, an odd middle row below): the router's row range for
     the node (never a grid row, so no rule-1 H to a grid node), and the side a same-parent
     sibling sharing the column's x goes to (above when the middle of its rows is before the
-    slot, else below; a flow-row node of the parent likewise as on its row, once solved x
-    shows its footprint within sibling_gap of the stack's). A box with no row that holds
+    slot, else below; a flow-row node of the parent, once solved x shows its footprint
+    within sibling_gap of the stack's, by Spec.flow_row_above: a row on the parent's first
+    row stays above a top-aligned stack and one on its last row below a bottom-aligned
+    stack, so the stack stops at the row instead of pushing it inward; any other row by
+    the slot as on its row; a flow-row node and a stack node it meets keep twice the
+    column's own spacing between their footprints, at least that spacing + sibling_gap,
+    so the row never reads as the column's next node). A box with no row that holds
     flow-column nodes (Spec.float_align) is such a block too: its slot is its first
     column's in its own parent; overlays over
     stack members take only a top-aligned stack's first node as a first-row member;
@@ -647,6 +652,30 @@ class Spec:
         if align == "bottom":
             return r1 + 0.5
         return math.floor((r0 + r1) / 2 + 0.5) - 0.5
+
+    def flow_row_above(self, parent: Optional[str], align: str, row: int) -> Optional[bool]:
+        """Whether a flow row of `parent` on row index `row` goes above a stack block of
+        the same parent aligned `align` (decision l), when its nodes meet the block on x: a
+        row on the parent's first row above a top-aligned block and one on its last row below
+        a bottom-aligned block (the row keeps the parent's edge and the block stops at it
+        instead of taking that edge and pushing the row a block height inward); any other row
+        above when it lies before the block's slot (Spec.flow_slot), else below. None when
+        nothing gives rows."""
+        slot = self.flow_slot(parent, align)
+        if slot is None:
+            return None
+        if parent is None:
+            r0, r1 = 0, len(self.rows) - 1
+        else:
+            g = self.groups[parent]
+            if g.rows is None:
+                return row < slot
+            r0, r1 = self.track(g.rows[0]).index, self.track(g.rows[1]).index
+        if align == "top" and row == r0:
+            return True
+        if align == "bottom" and row == r1:
+            return False
+        return row < slot
 
 
 # =======================================================================================

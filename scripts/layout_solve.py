@@ -18,9 +18,11 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                (own x variables, pitch, centered in the parent afterwards) and flow columns
                (own y variables, pitch or label stack + stack gap, kept off same-parent
                siblings sharing the column by slot — a flow-row node once solved x shows
-               it meets the stack —, then top / centered / bottom in the
-               parent's height, with tied xy nodes and member-only overlays; no row
-               tracks; a box of stack nodes only likewise), 9 overlays (ASG:
+               it meets the stack, by Spec.flow_row_above (a row on the parent's edge row
+               stays at that edge), twice the column's spacing off it —, then top /
+               centered / bottom in the parent's height, with tied xy nodes and
+               member-only overlays; no row tracks; a box of stack nodes only likewise),
+               9 overlays (ASG:
                members, header right/below, inside each member subnet, a short title beside the
                first member row), 10 the caller's Requirements, 11 canvas margin (and the
                note's requirements), plus template
@@ -902,9 +904,14 @@ class _Model:
         """A flow row and a stack block of one parent (8): a flow-row node has no column, so
         _float_siblings cannot tell from the tracks whether it shares the stack's x. Once x
         is solved, each flow-row node whose footprint comes within sibling_gap of the block's
-        x extent (its nodes' footprints; a box of stacks: its edges) is kept off it on y like
-        a node pinned on that row: above when its row lies above the block's slot, else
-        below."""
+        x extent (its nodes' footprints; a box of stacks: its edges) is kept off it on y, on
+        the side Spec.flow_row_above gives: a row on the parent's first row above a
+        top-aligned block, one on its last row below a bottom-aligned block (the block stops
+        at the row and the row keeps the parent's edge), else as a node pinned on that row
+        (above when its row lies before the block's slot). Against a stack's end node the
+        footprint gap is twice the column's own spacing there (its pitch, or label stack +
+        stack gap, less the two footprints), at least that spacing + sibling_gap, so the row
+        node never sits where the column's next node would and cannot be read as one."""
         g = self.mc.sibling_gap
         for parent, ids in self.flow_rows:
             units = self._float_units(parent)
@@ -914,19 +921,29 @@ class _Model:
             for xr, top, bot, slot in units:
                 if top.gid:
                     x0, x1 = xv[f"group:{top.gid}.L"], xv[f"group:{top.gid}.R"]
+                    align, pitch = self.floats[top.gid], None
                 else:
-                    mem = self.stacks[(parent, self.spec.nodes[top.nid].col)]
+                    col = self.spec.nodes[top.nid].col
+                    mem = self.stacks[(parent, col)]
                     x0 = min(nodes_x[i] - self.foot[i].h for i in mem)
                     x1 = max(nodes_x[i] + self.foot[i].h for i in mem)
+                    align = self.spec.track(col).align
+                    pitch = self.spec.track(col).flow or self.mc.flow_pitch
                 for nid in ids:
                     o = self.item_node(nid)
                     h = self.foot[nid].h
                     if o.yr is None or nodes_x[nid] + h + g <= x0 or nodes_x[nid] - h - g >= x1:
                         continue
-                    if slot is not None and o.yr[0] < slot:
-                        self._sep("y", o, top, owner)
-                    else:
-                        self._sep("y", bot, o, owner)
+                    above = self.spec.flow_row_above(parent, align, o.yr[0])
+                    a, b = (o, top) if above else (bot, o)
+                    self._sep("y", a, b, owner)
+                    if pitch is not None:
+                        fa, fb = self.foot[a.nid], self.foot[b.nid]
+                        sp = max(pitch, fa.bot - fb.top + self.mc.stack_gap) - (fa.bot - fb.top)
+                        d = sp + max(g, sp)
+                        self.add("y", self.hi(a, "y"), self.lo(b, "y"), d,
+                                 f"off the column {fmt_num(d)} (2 × its spacing {fmt_num(sp)}, ≥ spacing + "
+                                 f"sibling gap {fmt_num(g)}) {a.key} | {b.key}", owner)
 
     def y_after_x(self, xv: Dict[str, float], nodes_x: Dict[str, float]):
         """The y rules that depend on solved x: a flow row kept off a stack it meets on x
