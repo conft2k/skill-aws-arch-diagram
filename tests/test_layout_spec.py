@@ -350,6 +350,32 @@ class ExampleSpecs(unittest.TestCase):
         self.assertEqual([(e.a, e.b) for e in s.edges if e.b.startswith(("writer", "reader"))],
                          [("ec2.1", "writer.1"), ("ec2.2", "reader.2")])
 
+    def test_only_several_targets(self):
+        """a.* OP b.*, c pairs each target with every instance of a: a target kept in only some
+        instances does not cut the source for the targets after it, in any order, form or OP."""
+        def pairs(*edges):
+            d = base()
+            d["groups"].append({"id": "db", "type": "private", "label": "DB subnet", "in": "az", "only": [2]})
+            d["nodes"] += [{"id": "writer", "icon": "service/Amazon-Aurora", "label": "Writer", "in": "sn",
+                            "col": "c", "only": [1]},
+                           {"id": "reader", "icon": "service/Amazon-Aurora", "label": "Reader", "in": "db",
+                            "col": "c"},
+                           {"id": "s3", "icon": "service/Amazon-Simple-Storage-Service", "label": "S3",
+                            "in": "region", "at": ["a", "az1"]}]
+            d["edges"] = [{"e": "igw -> ec2.*", "step": 1}] + [{"e": e} for e in edges]
+            return [(e.a, e.b) for e in L.load(d).edges if e.a != "igw"]
+
+        plain = [("ec2.1", "writer.1"), ("ec2.1", "s3"), ("ec2.2", "s3")]
+        self.assertEqual(pairs("ec2.* -> writer.*, s3"), plain)
+        self.assertEqual(pairs("ec2.* -> writer.*", "ec2.* -> s3"), plain)
+        self.assertEqual(sorted(pairs("ec2.* -> s3, writer.*")), sorted(plain))
+        both = [("ec2.1", "writer.1"), ("ec2.2", "reader.2")]
+        self.assertEqual(pairs("ec2.* -> writer.*, reader.*"), both)
+        self.assertEqual(sorted(pairs("ec2.* -> reader.*, writer.*")), sorted(both))
+        for op in L.OPS:
+            self.assertEqual(pairs(f"ec2.* {op} writer.*, reader.*, s3"),
+                             both + [("ec2.1", "s3"), ("ec2.2", "s3")], op)
+
     def test_folded_hop_warns(self):
         """A flow sub-resource with its own icon written into its service node's caption warns;
         the service's own resource (an SNS topic, an event bus) does not."""

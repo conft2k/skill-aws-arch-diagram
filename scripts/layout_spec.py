@@ -1218,8 +1218,11 @@ class _Loader:
             return None
         out: List[Tuple[str, str]] = []
         for b_pat, B in zip(b_pats, Bs):
+            # pair each target against the whole source list: cutting A to one target's
+            # instances would leave the next target only what the previous one shared
             if a_pat.endswith(".*") and b_pat.endswith(".*"):
                 na, nb = [n for n, _ in A], [n for n, _ in B]
+                As, Bt = A, B
                 if na != nb:
                     common = [n for n in na if n in nb]
                     cut = {a_pat[:-2], b_pat[:-2]} & self.restricted
@@ -1232,9 +1235,9 @@ class _Loader:
                                       f"{', '.join(map(str, nb))} (`only:`), so no number pairs them; name the "
                                       f"instances, e.g. {A[0][1]} -> {B[0][1]}")
                         return None
-                    A = [(n, i) for n, i in A if n in common]
-                    B = [(n, i) for n, i in B if n in common]
-                out += [(a, b) for (_, a), (_, b) in zip(A, B)]
+                    As = [(n, i) for n, i in A if n in common]
+                    Bt = [(n, i) for n, i in B if n in common]
+                out += [(a, b) for (_, a), (_, b) in zip(As, Bt)]
             else:
                 out += [(a, b) for _, a in A for _, b in B]
         for a, b in out:
