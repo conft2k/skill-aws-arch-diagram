@@ -162,8 +162,13 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   (absolute px) or an expression the solve keeps: `xy: ["col.a2", "row.bot+10"]` follows the
   tracks wherever they land; `<node>.(x0|cx|x1)` / `.(y0|cy|y1)` (icon edges / center) and
   `<group>.(x0|x1)` / `.(y0|y1)` (box edges) work too, each `±n` — not a group's `cx`, a
-  `.label.` or `gap()`. An `xy` node stays inside its boxes but never pushes its row
-  neighbours apart (they don't see it).
+  `.label.` or `gap()`, nor a chain of `xy` references that comes back to the node on
+  the same axis (`q` on `s.cx`, `s` on `q.cy` is fine). An `xy` node stays inside its boxes
+  but never pushes its row neighbours apart (they don't see it). In a `per` template,
+  another item of the template named by its own id means the same instance's
+  (`xy: [col.b, e1.cy]` puts each `e2.n` level with `e1.n`) and `row.<a per row>` means the
+  instance's own row; an explicit instance (`e1.1.cx`) stays as written, on x only — another
+  instance's y sits a row away.
 
 ## edges
 

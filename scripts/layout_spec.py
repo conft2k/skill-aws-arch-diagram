@@ -1447,9 +1447,17 @@ class _Loader:
     # ---- expression references (every id exists now)
     def exprs(self) -> None:
         sp = self.spec
+        # a template node's xy is resolved per instance below (its template's ids and rows
+        # name that instance's own), not once for the shared expression
+        per_inst = {id(c) for r in self.nraw.values() if r.get("tmpl") and r.get("xy")
+                    for c in r["xy"] if isinstance(c, Expr)}
+        text: Dict[int, str] = {}
         fixed: Dict[int, Expr] = {}
         for loc, key, v, e in self.pending:
             if not isinstance(v, str):
+                continue
+            if id(e) in per_inst:
+                text[id(e)] = v
                 continue
             try:
                 fixed[id(e)] = parse_expr(v, sp)
@@ -1470,36 +1478,99 @@ class _Loader:
         for rs in sp.raw:
             rs.exprs = {k: fx(e) for k, e in rs.exprs.items()}
         bad = set()
+
+        def report(node, i, why):
+            if why and (node.src, i) not in bad:          # one report per spec item (templates)
+                bad.add((node.src, i))
+                self.err(node.src, f"xy[{i}]: {why}")
+
         for node in sp.nodes.values():
             if node.xy is None:
                 continue
-            xy = tuple(fx(c) for c in node.xy)
+            xy = []
+            for i, c in enumerate(node.xy):
+                if isinstance(c, Expr) and id(c) in text:
+                    c, why = self.inst_expr(node, c, text[id(c)])
+                    report(node, i, why)
+                xy.append(fx(c))
             node.xy = tuple(c.offset if isinstance(c, Expr) and c.kind == "num" else c for c in xy)
             for i, c in enumerate(node.xy):
-                why = self.xy_problem(node, i, c)
-                if why and (node.src, i) not in bad:      # one report per spec item (templates)
-                    bad.add((node.src, i))
-                    self.err(node.src, f"xy[{i}]: {why}")
+                report(node, i, self.xy_problem(node, i, c))
+        for node, i, why in self.xy_cycles():
+            report(node, i, why)
+
+    def inst_expr(self, node: Node, e: Expr, v: str) -> Tuple[Expr, Optional[str]]:
+        """A template node's xy expression for its own instance n: an item of the same
+        template named by its base id is that item's instance n (`e1.cy` → `e1.2.cy`), and
+        `row.<a per row>` is the instance's own row; explicit instance ids stay. Returns the
+        resolved Expr (Expr("num") on a problem) and the problem, if any."""
+        sp, n, tmpl = self.spec, node.instance, node.template
+        per = self.graw[tmpl]["per"] or []
+        if e.kind == "row" and e.ref in per:
+            e = Expr("row", ref=per[n - 1], offset=e.offset)
+        elif e.kind in ("node", "label") and e.ref not in sp.nodes and e.ref not in sp.groups:
+            raw = self.nraw.get(e.ref) or self.graw.get(e.ref)
+            iid = _inst_id(e.ref, n)
+            if raw is not None and raw.get("tmpl") == tmpl:
+                if iid in self.dropped:
+                    return Expr("num"), (f"expression {v!r}: {e.ref} has no instance {n} (left out by `only:`), "
+                                         f"so {node.id} has nothing to follow there")
+                e = Expr(e.kind, ref=iid, attr=e.attr, offset=e.offset)
+        try:
+            return _resolve_expr(e, v, sp), None
+        except SpecError as ex:
+            return Expr("num"), ex.problems[0]
+
+    @staticmethod
+    def xy_hint(i: int) -> str:
+        axis, attrs = ("col", ("x0", "cx", "x1")) if i == 0 else ("row", ("y0", "cy", "y1"))
+        return (f"xy[{i}] takes a number, {axis}.<track>, <node>.({'|'.join(attrs)}) or "
+                f"<group>.({attrs[0]}|{attrs[2]}), each with an optional ±n")
+
+    def xy_cycles(self):
+        """xy references that come back to their node on one axis (q.cx → s.cx → t.cx →
+        q.cx; or q itself): no solve can hold them. One axis at a time — q's y on s and s's
+        x on q is fine. Yields (node, axis index, problem)."""
+        sp = self.spec
+        for i in (0, 1):
+            refs: Dict[str, Tuple[str, Expr]] = {}
+            for node in sp.nodes.values():
+                c = node.xy[i] if node.xy is not None else None
+                if isinstance(c, Expr) and c.kind == "node" and c.ref in sp.nodes:
+                    refs[node.id] = (c.ref, c)
+            for nid, (to, c) in refs.items():
+                path, cur = [nid], to
+                while cur in refs and cur not in path:
+                    path.append(cur)
+                    cur = refs[cur][0]
+                if cur == nid:
+                    loop = " → ".join(path + [nid])
+                    yield sp.nodes[nid], i, f"{c.ref}.{c.attr} refers back to {nid} ({loop}); {self.xy_hint(i)}"
 
     def xy_problem(self, node: Node, i: int, e) -> Optional[str]:
         """Why an `xy` expression cannot be tied to the solve, or None. A difference
         constraint can hold a node to a track, another node's icon edge / center, or a
-        group's edge — not a group's center, a label stack or a gap() corridor."""
+        group's edge — not a group's center, a label stack or a gap() corridor. (A loop of
+        references is xy_cycles'.)"""
         if not isinstance(e, Expr):
             return None
         sp = self.spec
         axis, attrs = ("col", ("x0", "cx", "x1")) if i == 0 else ("row", ("y0", "cy", "y1"))
-        hint = (f"xy[{i}] takes a number, {axis}.<track>, <node>.({'|'.join(attrs)}) or "
-                f"<group>.({attrs[0]}|{attrs[2]}), each with an optional ±n")
+        hint = self.xy_hint(i)
         if e.kind in ("col", "row"):
             return None if e.kind == axis else f"{e.kind}.{e.ref} is on the other axis; {hint}"
+        if e.kind in ("node", "group"):
+            t = sp.nodes.get(e.ref) if e.kind == "node" else sp.groups.get(e.ref)
+            if i == 1 and t is not None and node.template is not None and t.template == node.template \
+                    and t.instance != node.instance:
+                base = e.ref.rsplit(".", 1)[0]
+                return (f"{e.ref}.{e.attr} is in instance {t.instance} of the per template {node.template!r}, a row "
+                        f"away from {node.id} (instance {node.instance}); write {base}.{e.attr} to follow each "
+                        f"instance's own")
         if e.kind == "node":
             t = sp.nodes.get(e.ref)
             if e.attr not in attrs:
                 return f"{e.ref}.{e.attr} is on the other axis; {hint}"
-            if e.ref == node.id or (t is not None and t.xy is not None and any(
-                    isinstance(c, Expr) and c.kind == "node" and c.ref == node.id for c in t.xy)):
-                return f"{e.ref}.{e.attr} refers back to {node.id}; {hint}"
             if t is not None and i == 0 and t.col2 is not None:
                 return f"{e.ref} spans two columns (its center is no single variable); use col.<track>; {hint}"
             return None

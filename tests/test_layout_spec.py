@@ -423,6 +423,86 @@ class ExampleSpecs(unittest.TestCase):
         self.assertEqual(s.nodes["fn"].xy, (300.0, M.Expr("group", "vpc", "y1", offset=40)))
         self.assertIsNone(s.nodes["inet"].col)
 
+    def test_xy_references_back(self):
+        """A chain of xy references that comes back to its node on one axis is rejected
+        (itself, or q → s → t → q), naming the loop; across the two axes it is fine."""
+        def nodes(*xys):
+            d = base()
+            d["nodes"] += [{"id": nid, "icon": "service/AWS-Lambda", "label": nid.upper(), "in": "region", "xy": xy}
+                           for nid, xy in xys]
+            return d
+
+        hint0 = ("xy[0] takes a number, col.<track>, <node>.(x0|cx|x1) or <group>.(x0|x1), each with an "
+                 "optional ±n")
+        with self.assertRaises(SpecError) as cm:
+            L.load(nodes(("q", ["q.cx+10", "row.main"])))
+        self.assertEqual(cm.exception.problems, [f"nodes[3] q: xy[0]: q.cx refers back to q (q → q); {hint0}"])
+        with self.assertRaises(SpecError) as cm:
+            L.load(nodes(("q", ["s.cx+10", "row.main"]), ("s", ["t.cx+10", "row.main"]),
+                         ("t", ["q.cx+10", "row.main"])))
+        self.assertEqual(cm.exception.problems, [
+            f"nodes[3] q: xy[0]: s.cx refers back to q (q → s → t → q); {hint0}",
+            f"nodes[4] s: xy[0]: t.cx refers back to s (s → t → q → s); {hint0}",
+            f"nodes[5] t: xy[0]: q.cx refers back to t (t → q → s → t); {hint0}"])
+        s = L.load(nodes(("q", ["col.b", "s.cy"]), ("s", ["q.cx", 300])))          # y on s, x on q: no loop
+        self.assertEqual(s.nodes["q"].xy, (M.Expr("col", "b"), M.Expr("node", "s", "cy")))
+        self.assertEqual(s.nodes["s"].xy, (M.Expr("node", "q", "cx"), 300.0))
+        # a chain into a loop it is not on: only the loop's nodes are named
+        with self.assertRaises(SpecError) as cm:
+            L.load(nodes(("p", ["q.cx", "row.main"]), ("q", ["s.cx", "row.main"]), ("s", ["q.cx", "row.main"])))
+        self.assertEqual([m.split(":")[0] for m in cm.exception.problems], ["nodes[4] q", "nodes[5] s"])
+
+    def test_xy_on_a_colspan(self):
+        d = base()
+        d["nodes"] += [{"id": "w", "icon": "service/AWS-Lambda", "label": "W", "in": "region", "at": ["a..b", "main"]},
+                       {"id": "q", "icon": "service/AWS-Lambda", "label": "Q", "in": "region", "xy": ["w.cx", "w.cy"]}]
+        with self.assertRaises(SpecError) as cm:
+            L.load(d)
+        self.assertEqual(cm.exception.problems, [
+            "nodes[4] q: xy[0]: w spans two columns (its center is no single variable); use col.<track>; xy[0] "
+            "takes a number, col.<track>, <node>.(x0|cx|x1) or <group>.(x0|x1), each with an optional ±n"])
+        d["nodes"][-1]["xy"] = ["col.c", "w.cy"]                                     # its y is a row: fine
+        self.assertEqual(L.load(d).nodes["q"].xy, (M.Expr("col", "c"), M.Expr("node", "w", "cy")))
+
+    def test_xy_in_a_template(self):
+        """In a `per` template, xy names the item's own instance: a template sibling by its
+        base id, `row.<per row>` as the instance's row; an explicit other instance stays on
+        x and is rejected on y (it sits a row away)."""
+        def tmpl(xy, **kw):
+            d = base()
+            d["nodes"].append(dict({"id": "e2", "icon": "service/Amazon-EC2", "label": "EC2 B", "in": "sn",
+                                    "xy": xy}, **kw))
+            return d
+
+        s = L.load(tmpl(["col.c", "ec2.cy"]))
+        self.assertEqual([s.nodes[f"e2.{n}"].xy for n in (1, 2)],
+                         [(M.Expr("col", "c"), M.Expr("node", f"ec2.{n}", "cy")) for n in (1, 2)])
+        s = L.load(tmpl(["ec2.1.cx+90", "row.az1"]))
+        self.assertEqual([s.nodes[f"e2.{n}"].xy for n in (1, 2)],
+                         [(M.Expr("node", "ec2.1", "cx", offset=90), M.Expr("row", r)) for r in ("az1", "az2")])
+        s = L.load(tmpl(["sn.x1-40", "sn.y0+40"]))                      # a template group, per instance too
+        self.assertEqual(s.nodes["e2.2"].xy, (M.Expr("group", "sn.2", "x1", offset=-40),
+                                              M.Expr("group", "sn.2", "y0", offset=40)))
+        with self.assertRaises(SpecError) as cm:
+            L.load(tmpl(["col.c", "ec2.1.cy"]))
+        self.assertEqual(cm.exception.problems, [
+            "nodes[3] e2: xy[1]: ec2.1.cy is in instance 1 of the per template 'az', a row away from e2.2 "
+            "(instance 2); write ec2.cy to follow each instance's own"])
+        d = tmpl(["col.c", "ec2.cy"])
+        d["nodes"][0]["only"] = [1]
+        with self.assertRaises(SpecError) as cm:
+            L.load(d)
+        self.assertEqual(cm.exception.problems, [
+            "nodes[3] e2: xy[1]: expression 'ec2.cy': ec2 has no instance 2 (left out by `only:`), so e2.2 has "
+            "nothing to follow there"])
+        # outside the template the base id still names nothing
+        d = base()
+        d["nodes"].append({"id": "q", "icon": "service/AWS-Lambda", "label": "Q", "in": "region",
+                           "xy": ["col.c", "ec2.cy"]})
+        with self.assertRaises(SpecError) as cm:
+            L.load(d)
+        self.assertEqual(cm.exception.problems, ["nodes[3] q: xy[1]: expression 'ec2.cy': no node or group 'ec2'"])
+
 
 class ParseExpr(unittest.TestCase):
     def test_grammar(self):

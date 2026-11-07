@@ -208,8 +208,11 @@ raw: RawSpec.exprs maps a placeholder's inner text to its Expr ("{br.cx+4}" → 
 subset (svg2pptx.collect's tags; <g> with id / translate only; bundle: hrefs).
 eval_expr(expr, geom) below evaluates one (W3 for hints, W5 for raw). A node's `xy` takes the
 subset a difference constraint can hold (W1 rejects the rest): col.<t> / row.<t>, <node>.attr
-of a node that is not a colspan (x0/x1, y0/y1 = icon edges), <group>.(x0|x1|y0|y1), ±n; W2
-pins "node:<nid>" to it with two Requirements, so the node follows the solved tracks.
+of a node that is not a colspan (x0/x1, y0/y1 = icon edges), <group>.(x0|x1|y0|y1), ±n, with
+no chain of node references back to itself on one axis; W2 pins "node:<nid>" to it with two
+Requirements, so the node follows the solved tracks. A `per` template node's xy is resolved
+per instance n: a template item's base id names its instance n, `row.<per row>` the
+instance's row; a y reference to another instance of the template is rejected.
 
 =========================================================================================
 7. Text width
