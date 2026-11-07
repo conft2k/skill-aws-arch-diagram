@@ -276,12 +276,16 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   canvas margin cannot hold is not refused: the solve moves it, on that axis, to the
   nearest center they allow (rounded up to a whole px) and warns with the old and new
   value and what it keeps — `nodes[8] kms kms: xy y 30 moved 10 px down to 40 to keep
-  canvas margin 16; write 40 in xy[1] …`. A box edge with `in:` that box means its inner
-  edge: `in: cloud, xy: [cloud.x0, row.r]` lands pad + half an icon right of the border
-  (a node across a border is `on: <vpc>`, IGW / VGW only). A sibling the moved node then
-  lands on (closer than the grid's gap on both axes) is kept apart from it on the axis it
-  moved along, the neighbour giving way — `p` goes right of `q`, the Cloud below KMS — and
-  that is warned too; only a cycle no `xy` is part of is still refused. In a `per` template,
+  canvas margin 16; …` (template instances moved unalike: each, and the farthest to
+  write). A box edge with `in:` that box means its inner edge: `in: cloud, xy:
+  [cloud.x0, row.r]` lands the pad + half the node's footprint (icon or label, the wider)
+  right of the border (a node across a border is `on: <vpc>`, IGW / VGW only). A sibling
+  the moved node — or an xy following it (`t: [q.cx, …]`) — then lands on (closer than the
+  grid's gap on both axes) is kept apart from it on the axis it moved along, in the order
+  their centers have there (a tie: the sibling gives way — `p` goes right of `q`, the
+  Cloud below KMS), and that is warned too; writing the moved value yourself then also
+  needs that sibling moved, as the warning says. Only a cycle no `xy` is part of is still
+  refused. In a `per` template,
   another item of the template named by its own id means the same instance's
   (`xy: [col.b, e1.cy]` puts each `e2.n` level with `e1.n`) and `row.<a per row>` means the
   instance's own row; an explicit instance (`e1.1.cx`) stays as written, on x only — another

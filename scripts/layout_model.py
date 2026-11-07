@@ -989,6 +989,8 @@ class Requirement:
     pin: str = ""                   # one half of an `xy` tie of a node center to its reference: "lo"
                                     # (center − ref ≥ offset) or "hi" (ref − center ≥ −offset); W2 moves
                                     # the offset of a pin that closes a positive cycle (layout_solve)
+    moved: float = 0.0              # a moved pin: how far W2 moved its center (+ right / down)
+    moved_by: Tuple[str, ...] = ()  # … and the why of each constraint that moved it
 
 
 # =======================================================================================

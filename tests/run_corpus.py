@@ -22,8 +22,9 @@ An entry's `expect` (one value, or a map mode → value) says what each run must
 constraints). An entry that rejects or refuses in some mode also needs `match` (a text, or a
 map of those modes to texts) found in one of that refusal's lines, so a refusal for another
 reason does not pass; on a mode that loads, a `match` text must be in one of the engine's
-warnings (a spec the solve draws after moving something, saying what it moved). Exit status: 1 when a run ends otherwise (a crash or a timeout never
-matches), 2 when nothing matches the filters, else 0. Check problems and rule violations are
+warnings (a spec the solve draws after moving something, saying what it moved). Exit
+status: 1 when a run ends otherwise (a crash or a timeout never matches), 2 when nothing
+matches the filters, else 0. Check problems and rule violations are
 recorded, never judged here. A malformed manifest (unknown key, unknown rule, missing file,
 a file listed twice, …), or a corpus or docs/examples spec it does not list, stops the run
 before it starts. An entry with `known_fail: <why>` that does not end as expected is reported

@@ -1544,21 +1544,20 @@ def _solve_axis(m: _Model, axis: str, cons: List[Requirement]):
     """Longest path over cons. A positive cycle drops its soft requirements (a twin's
     spacing first) and retries; a cycle of hard ones that holds an `xy` pin moves that pin
     (_move_pin) and retries; any other raises SolveError naming each constraint. Returns
-    (dist, pred, the constraints solved: pins at their moved offsets)."""
+    (dist, pred, the constraints solved: pins at their moved offsets, each with the whys
+    that moved it — _pin_warnings reads them off the final solve's)."""
     cons = list(cons)
-    moved: Dict[str, list] = {}          # node id → [shift, whys]
-    rounds = 0
+    rounds, limit = 0, PIN_ROUNDS * (1 + sum(1 for c in cons if c.pin == "lo"))
     while True:
         dist, pred, cycle = _bellman_ford(cons)
         if cycle is None:
-            m.warnings.extend(_pin_warnings(m, axis, moved))
             return dist, pred, cons
         soft = [c for c in cycle if c.soft]
         if not soft:
             pins = [c for c in cycle if c.pin]
-            if pins and rounds < PIN_ROUNDS:
+            if pins and rounds < limit:
                 rounds += 1
-                cons = _move_pin(m, cons, cycle, pins, moved)
+                cons = _move_pin(m, cons, cycle, pins)
                 continue
             excess = sum(c.d for c in cycle)
             probs = [f"{_loc(m.spec, c.owner)}: contradictory {axis} constraint {c.why!r} "
@@ -1575,28 +1574,33 @@ def _solve_axis(m: _Model, axis: str, cons: List[Requirement]):
         cons = [c for c in cons if id(c) not in drop]
 
 
-def _move_pin(m: _Model, cons: List[Requirement], cycle, pins, moved) -> List[Requirement]:
+def _move_pin(m: _Model, cons: List[Requirement], cycle, pins) -> List[Requirement]:
     """An `xy` center the rest of the drawing cannot meet (a positive cycle through one half
     of its tie: inside its boxes' pad or below its label room, past the canvas margin, …):
     move its offset by the cycle's excess, rounded up to a whole px, the way the cycle
-    needs — the nearest center that cycle allows. Of several pins in one cycle the first
-    node in spec order moves. Both halves of the tie move, so it stays an equality."""
+    needs — the nearest center that cycle allows. The "lo" half (center − ref ≥ offset)
+    in the cycle asks a smaller coordinate (left / up), the "hi" half a larger one. Of
+    several pins in one cycle the first node in spec order moves. Both halves of the tie
+    move, so it stays an equality; both record the cycle's other whys (moved_by)."""
     order = {f"node:{nid}": i for i, nid in enumerate(m.spec.nodes)}
     c = min(pins, key=lambda r: (order.get(r.owner, len(order)), r.pin))
     excess = _up(sum(r.d for r in cycle))
-    delta = -excess if c.pin == "lo" else excess    # lo in the cycle: the center must come down
+    delta = -excess if c.pin == "lo" else excess
     var = c.b if c.pin == "lo" else c.a
+    whys = tuple(dict.fromkeys(r.why for r in cycle if not r.pin and r.why != "coordinate ≥ 0"))
     out = []
     for r in cons:
         if r.pin and r.owner == c.owner and (r.b if r.pin == "lo" else r.a) == var:
-            r = replace(r, d=r.d + delta if r.pin == "lo" else r.d - delta)
+            r = replace(r, d=r.d + delta if r.pin == "lo" else r.d - delta, moved=r.moved + delta,
+                        moved_by=tuple(dict.fromkeys(r.moved_by + whys)))
         out.append(r)
-    rec = moved.setdefault(var[5:], [0.0, []])
-    rec[0] += delta
-    for r in cycle:
-        if not r.pin and r.why != "coordinate ≥ 0" and r.why not in rec[1]:
-            rec[1].append(r.why)
     return out
+
+
+def _pin_moves(cons: Sequence[Requirement]) -> Dict[Tuple[str, str], float]:
+    """The xy pins a solve moved and by how much (to tell whether two solves moved the
+    same pins the same way)."""
+    return {(r.owner, r.pin): r.moved for r in cons if r.pin and r.moved}
 
 
 def _xy_text(src: str, c, shift: float) -> str:
@@ -1609,21 +1613,47 @@ def _xy_text(src: str, c, shift: float) -> str:
     return base + (f"{'+' if off > 0 else '-'}{fmt_num(abs(off))}" if off else "")
 
 
-def _pin_warnings(m: _Model, axis: str, moved) -> List[str]:
-    """What _move_pin did, per node: from where to where, why, and what to write instead."""
-    out = []
+def _pin_warnings(m: _Model, axis: str, cons: Sequence[Requirement], val: Dict[str, float]) -> List[str]:
+    """What _move_pin did, read off the final solve: per spec node (its template instances
+    together) from where to where, why, and what to write instead. With instances moved
+    unalike, the farthest move is the one to write (it holds for every instance). A node
+    that then landed on a sibling (m.avoid) says that writing the value alone leaves that
+    sibling on it."""
     i = 0 if axis == "x" else 1
-    for nid, (shift, whys) in moved.items():
-        if abs(shift) <= _EPS:
+    whys: Dict[str, Tuple[str, ...]] = {}
+    for r in cons:
+        if r.pin and r.moved_by:
+            nid = r.owner[5:]
+            whys[nid] = tuple(dict.fromkeys(whys.get(nid, ()) + r.moved_by))
+    groups: Dict[str, list] = {}
+    for nid, n in m.spec.nodes.items():
+        if n.xy is None:
             continue
-        n = m.spec.nodes[nid]
+        sh = _xy_shift(m, nid, axis, val)
+        if abs(sh) > 0.5:
+            groups.setdefault(n.src, []).append((nid, _up(sh) if sh > 0 else -_up(-sh)))
+    out = []
+    for src_loc, moves in groups.items():
+        n = m.spec.nodes[moves[0][0]]
         c = n.xy[i]
         src = n.xy_src[i] if n.xy_src else m.xy_ref(c, axis)[1]
-        way = ("right" if shift > 0 else "left") if axis == "x" else ("down" if shift > 0 else "up")
-        new = _xy_text(src, c, shift)
-        out.append(f"{_loc(m.spec, 'node:' + nid)}: xy {axis} {src} moved {fmt_num(abs(shift))} px {way} "
-                   f"to {new} to keep {'; '.join(whys)}; write {new} in xy[{i}] (or make room there) "
-                   f"to place it without this warning")
+        far = max(moves, key=lambda t: abs(t[1]))[1]
+        way = ("right" if far > 0 else "left") if axis == "x" else ("down" if far > 0 else "up")
+        new = _xy_text(src, c, far)
+        ids = ", ".join(nid for nid, _ in moves)
+        if len({sh for _, sh in moves}) == 1:
+            what = f"moved {fmt_num(abs(far))} px {way} to {new}"
+        else:
+            what = f"moved {way}: " + ", ".join(f"{nid} {fmt_num(abs(sh))} px to {_xy_text(src, c, sh)}"
+                                                 for nid, sh in moves) + ","
+        why = "; ".join(dict.fromkeys(w for nid, _ in moves for w in whys.get(nid, ()))) or "the constraints it meets"
+        keys = {f"node:{nid}" for nid, _ in moves}
+        others = list(dict.fromkeys(split_eid(k)[1] for a in m.avoid if a[3] in keys
+                                    for k in (a[1], a[2]) if k not in keys))
+        tail = (f"; writing {new} in xy[{i}] places it there, but then nothing keeps {', '.join(others)} off it: "
+                f"move {'them' if len(others) > 1 else 'that'} too" if others else
+                f"; write {new} in xy[{i}] (or make room there) to place it without this warning")
+        out.append(f"{src_loc} {ids}: xy {axis} {src} {what} to keep {why}{tail}")
     return out
 
 
@@ -1812,13 +1842,15 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool
     siblings and the drawing solved again, until none is left (_xy_clashes, at most
     AVOID_ROUNDS solves)."""
     avoid: List[Tuple[str, str, str, str]] = []
-    for k in range(AVOID_ROUNDS):
+    for _ in range(AVOID_ROUNDS):
         m, geom, xv, yv = _solve_once(spec, reqs, note_block, diag_x, avoid)
-        new = _xy_clashes(m, geom, xv, yv) if k + 1 < AVOID_ROUNDS else []
+        new = _xy_clashes(m, geom, xv, yv)
         if not new:
             break
         avoid = avoid + new
-    geom.warnings += [_avoid_warning(spec, a) for a in avoid]
+    geom.warnings += [_avoid_warning(spec, a) for a in avoid if a not in new]
+    geom.warnings += [f"{_loc(spec, a[3])}: its moved xy still lands on {split_eid(a[2] if a[1] == a[3] else a[1])[1]} "
+                      f"after {AVOID_ROUNDS} solves; give it an xy clear of it" for a in new]
     return geom
 
 
@@ -1887,6 +1919,7 @@ def _solve_once(spec: Spec, reqs: Sequence[Requirement], note_block, diag_x: boo
     m.warnings[w0:] = w
     m.align_stacks(ycons, yv)
     m.warnings += m.twins_unlike("x", xv) + m.twins_unlike("y", yv) + m.overlay_header_warnings()
+    m.warnings += _pin_warnings(m, "x", xcons, xv) + _pin_warnings(m, "y", ycons, yv)
 
     geom = _geometry(m, xv, yv, note_block)
     geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)
@@ -1902,29 +1935,50 @@ def _xy_shift(m: _Model, nid: str, axis: str, val: Dict[str, float]) -> float:
 
 
 def _xy_clashes(m: _Model, geom: Geometry, xv, yv) -> List[Tuple[str, str, str, str]]:
-    """The siblings a moved xy node lands on: its footprint and theirs (a box's rect, a
-    node's footprint) closer than the gap the grid keeps between them on both axes.
-    Each pair is kept apart on the axis the node moved along (the larger move), the one
-    whose center comes first on it first; a tie puts the node on the side it came from
-    (moved right: it stays left of the other)."""
+    """The siblings a moved xy node (or one whose xy follows a moved one) lands on: its
+    footprint and theirs (a box's rect, a node's footprint) closer than the gap the grid
+    keeps between them on both axes. Each pair is kept apart on the axis the node moved
+    along (the larger move), the one whose center comes first on it first; a tie puts the
+    node on the side it came from (moved right: it stays left of the other)."""
     out = []
     have = {(a[1], a[2]) for a in m.avoid} | {(a[2], a[1]) for a in m.avoid}
-    for nid, n in m.spec.nodes.items():
-        if n.xy is None:
-            continue
-        sh = {ax: _xy_shift(m, nid, ax, xv if ax == "x" else yv) for ax in ("x", "y")}
-        if max(abs(v) for v in sh.values()) <= 0.5:
-            continue
-        axis = "x" if abs(sh["x"]) > abs(sh["y"]) else "y"
+    sh = {nid: {ax: _xy_shift(m, nid, ax, xv if ax == "x" else yv) for ax in ("x", "y")}
+          for nid, n in m.spec.nodes.items() if n.xy is not None}
+    moved: Dict[str, Tuple[str, float]] = {}       # node → (axis, shift)
+    for nid, s in sh.items():
+        if max(abs(v) for v in s.values()) > 0.5:
+            axis = "x" if abs(s["x"]) > abs(s["y"]) else "y"
+            moved[nid] = (axis, s[axis])
+    # an xy following a moved one (`t: [q.cx, …]`) moved with it, on the axis that follows it
+    grew = True
+    while grew:
+        grew = False
+        for nid, n in m.spec.nodes.items():
+            if n.xy is None or nid in moved:
+                continue
+            for i, c in enumerate(n.xy):
+                if isinstance(c, Expr) and c.kind == "node" and c.ref in moved:
+                    ax = "x" if "x" in c.attr else "y"
+                    if abs(sh[c.ref][ax]) > 0.5:
+                        moved[nid] = ("x" if i == 0 else "y", sh[c.ref][ax])
+                        grew = True
+                        break
+    for nid in [k for k in m.spec.nodes if k in moved]:
+        n = m.spec.nodes[nid]
+        axis, shift = moved[nid]
         me = m.item_node(nid)
         mine = geom.nodes[nid].footprint()
         parent = n.parent
-        # its siblings as _siblings sees them (a border node: not its own VPC)
+        # its siblings as _siblings sees them (a border node: also its VPC's children and
+        # other border nodes, not the VPC itself)
         sibs = [f"group:{g}" for g in m.child_groups[parent] if g != n.on]
         sibs += [f"node:{o}" for o in m.child_nodes[parent] if o != nid]
         sibs += [f"node:{b}" for g in m.child_groups[parent] for b in m.border_of.get(g, []) if b != nid]
         if parent is not None:
             sibs += [f"node:{b}" for b in m.border_of.get(parent, []) if b != nid]
+        if n.on:
+            sibs += [f"group:{g}" for g in m.child_groups[n.on]] + [f"node:{o}" for o in m.child_nodes[n.on]]
+        sibs = list(dict.fromkeys(sibs))
         for key in sibs:
             if (me.key, key) in have:
                 continue
@@ -1940,7 +1994,7 @@ def _xy_clashes(m: _Model, geom: Geometry, xv, yv) -> List[Tuple[str, str, str, 
                 continue
             c0 = (mine.x0 + mine.x1) / 2 if axis == "x" else (mine.y0 + mine.y1) / 2
             c1 = (box.x0 + box.x1) / 2 if axis == "x" else (box.y0 + box.y1) / 2
-            first = c0 < c1 - _EPS or (abs(c0 - c1) <= _EPS and sh[axis] > 0)
+            first = c0 < c1 - _EPS or (abs(c0 - c1) <= _EPS and shift > 0)
             out.append((axis, me.key, key, me.key) if first else (axis, key, me.key, me.key))
             have |= {(me.key, key), (key, me.key)}
     return out
@@ -2052,13 +2106,18 @@ def _diagonals(m: _Model, ycons: List[Requirement], extra: Sequence[Requirement]
     stacked = _stacked_between(m)
     open_ = [p for p in m.diag_open if p not in stacked]
     w0 = len(m.warnings)
-    x0 = _extent(_solve_axis(m, "x", m.cons["x"] + [_map_req(m, r) for r in extra if r.axis == "x"])[0])
+    base = _solve_axis(m, "x", m.cons["x"] + [_map_req(m, r) for r in extra if r.axis == "x"])
+    x0, pins0 = _extent(base[0]), _pin_moves(base[2])
     xcost = {}
     for first, second, _ in open_:
         mp = _Model(m.spec, m.avoid)
         mp.diag_x = {frozenset((first.key, second.key))}
         try:
-            xcost[(first.key, second.key)] = _extent(_solve_x(mp, extra)[0]) - x0
+            out = _solve_x(mp, extra)
+            # a pair x can keep apart only by moving an xy center further than the solve
+            # without it does costs what a contradiction does: it stays on y
+            xcost[(first.key, second.key)] = (_extent(out[0]) - x0 if _pin_moves(out[2]) == pins0
+                                              else float("inf"))
         except SolveError:
             xcost[(first.key, second.key)] = float("inf")
 

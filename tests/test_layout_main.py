@@ -942,7 +942,7 @@ class XyMoved(unittest.TestCase):
                     self.assertLessEqual(e2.footprint().y1, sn.y1)
                     self.assertGreaterEqual(e2.footprint().x0 - e1.footprint().x1, spec.const.sibling_gap)
                     self.assertGreaterEqual(e2.cx - e1.cx, spec.const.node_pitch)
-                self.assertTrue(any("e2.1: xy y sn.y1-40 moved 14 px up to sn.y1-54" in w
+                self.assertTrue(any("e2 e2.1, e2.2: xy y sn.y1-40 moved 14 px up to sn.y1-54" in w
                                     and "write sn.y1-54 in xy[1]" in w for w in warns(b)), warns(b))
 
     def test_box_edge_means_inner_edge_and_the_neighbour_yields(self):
@@ -996,9 +996,62 @@ class XyMoved(unittest.TestCase):
 
     def test_a_pin_that_holds_is_not_moved(self):
         d = layout_spec._read(CORPUS / "xy/xy-grp.layout.yaml")[0]
-        d["nodes"][1]["xy"] = ["cloud.x0+40", "row.r"]
+        d["nodes"][1]["xy"] = [200, "row.r"]
         spec, b = xy_built(d, "document")
-        self.assertEqual(b.geom.nodes["q"].cx, b.geom.groups["cloud"].rect.x0 + 40)
+        self.assertEqual(b.geom.nodes["q"].cx, 200)
+        self.assertFalse([w for w in warns(b) if "moved" in w or "landed" in w], warns(b))
+        self.assertEqual([i.kind for i in CL.run_checks(ET.fromstring(b.svg))], [])
+
+    def test_writing_the_moved_value_alone_is_said_to_need_the_neighbour_moved(self):
+        d = layout_spec._read(CORPUS / "xy/xy-grp.layout.yaml")[0]
+        spec, b = xy_built(d, "document")
+        self.assertTrue(any("writing cloud.x0+40 in xy[0] places it there, but then nothing keeps p off it" in w
+                            for w in warns(b)), warns(b))
+
+    def test_template_instances_moved_unalike_name_the_farthest(self):
+        d = layout_spec._read(CORPUS / "xy/t-grp.layout.yaml")[0]
+        d["nodes"][1]["sub"] = {1: ["one"], 2: ["two", "three"]}
+        spec, b = xy_built(d, "document")
+        w = [x for x in warns(b) if "moved" in x]
+        self.assertEqual(len(w), 1, warns(b))                   # every round's solve reports it
+        self.assertIn("e2.1 30 px to sn.y1-70, e2.2 46 px to sn.y1-86", w[0])
+        self.assertIn("write sn.y1-86 in xy[1]", w[0])
+
+    def test_a_follower_of_a_moved_xy_keeps_off_its_sibling(self):
+        d = {"name": "follow", "mode": "document", "cols": ["a", "b"], "rows": ["r", "s"],
+             "groups": [{"id": "cloud", "type": "cloud"}],
+             "nodes": [{"id": "p", "icon": "service/Amazon-EC2", "label": "P", "in": "cloud", "at": ["b", "r"]},
+                       {"id": "o", "icon": "service/Amazon-EC2", "label": "O", "in": "cloud", "at": ["a", "s"]},
+                       {"id": "q", "icon": "service/Amazon-EC2", "label": "Q", "in": "cloud",
+                        "xy": ["cloud.x0", "row.r"]},
+                       {"id": "t", "icon": "service/Amazon-EC2", "label": "T", "in": "cloud",
+                        "xy": ["q.cx", "row.s"]}]}
+        for mode, more in XY_MODES:
+            with self.subTest(mode=mode, more=more), tempfile.TemporaryDirectory() as tmp:
+                src = Path(tmp) / "t.layout.json"
+                src.write_text(json.dumps(d), encoding="utf-8")
+                rc, text, kinds = main_file(src, mode, *more)
+                self.assertEqual(kinds, [], text)
+                self.assertIn("t t: its moved xy landed on node o", text)
+
+    def test_a_moved_border_node_keeps_off_its_vpcs_children(self):
+        d = layout_spec._read(CORPUS / "xy/xy-border.layout.yaml")[0]
+        d["nodes"][2]["xy"] = ["vpc.x1", "row.r"]
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "t.layout.json"
+            src.write_text(json.dumps(d), encoding="utf-8")
+            rc, text, kinds = main_file(src, "document")
+        self.assertEqual(kinds, [], text)
+        self.assertIn("igw igw: xy x vpc.x1 moved", text)
+
+    def test_a_diagonal_trial_that_would_move_an_xy_stays_on_y(self):
+        d = {"name": "diag3", "mode": "document", "cols": ["a", "b"], "rows": ["r", "s"],
+             "groups": [{"id": "cloud", "type": "cloud"}, {"id": "box", "type": "vpc", "label": "VPC", "in": "cloud"}],
+             "nodes": [{"id": "g", "icon": "service/Amazon-EC2", "label": "G", "in": "box", "at": ["b", "r"]},
+                       {"id": "z", "icon": "service/Amazon-EC2", "label": "Z", "in": "box", "xy": [130, "row.r"]},
+                       {"id": "p", "icon": "service/Amazon-EC2", "label": "P", "in": "cloud", "at": ["a", "s"]}]}
+        spec, b = xy_built(d, "document")
+        self.assertEqual(b.geom.nodes["z"].cx, 130)
         self.assertFalse([w for w in warns(b) if "moved" in w or "landed" in w], warns(b))
 
 

@@ -24,9 +24,10 @@
 #            violation of that rule naming that owner. Tag only what the draft shows, with
 #            the reason in a comment
 #   what     what the case exercises
-#   match    on an entry that rejects or refuses: text one of the refusal's lines must
-#            contain (or a map of those modes to texts); a map may also name modes that load,
-#            whose warnings must then contain the text (what the solve moved)
+#   match    text one of the run's lines must contain: a refusal's lines on a mode that
+#            rejects or refuses (required there), the engine's warnings on a mode that loads
+#            (what the solve moved); one text for the refusing modes (every mode when none
+#            refuses), or a map mode -> text
 #   known_fail  a recorded failure on the current engine (why, and what fixes it): reported as
 #            known instead of failing the run, and reported once it passes again
 #   note     why an expectation other than load holds
