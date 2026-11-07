@@ -681,5 +681,88 @@ class NodeLabelStack(unittest.TestCase):
                          ["TEXT NEAR ICON  'DLQ · DynamoDB' is within 8px of the icon at (80,144)"])
 
 
+
+class DraftNodeGroups(unittest.TestCase):
+    """In a layout.py draft a node's lines are the ones in its <g id="node:<nid>"> (with its
+    icon): a flow's leg beside the third line does not cut it off the node, and a connector
+    label centered under a label-only node is not taken for the node's sub line. Hand-drawn
+    SVGs (no such groups) fall back to label_stack, and attach line ends to the uncut stack."""
+
+    G = '<g id="{id}">{body}</g>'
+
+    def stack_beside_a_leg(self, third, groups):
+        """q (80,100) with its label and two sub lines (the third, 50px under the icon, as
+        given), its own stem down into q2 from BOTTOM_PORT_GAP under the third line, and m1's
+        unrelated leg straight down 10px right of the third line, then right into m2."""
+        g = (lambda gid, *parts: self.G.format(id=gid, body="".join(parts))) if groups else \
+            (lambda gid, *parts: "".join(parts))
+        right = 104 + CL.text_width(third, 12) / 2
+        x = right + 10
+        stack = ('<text x="104" y="166" font-size="14" text-anchor="middle">SQS</text>'
+                 '<text x="104" y="182" font-size="12" text-anchor="middle">orders queue</text>'
+                 f'<text x="104" y="198" font-size="12" text-anchor="middle">{third}</text>')
+        return svg(g("node:q", ICON.format(x=80, y=100), stack),
+                   g("node:q2", ICON.format(x=80, y=240)),
+                   g("node:m1", ICON.format(x=x - 24, y=0),
+                     f'<text x="{x}" y="66" font-size="14" text-anchor="middle">Worker</text>'),
+                   g("node:m2", ICON.format(x=300, y=240)),
+                   g("edge:0", POLY.format(pts=f"104,{198 + 8} 104,236")),
+                   g("edge:1", POLY.format(pts=f"{x},74 {x},264 296,264")))
+
+    def test_service_on_the_third_line_beside_a_leg(self):
+        """The audit's P1 repro: no SERVICE AS TEXT, no LOOSE END (q's stem starts at q)."""
+        root = self.stack_beside_a_leg("DLQ · DynamoDB", groups=True)
+        self.assertGreater(198 - 148, CL.STACK_REACH)
+        self.assertEqual([i.msg for i in CL.run_checks(root)], [])
+
+    def test_cidr_on_the_third_line_beside_a_leg(self):
+        """A bare CIDR sub line there is q's: no CIDR OFF HEADER."""
+        root = self.stack_beside_a_leg("10.1.0.0/16", groups=True)
+        self.assertEqual([i.msg for i in CL.run_checks(root)], [])
+
+    def test_hand_drawn_stem_attaches_to_the_uncut_stack(self):
+        """Without node groups the leg still cuts the third line off q's labels (it reads as
+        the leg's label), but q's own stem starting under it is q's: no LOOSE END."""
+        for third in ("DLQ · DynamoDB", "10.1.0.0/16"):
+            with self.subTest(third=third):
+                root = self.stack_beside_a_leg(third, groups=False)
+                self.assertEqual(kinds(root, "LOOSE END"), [])
+                texts, segs, _, icons, _ = CL.collect(root)
+                q = next(i for i in icons if i["box"][1] == 100)
+                self.assertEqual([t["y"] for t in CL.node_stacks(icons, texts, segs)[id(q["el"])]], [166, 182])
+                self.assertEqual(next(b for i, b in CL.footprints(icons, texts) if i is q)[3], 198 + CL.K.GLYPH_DESCENT * 12)
+
+    def label_under_a_label_only_node(self, groups):
+        """p (180,40) labelled 'Lambda' only; the flow l → r passes under it at y=137 with its
+        label centered under p, 42px under p's icon (within STACK_REACH)."""
+        g = (lambda gid, *parts: self.G.format(id=gid, body="".join(parts))) if groups else \
+            (lambda gid, *parts: "".join(parts))
+        return svg(g("node:p", ICON.format(x=180, y=40),
+                     '<text x="204" y="106" font-size="14" text-anchor="middle">Lambda</text>'),
+                   g("node:l", ICON.format(x=0, y=113)), g("node:r", ICON.format(x=400, y=113)),
+                   g("edge:0", POLY.format(pts="52,137 396,137")),
+                   g("edge:0:label", '<text x="204" y="130" font-size="12" text-anchor="middle">'
+                                     'writes · DynamoDB</text>'))
+
+    def test_connector_label_under_a_label_only_node(self):
+        """In a draft the label is the flow's (edge:0:label): SERVICE AS TEXT."""
+        self.assertLessEqual(130 - 88, CL.STACK_REACH)
+        iss = kinds(self.label_under_a_label_only_node(groups=True), "SERVICE AS TEXT")
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+        self.assertIn("connector label 'writes · DynamoDB'", iss[0].msg)
+
+    def test_hand_drawn_label_under_a_label_only_node(self):
+        """Without groups, a centered line that close under the icon is read as p's sub line."""
+        self.assertEqual(kinds(self.label_under_a_label_only_node(groups=False), "SERVICE AS TEXT"), [])
+
+    def test_owner_of_each_element(self):
+        """collect records each element's nearest <g id> (None outside any)."""
+        texts, segs, _, icons, _ = CL.collect(self.label_under_a_label_only_node(groups=True))
+        self.assertEqual([t["own"] for t in texts], ["node:p", "edge:0:label"])
+        self.assertEqual({s["own"] for s in segs if s["kind"] == "connector"}, {"edge:0"})
+        self.assertEqual([i["own"] for i in icons], ["node:p", "node:l", "node:r"])
+        texts, _, _, icons, _ = CL.collect(self.label_under_a_label_only_node(groups=False))
+        self.assertEqual({t["own"] for t in texts} | {i["own"] for i in icons}, {None})
+
 if __name__ == "__main__":
     unittest.main()

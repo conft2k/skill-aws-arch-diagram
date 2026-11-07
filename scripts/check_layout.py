@@ -205,12 +205,17 @@ def seg_hits_box(p, q, b):
 
 
 def collect(svg_root):
+    """The drawing's texts, segments (connectors and container borders), masks and icons
+    (images, circles), each a dict with its element ("el"), document order ("o") and the
+    id of its nearest enclosing <g id> ("own", None outside any: a layout.py draft wraps
+    each owner's elements in one, "node:<nid>", "edge:<n>", "edge:<n>:label", ...), and
+    the canvas (w, h)."""
     texts, segs, masks, icons = [], [], [], []
     canvas = svg_root.get("viewBox", "0 0 0 0").split()
     cw, ch = num(canvas[2]), num(canvas[3])
     order = 0
 
-    def walk(el, ox, oy):
+    def walk(el, ox, oy, own):
         nonlocal order
         dx, dy = translate(el)
         ox, oy = ox + dx, oy + dy
@@ -218,6 +223,8 @@ def collect(svg_root):
         order += 1
         if tag == "defs" or tag == "marker":
             return
+        if tag == "g" and el.get("id"):
+            own = el.get("id")
         if tag == "text":
             s = "".join(el.itertext()).strip()
             if s:
@@ -230,7 +237,7 @@ def collect(svg_root):
                               "fill": el.get("fill", "").lower(),
                               "cx": x0 + w / 2, "y": y,
                               "header": el.get("font-weight", "") in ("600", "700", "bold"),
-                              "el": el, "off": (ox, oy)})
+                              "el": el, "off": (ox, oy), "own": own})
                 texts[-1]["title"] = texts[-1]["header"] and fs >= K.TEXT_TITLE_SIZE
         elif tag in ("line", "polyline"):
             if tag == "line":
@@ -240,7 +247,7 @@ def collect(svg_root):
                 pts = [num(v) for v in re.split(r"[ ,]+", el.get("points", "").strip()) if v]
                 pts = [(pts[i] + ox, pts[i + 1] + oy) for i in range(0, len(pts) - 1, 2)]
             new = [{"p": p, "q": q, "kind": "connector", "o": order, "el": el, "i": k, "off": (ox, oy),
-                    "n": len(pts) - 1}
+                    "n": len(pts) - 1, "own": own}
                    for k, (p, q) in enumerate(zip(pts, pts[1:]))]
             # The segment an arrowhead sits on (last for marker-end, first for marker-start).
             if new and el.get("marker-end"):
@@ -258,25 +265,27 @@ def collect(svg_root):
             if stroke != "none":
                 c = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
                 for k, (p, q) in enumerate(zip(c, c[1:] + c[:1])):
-                    segs.append({"p": p, "q": q, "kind": "border", "o": order, "el": el, "i": k, "off": (ox, oy)})
+                    segs.append({"p": p, "q": q, "kind": "border", "o": order, "el": el, "i": k, "off": (ox, oy),
+                                 "own": own})
             elif fill in WHITE and not (w >= cw and h >= ch):
-                masks.append({"box": (x, y, x + w, y + h), "o": order, "el": el, "off": (ox, oy)})
+                masks.append({"box": (x, y, x + w, y + h), "o": order, "el": el, "off": (ox, oy), "own": own})
         elif tag == "image":
             x, y = num(el.get("x")) + ox, num(el.get("y")) + oy
             href = el.get("href") or el.get("{http://www.w3.org/1999/xlink}href") or ""
             icons.append({"box": (x, y, x + num(el.get("width")), y + num(el.get("height"))),
                           "o": order, "badge": "group/" in href[:40],
                           "ref": href[len("bundle:"):] if href.startswith("bundle:") else "",
-                          "el": el, "off": (ox, oy)})
+                          "el": el, "off": (ox, oy), "own": own})
         elif tag == "circle":
             cx, cy, r = num(el.get("cx")) + ox, num(el.get("cy")) + oy, num(el.get("r"))
             # r <= JUNCTION_DOT_R: a junction dot drawn on a connector on purpose (e.g. segment membership)
             icons.append({"box": (cx - r, cy - r, cx + r, cy + r), "o": order, "badge": True,
-                          "dot": (cx, cy) if r <= K.JUNCTION_DOT_R else None, "el": el, "off": (ox, oy)})
+                          "dot": (cx, cy) if r <= K.JUNCTION_DOT_R else None, "el": el, "off": (ox, oy),
+                          "own": own})
         for child in el:
-            walk(child, ox, oy)
+            walk(child, ox, oy, own)
 
-    walk(svg_root, 0.0, 0.0)
+    walk(svg_root, 0.0, 0.0, None)
     return texts, segs, masks, icons, (cw, ch)
 
 
@@ -446,18 +455,40 @@ def label_stack(box, texts, tol=3, cut=()):
     return out
 
 
-def node_stacks(icons, texts, segs, tol=3):
-    """Each node's label_stack ({id(icon element): lines}), its chain past STACK_REACH cut at a
-    line by a connector that doesn't end on that node (one leaving it may run beside its stack). Which node a connector end
-    attaches to is read off the uncut stacks' footprints (STACK_REACH and STACK_STEP alone),
-    so the order is fixed: uncut stacks → their footprints → each end's node → the cut stacks."""
-    nodes = [i for i in icons if not i["badge"]]
-    feet = []
-    for i in nodes:
-        b = i["box"]
-        for t in label_stack(b, texts):
-            b = union(b, t["box"])
-        feet.append((i, b))
+def owned_stacks(icons, texts):
+    """The label lines of each node icon in a layout.py draft's <g id="node:<nid>"> (W5 wraps
+    a node's mask, icon and label lines in it), by baseline: {id(icon element): lines}. An
+    icon outside such a group (a hand-drawn SVG, a raw fragment) is left out."""
+    lines = {}
+    for t in texts:
+        if (t.get("own") or "").startswith("node:"):
+            lines.setdefault(t["own"], []).append(t)
+    return {id(i["el"]): sorted(lines.get(i["own"], ()), key=lambda t: t["y"])
+            for i in icons if not i["badge"] and (i.get("own") or "").startswith("node:")}
+
+
+def attach_stacks(icons, texts):
+    """Each node's label lines a connector end attaches to ({id(icon element): lines}): its
+    node group's lines in a draft (owned_stacks), else its whole label_stack (STACK_REACH and
+    STACK_STEP alone, never cut: a stem out of a node leaves from under its last line)."""
+    owned = owned_stacks(icons, texts)
+    return {id(i["el"]): owned[id(i["el"])] if id(i["el"]) in owned else label_stack(i["box"], texts)
+            for i in icons if not i["badge"]}
+
+
+def node_stacks(icons, texts, segs, tol=3, feet=None):
+    """Each node's own label lines ({id(icon element): lines}). In a layout.py draft they are
+    the lines in its node group (owned_stacks). Elsewhere it is its label_stack, its chain
+    past STACK_REACH cut at a line by a connector that doesn't end on that node (one leaving
+    it may run beside its stack). Which node a connector end attaches to is read off the
+    uncut stacks' footprints (feet: footprints(), attach_stacks), so the order is fixed:
+    uncut stacks → their footprints → each end's node → the cut stacks."""
+    out = owned_stacks(icons, texts)
+    rest = [i for i in icons if not i["badge"] and id(i["el"]) not in out]
+    if not rest:
+        return out
+    if feet is None:
+        feet = footprints(icons, texts)
     runs = {}
     for s in segs:
         if s["kind"] == "connector":
@@ -467,16 +498,18 @@ def node_stacks(icons, texts, segs, tol=3):
         pts = collections.Counter(pt for s in run for pt in (s["p"], s["q"]))
         owners = {id(i["el"]) for pt, n in pts.items() if n == 1 for i in [end_icon(pt, feet)] if i is not None}
         ends_on.append((run, owners))
-    return {id(i["el"]): label_stack(i["box"], texts, tol,
-                                     [s for run, own in ends_on if id(i["el"]) not in own for s in run])
-            for i in nodes}
+    for i in rest:
+        out[id(i["el"])] = label_stack(i["box"], texts, tol,
+                                       [s for run, own in ends_on if id(i["el"]) not in own for s in run])
+    return out
 
 
-def footprints(icons, texts, segs, stacks=None):
-    """Each node icon (badges and junction dots aside) with its box grown over its own label
-    lines (stacks: node_stacks) — the stack a connector end attaches to: [(icon, box)]."""
+def footprints(icons, texts, stacks=None):
+    """Each node icon (badges and junction dots aside) with its box grown over its label lines
+    (stacks; default attach_stacks: its node group's lines in a draft, else its uncut
+    label_stack) — what a connector end attaches to: [(icon, box)]."""
     if stacks is None:
-        stacks = node_stacks(icons, texts, segs)
+        stacks = attach_stacks(icons, texts)
     out = []
     for i in icons:
         if i["badge"]:
@@ -815,7 +848,7 @@ def loose_ends(root):
     for s in segs:
         if s["kind"] == "connector":
             paths.setdefault(id(s["el"]), []).append(s)
-    return open_ends(paths, footprints(icons, texts, segs), container_rects(root), texts)
+    return open_ends(paths, footprints(icons, texts), container_rects(root), texts)
 
 
 def stray_dots(root):
@@ -860,8 +893,10 @@ def run_checks(root):
     texts, segs, masks, icons, (cw, ch) = collect(root)
     issues = []
     # A node's label and its sub lines (node_stacks) name that node: they aren't connector
-    # labels, and they may sit close to their own icon.
-    own_lines = node_stacks(icons, texts, segs)
+    # labels, and they may sit close to their own icon. A connector end attaches to a node's
+    # footprint over all of its lines (uncut: a stem leaves from under the last one).
+    feet = footprints(icons, texts)
+    own_lines = node_stacks(icons, texts, segs, feet=feet)
     stacks = {id(i): {id(t) for t in own_lines[id(i["el"])]} for i in icons if not i["badge"]}
     node_labels = set().union(*stacks.values())
 
@@ -963,7 +998,6 @@ def run_checks(root):
         add("LINE ON LINE", f"LINE ON LINE    connector {fmt(s)} lies on one line with connector {fmt(o)}, "
             f"{d:g}px apart — two flows read as one straight line through the gap; take one off that line "
             f"(another shape, port or lane) or draw them as one trunk", [s, o], s=s, o=o, d=d)
-    feet = footprints(icons, texts, segs, own_lines)
     # A line alone in its net (no other line's end on it, its ends on no other line) with an
     # end on nothing leads nowhere: a merge branch left short of its trunk, a fork stem off
     # its branches. A net of several lines (a bus and its drops) may keep an open end, and an
