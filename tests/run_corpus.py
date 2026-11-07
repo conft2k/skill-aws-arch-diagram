@@ -36,8 +36,8 @@ draft, run) — run a copy of the run's record — and returns a list of violati
 ({"rule": "R-rt", "msg": "..."} dicts); they land in the report's `violations`. An entry's
 `good` (rules with no violation in any drawn run) and `bad` (rule → an owner id some violation
 of it must name, in every drawn run, or a map of some modes to one) are compared with them:
-the disagreeing runs are printed and kept in the report's `tag_misses`, without changing the
-exit status.
+the disagreeing runs, and those whose checker failed (a checker-error: their tags are not
+judged), are printed and kept in the report's `tag_misses`, without changing the exit status.
 
 Needs PyYAML (the manifest and the specs are YAML). Python 3.9+.
 """
@@ -366,6 +366,13 @@ def tag_misses(entry: Dict[str, Any], runs: List[Dict[str, Any]]) -> List[str]:
     out = []
     for r in runs:
         if r["result"] != "drawn":
+            continue
+        broke = [v for v in r["violations"] if v.get("rule") == "checker-error"]
+        if broke:                       # no verdict to compare: every tag of the run is unjudged
+            tags = [f"good {t}" for t in entry.get("good", [])] + [f"bad {t}" for t in entry.get("bad", {})]
+            if tags:
+                out.append(f"{r['mode']}: {', '.join(tags)} not judged — the checker failed: "
+                           f"{broke[0].get('msg', '')[:160]}")
             continue
         for rule in entry.get("good", []):
             got = [v for v in r["violations"] if v.get("rule") == rule]

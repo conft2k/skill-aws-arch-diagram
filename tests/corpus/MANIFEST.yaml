@@ -53,8 +53,7 @@ cases:
     rules: [R-flow, R-rt, R-label]
     what: "centralized egress: RTs on inner rows a2/b1, one-way spoke trunks into TGW, separate tgw <-> eni.1/.2 lines"
     from: "bench/latest2/centralized-egress.layout.yaml"
-    good: [R-label]
-    bad: {R-rt: node:rtsp}   # as v2-1: RTs on the inner rows of the TGW column, outside their brackets
+    bad: {R-rt: node:rtsp, R-label: edge:8}   # as v2-1: RTs on the inner rows of the TGW column, outside their brackets; 'appliance mode' sits over the horizontal piece but nearest the vertical one it turns into (5.15px vs 6), left of it (L1 judges the own nearest piece)
   - path: bench/latest3-egress.layout.yaml
     rules: [R-flow, R-rt, R-label]
     what: "centralized egress: RTs on outer rows a1/b2, bidirectional spoke trunks, separate tgw <-> enis.1/.2 lines"
@@ -63,8 +62,7 @@ cases:
     rules: [R-flow, R-rt, R-label]
     what: "centralized egress: RTs on inner rows a2/b1, bidirectional spoke trunks, separate tgw <-> eni.1/.2 lines"
     from: "bench/v2-1/centralized-egress.layout.yaml"
-    good: [R-label]
-    bad: {R-rt: node:rtsp}   # Spoke RT above / Firewall RT below the TGW, each between a spoke and a Security VPC line (in no bracket of its own); 'appliance mode' above its horizontal piece at a corner
+    bad: {R-rt: node:rtsp, R-label: edge:8}   # Spoke RT above / Firewall RT below the TGW, each between a spoke and a Security VPC line (in no bracket of its own); 'appliance mode' over the horizontal piece at a corner but nearest the vertical one, left of it (L1: own nearest piece)
   - path: bench/v2-2-egress.layout.yaml
     rules: [R-flow, R-rt, R-label]
     what: "centralized egress: RTs on outer rows a1/b2, bidirectional spoke trunks, separate TGW lines, one-way eni -> fwe"
@@ -446,7 +444,7 @@ cases:
     rules: [R-flow, R-label]
     what: "lanes with ana min_gap_before 180, no Aurora overlay: labeled writer/reader, proxy -> writer.1"
     from: "review-lanes/j.yaml"
-    good: [R-label]   # 'PostgreSQL :5432' above its horizontal piece at a corner
+    bad: {R-label: {document: edge:23}}   # in the document 'PostgreSQL :5432' sits over its horizontal piece at a corner but nearest the vertical one (5.9px vs 6), left of it (L1: own nearest piece); the slides draw it clear
   - path: lanes/k.layout.yaml
     rules: [R-flow, R-label]
     what: "reworked lanes: WAF row, Cognito in web row, dbsn span, no overlay, step_at stem, proxy -> writer.1 HV"
@@ -1065,7 +1063,7 @@ examples:
   - path: ../../docs/examples/specs/nlb-mtls-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin]
     what: "NLB mutual TLS: client → IGW → NLB (nlb-sg, trust store from S3) → same-AZ EC2 in backend-sg, with a left legend pane"
-    good: [R-flow]   # badge 3 / 'TCP :80' are placed by the spec (step_at / label_at); arrows into the SGs end 4px inside the subnet borders
+    bad: {R-flow: edge:3}   # badge 3 and 'TCP :80', placed by step_at / label_at, sit 19.9 / 47.9px (slides: 35.4px) from their line: F5 judges every placement (only L1 exempts label_at); arrows into the SGs end 4px inside the subnet borders
   - path: ../../docs/examples/specs/nlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin]
     what: "Internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and regional ACM / CloudWatch / S3"
@@ -1075,7 +1073,8 @@ examples:
   - path: ../../docs/examples/specs/tgw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt]
     what: "TGW reference: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it"
-    good: [R-flow, R-rt]   # golden (TGW A RT inside the Dev/Test hull; each TGW's only table beside it)
+    good: [R-flow]
+    bad: {R-rt: node:rtb}   # TGW A RT inside the Dev/Test hull, but TGW B RT sits under TGW B, below every line its three associations (peering, DR, Analytics) draw: outside the bracket (RT1)
   - path: ../../docs/examples/specs/slides/alb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "ALB 3-tier slide: Users → IGW → internet-facing ALB → one ASG / target group over two AZs → RDS Multi-AZ, with Route 53 and the regional services (ACM, WAF, CloudWatch, S3) in one column right of the VPC"
@@ -1092,7 +1091,8 @@ examples:
   - path: ../../docs/examples/specs/slides/tgw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt, R-fit]
     what: "TGW reference slide: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it"
-    good: [R-flow, R-rt, R-label]   # golden slide; the VPC attachment verb sits above the horizontal piece at a corner
+    good: [R-flow, R-label]
+    bad: {R-rt: node:rtb}   # TGW B RT under TGW B, outside the bracket its three associations draw (RT1); the VPC attachment verb is as near the corner's vertical as its horizontal piece (6px each) and spans the horizontal one, above it
 
 # Not kept from the review scratch (about 440 spec files, 230 kept):
 #   - exact duplicates (same content ignoring name and mode: the -document/-slide pairs,
