@@ -25,7 +25,8 @@
 #            the reason in a comment
 #   what     what the case exercises
 #   match    on an entry that rejects or refuses: text one of the refusal's lines must
-#            contain (or a map of those modes to texts)
+#            contain (or a map of those modes to texts); a map may also name modes that load,
+#            whose warnings must then contain the text (what the solve moved)
 #   known_fail  a recorded failure on the current engine (why, and what fixes it): reported as
 #            known instead of failing the run, and reported once it passes again
 #   note     why an expectation other than load holds
@@ -274,10 +275,9 @@ cases:
     what: "pinned KMS at [svc, az2] in an align-bottom flow column, with kms -> s3"
     from: "r4-port/rf/r2_pin_bottom.layout.json"
   - path: flowcol/r3-xy-30.layout.yaml
-    expect: {document: refuse, slide: load, slide-no-title: load}
-    note: "xy y 30 is inside the document canvas margin (refused) but not the slide's"
-    match: "contradictory y constraint 'xy 30'"
-    rules: [R-flow, R-reject]
+    note: "xy y 30 is inside the document canvas margin: there the solve moves it down to 40 and the Cloud below it; the slide's margin takes 30 as written"
+    match: {document: "xy y 30 moved 10 px down to 40 to keep canvas margin 16"}
+    rules: [R-flow]
     what: "free xy node KMS at (600, 30) above the flow-column stack, with kms -> acm"
     from: "r4-port/rf/r3_xy_30.layout.json"
   - path: flowcol/r3-xy-560.layout.yaml
@@ -654,10 +654,9 @@ cases:
     what: "xy reference cycle through template instances (e2.1 -> e3.1 -> e2.1) is refused"
     from: "review-tgw/t_cyc.yaml"
   - path: xy/t-grp.layout.yaml
-    expect: refuse
-    note: "xy sn.y1-40 leaves the node's label outside its subnet: contradictory y"
-    match: "contradictory y constraint 'xy sn.1.y1-40'"
-    rules: [R-flow, R-reject]
+    note: "xy sn.y1-40 would leave the label below the subnet: moved up to sn.y1-54; col.c, which no grid node uses, gets a node's room instead of folding onto col a"
+    match: "xy y sn.y1-40 moved 14 px up to sn.y1-54"
+    rules: [R-flow]
     what: "per-AZ subnet template: e2 pinned xy [col.c, sn.y1-40] relative to its own subnet copy"
     from: "review-tgw/t_grp.yaml"
   - path: reject/xy-other-instance.layout.yaml
@@ -716,10 +715,9 @@ cases:
     what: "three-node xy reference cycle (q -> s -> t -> q) is refused"
     from: "review-tgw/xy_cycle3.yaml"
   - path: xy/xy-grp.layout.yaml
-    expect: refuse
-    note: "xy cloud.x0 puts the node on the cloud border, inside the cloud's pad: contradictory x"
-    match: "contradictory x constraint 'xy cloud.x0'"
-    rules: [R-flow, R-reject]
+    note: "in: cloud at xy cloud.x0 is read as the cloud's inner left edge: moved right by the pad + half the icon, and p it then lands on goes right of it"
+    match: {document: "xy x cloud.x0 moved 40 px right to cloud.x0+40", slide: "xy x cloud.x0 moved 32 px right to cloud.x0+32", slide-no-title: "xy x cloud.x0 moved 32 px right to cloud.x0+32"}
+    rules: [R-flow]
     what: "q pinned at xy [cloud.x0, row.r], i.e. on the cloud group's left edge"
     from: "review-tgw/xy_grp.yaml"
   - path: xy/xy-off.layout.yaml

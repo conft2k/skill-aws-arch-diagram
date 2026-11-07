@@ -21,7 +21,8 @@ An entry's `expect` (one value, or a map mode → value) says what each run must
 `refuse` — the spec loads but the solve refuses it (a LayoutError naming the contradictory
 constraints). An entry that rejects or refuses in some mode also needs `match` (a text, or a
 map of those modes to texts) found in one of that refusal's lines, so a refusal for another
-reason does not pass. Exit status: 1 when a run ends otherwise (a crash or a timeout never
+reason does not pass; on a mode that loads, a `match` text must be in one of the engine's
+warnings (a spec the solve draws after moving something, saying what it moved). Exit status: 1 when a run ends otherwise (a crash or a timeout never
 matches), 2 when nothing matches the filters, else 0. Check problems and rule violations are
 recorded, never judged here. A malformed manifest (unknown key, unknown rule, missing file,
 a file listed twice, …), or a corpus or docs/examples spec it does not list, stops the run
@@ -185,18 +186,17 @@ def load_manifest(path: Path = MANIFEST) -> List[Dict[str, Any]]:
             if bad or set(ex) - set(e["modes"]) or set(e["modes"]) - set(ex) or set(ex.values()) - set(EXPECT):
                 raise SystemExit(f"{path}: {e['path']}: bad modes {bad} or expect {e['expect']!r}")
             e["expect_by_mode"] = ex
-            # match: one text for every refusing mode, or a map refusing mode -> text
+            # match: one text for every refusing mode (every mode when none refuses), or a map
+            # mode -> text that names every refusing mode and may name loading ones (a warning)
             refusing = {m for m, v in ex.items() if v != "load"}
-            if not refusing and "match" in e:
-                raise SystemExit(f"{path}: {e['path']}: match on an entry that loads in every mode")
             mt = e.get("match")
-            mt = {m: mt for m in refusing} if isinstance(mt, str) else mt
+            mt = {m: mt for m in (refusing or e["modes"])} if isinstance(mt, str) else mt
             if (refusing or mt is not None) and not (
-                    isinstance(mt, dict) and set(mt) == refusing
+                    isinstance(mt, dict) and refusing <= set(mt) <= set(e["modes"])
                     and all(isinstance(t, str) and t for t in mt.values())):
                 raise SystemExit(f"{path}: {e['path']}: an entry expected to reject or refuse in some mode "
-                                 f"needs match (a non-empty text its refusal must contain, or a map of those "
-                                 f"modes to such texts), and only such an entry")
+                                 f"needs match (a non-empty text its refusal must contain, or a map of its "
+                                 f"modes to such texts, naming every refusing mode)")
             e["match_by_mode"] = mt or {}
             if "known_fail" in e and not (isinstance(e["known_fail"], str) and e["known_fail"]):
                 raise SystemExit(f"{path}: {e['path']}: known_fail must be a non-empty text (why it fails)")
@@ -355,8 +355,9 @@ def failed(entry: Dict[str, Any], runs: List[Dict[str, Any]]) -> Optional[str]:
         text = entry["match_by_mode"].get(r["mode"])
         if r["result"] != EXPECT[want]:
             why.append(f"{r['mode']}: expected {want} ({EXPECT[want]}), got {r['result']}")
-        elif text and not any(text in l for l in r["problems"]):
-            why.append(f"{r['mode']}: {want} as expected, but no line contains {text!r}")
+        elif text and not any(text in l for l in r["problems" if want != "load" else "warnings"]):
+            what = "line" if want != "load" else "warning"
+            why.append(f"{r['mode']}: {want} as expected, but no {what} contains {text!r}")
     return "; ".join(why) or None
 
 
