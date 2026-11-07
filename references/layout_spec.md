@@ -64,8 +64,11 @@ more than that + a sibling gap: their columns already order them, so the node ne
 the box's rows (and every other box on those rows) down, and the box only stays no higher
 than the node. A pair below each other for less (an IGW on the AZ gap row beside the AZ
 boxes), and two diagonal nodes, separate on the axis whose tracks are farther apart (equal:
-on y). On a document no empty column is needed to keep a VPC beside the TGW or a route
-table; on a tight slide, where x costs more than y, one may still be (slides/nfw `att`). An item is a name
+on y). The weighing counts a px of width and a px of height alike; when that leaves a
+slide under 10pt with a pair below each other, the engine lays it out again with every
+such pair beside each other and keeps whichever gives the larger text (a 1108 × 540 slide
+has half as much room down as across). No empty column is needed to keep a VPC beside the
+TGW or a route table, on a document or a slide (slides/nfw). An item is a name
 or `{id, min_gap_before: px, min_w: px, flow: px, align: top|center|bottom}`.
 `min_gap_before` is the least distance from the previous track's center to this one's. Two columns whose nodes share no row may
 land on the same x (only their order is kept) — a column outside the AZ boxes next to
@@ -399,10 +402,9 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 - **TGW route tables beside their attachments** (nfw): a column for each table on the
   TGW's row — `rtsp` between the spoke VPCs and the TGW, `rtfw` between the TGW and the
   inspection VPC — `shape: VH` on `tgw <-> eni.*` so the inspection lines leave the TGW's
-  top and bottom around `rtfw`. The document needs no empty column: the engine keeps the
-  table and VPC B, diagonal neighbours, apart on x. The 1108 × 540 slide keeps an empty
-  column (`att`) between the spokes and `rtsp`, since there x costs more than y and
-  without it VPC B moves down past the slide's height.
+  top and bottom around `rtfw`. Neither the document nor the slide needs an empty column:
+  the engine keeps the table and VPC B, diagonal neighbours, apart on x (on the 1108 × 540
+  slide because apart on y VPC B would move down past the slide's height).
 - **Two VPCs** (gwlb): two `vpc` groups in one Region, each with its own `az` template.
 
 ```yaml

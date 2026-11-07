@@ -2,7 +2,7 @@
 # Room for the two tables on a 1108 × 540 slide: the spoke VPCs' subnet label shortens to "Subnet" (the document's "App subnet"), the Spoke RT drops its route (legend step 2 has it), and "VPC attachment" moves to the inspection line
 name: nfw-reference-architecture
 mode: slide
-cols: [spoke, att, rtsp, tgw, rtfw, eni, fw, nat, igw, inet]   # att: an empty column so VPC B (az2, spoke) and the Spoke RT (main, rtsp) are two columns apart and separate on x, not on y; rtsp / rtfw: each TGW route table beside the attachments it is associated with, Spoke RT between the spoke VPCs and the TGW, Firewall RT between the TGW and the Inspection VPC
+cols: [spoke, rtsp, tgw, rtfw, eni, fw, nat, igw, inet]   # rtsp / rtfw: each TGW route table beside the attachments it is associated with, Spoke RT between the spoke VPCs and the TGW, Firewall RT between the TGW and the Inspection VPC; the engine keeps VPC B and the Spoke RT (diagonal neighbours) apart on x, since apart on y the slide would grow past 540 high
 rows: [az1, main, az2]
 
 groups:

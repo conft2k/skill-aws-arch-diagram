@@ -81,6 +81,40 @@ class Emit(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+class SlideDiagonals(unittest.TestCase):
+    """The solve weighs a diagonal pair's x and y growth px for px; a 1108 × 540 slide has
+    half the room down. slides/nfw without an empty column between the spokes and the
+    Spoke RT: the weighing keeps VPC B below the table (1036 × 578, 9.3pt), so build lays
+    it out again with every open pair on x (1102 × 538, 10pt) and keeps that."""
+
+    def pt(self, spec, g):
+        return K.slide_pt(g.canvas_w, g.canvas_h, spec.title)
+
+    def test_slide_too_small_on_y_goes_on_x(self):
+        spec, b = built("slides/nfw-reference-architecture")
+        self.assertNotIn("att", [t.id for t in spec.cols])
+        weighed = layout._build(spec, [], {}, None, "x.layout.yaml")
+        self.assertGreater(weighed.geom.diag_y, 0)                 # the weighing put pairs on y
+        self.assertIsNotNone(layout.slide_problem(spec, weighed.geom))
+        self.assertEqual(b.geom.diag_y, 0)                          # build kept the all-x pass
+        self.assertIsNone(layout.slide_problem(spec, b.geom))
+        self.assertGreater(self.pt(spec, b.geom), self.pt(spec, weighed.geom))
+        g, gap = b.geom, spec.const.sibling_gap
+        rt = g.nodes["rtsp"].footprint()
+        for v in ("vpca", "vpcb"):                                  # the Spoke RT beside both spokes
+            self.assertGreaterEqual(rt.x0 - g.groups[v].rect.x1, gap - 0.01, v)
+        self.assertLess(rt.x1, g.nodes["tgw"].footprint().x0)      # and left of the TGW
+        a, c = g.groups["vpca"].rect, g.groups["vpcb"].rect
+        self.assertEqual((a.w, a.h), (c.w, c.h))                    # the twins stay alike
+
+    def test_a_fitting_slide_keeps_the_weighing(self):
+        """A slide that fits (≥ 10pt) keeps what the weighing chose: no second pass."""
+        with mock.patch.object(layout, "_build", wraps=layout._build) as w:
+            spec, b = built("slides/nlb-reference-architecture")
+        self.assertIsNone(layout.slide_problem(spec, b.geom))
+        self.assertEqual(w.call_count, 1)
+
+
 class Raw(unittest.TestCase):
     def test_placeholders_and_layers(self):
         d = spec_dict("example")

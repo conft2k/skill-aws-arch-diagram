@@ -1,7 +1,7 @@
 """W2: spec + requirements → Geometry (difference constraints, longest path), and the
 Elements of every group and node.
 
-    solve(spec, reqs, note_block=None) -> Geometry
+    solve(spec, reqs, note_block=None, diag_x=False) -> Geometry
     draw(spec, geom) -> list[Element]
 
 The contract (variable names, coordinates, who fills what) is layout_model's docstring;
@@ -559,12 +559,6 @@ class _Model:
         (_, a1), (b0, _) = self._x_extent(a), self._x_extent(b)
         g, _ = self._gap("x", a, b)
         return g - (b0 - a1)
-
-    def y_short(self, a: _Item, b: _Item, yv: Dict[str, float]) -> float:
-        """How much more y keeps b (below) its y gap under a on yv (≤ 0: it is)."""
-        g, _ = self._gap("y", a, b)
-        (va, oa), (vb, ob) = self.hi(a, "y"), self.lo(b, "y")
-        return g - ((yv[vb] + ob) - (yv[va] + oa))
 
     def _x_apart(self, a: _Item, b: _Item) -> bool:
         """The solved x keeps a and b at least their x gap apart (y only, after x)."""
@@ -1541,7 +1535,9 @@ def _solve_x(m: _Model, extra: Sequence[Requirement]):
     return out
 
 
-def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
+def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None, diag_x: bool = False) -> Geometry:
+    """diag_x: keep every diagonal pair build("y") leaves open apart on x, without weighing
+    x against y (layout.build's retry for a slide the weighing leaves too small)."""
     m = _Model(spec)
     extra = list(reqs) + (list(note_block.requirements) if note_block is not None else [])
     mapped = {"x": [], "y": []}
@@ -1563,23 +1559,26 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
     m.xv, m.nodes_x, m.diag_open = xv, nodes_x, []
     m.build("y")
     m.y_after_x(xv, nodes_x)
-    pick = _diagonals(m, m.cons["y"] + mapped["y"], extra)
+    open_keys = {frozenset((first.key, second.key)) for first, second, _ in m.diag_open}
+    pick = open_keys if diag_x else _diagonals(m, m.cons["y"] + mapped["y"], extra)
     if pick:
         # a pair x keeps apart for less than y would: solve again with it on x (the rows
         # it no longer pushes stay where the rest puts them)
+        on_y = open_keys - pick
         m2 = _Model(spec)
         m2.diag_x = pick
         m = m2
         xbf, xpred, xcons, xv, nodes_x = _x_twins(m, extra)
         m.xv, m.nodes_x = xv, nodes_x
         m.build("y")
+        m.y_after_x(xv, nodes_x)
     else:
+        on_y = open_keys
         for first, second, owner in m.diag_open:
             m._sep("y", first, second, owner)
         m.diag_open = None
 
     # ---- y ---------------------------------------------------------------------------
-    m.y_after_x(xv, nodes_x)
     ycons_in = m.cons["y"] + mapped["y"]
     twins: Dict[tuple, Requirement] = {}
     w0 = len(m.warnings)
@@ -1607,6 +1606,7 @@ def solve(spec: Spec, reqs: Sequence[Requirement], note_block=None) -> Geometry:
     geom = _geometry(m, xv, yv, note_block)
     geom.explain = _explain(m, "x", xbf, xpred) + _explain(m, "y", ybf, ypred) + _explain_stacks(m, ybf, ypred, yv)
     geom.warnings = list(m.warnings)
+    geom.diag_y = len(on_y)
     return geom
 
 

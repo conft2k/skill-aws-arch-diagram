@@ -100,10 +100,28 @@ def value(var: str, geom: Geometry, axis: str) -> float:
 
 def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
           source: str) -> Build:
+    b = _build(spec, extra, skip, place, source)
+    if b.geom.diag_y and slide_problem(spec, b.geom):
+        # the solve weighs a diagonal pair's x and y growth px for px, but a 1108 × 540
+        # slide has half the room down: with the pairs put on y leaving the text under
+        # 10pt, build again with every pair on x and keep the larger text (both passes
+        # solve the note too, so its place and size follow the geometry it sits on)
+        try:
+            alt = _build(spec, extra, skip, place, source, diag_x=True)
+        except M.LayoutError:
+            return b
+        if K.slide_pt(alt.geom.canvas_w, alt.geom.canvas_h, spec.title) > \
+                K.slide_pt(b.geom.canvas_w, b.geom.canvas_h, spec.title):
+            return alt
+    return b
+
+
+def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
+           source: str, diag_x: bool = False) -> Build:
     reqs = layout_route.plan(spec) + list(extra)
-    geom0 = layout_solve.solve(spec, reqs)
+    geom0 = layout_solve.solve(spec, reqs, diag_x=diag_x)
     nb0 = layout_note.block(spec, geom0, place=place)
-    geom = layout_solve.solve(spec, reqs + nb0.requirements, note_block=nb0)
+    geom = layout_solve.solve(spec, reqs + nb0.requirements, note_block=nb0, diag_x=diag_x)
     nb = layout_note.block(spec, geom, place=nb0.place, width=nb0.w if nb0.place == "pane" else None)
     warns = list(nb0.warnings)
     for r in nb.requirements:          # the contract: nb's requirements hold on geom
