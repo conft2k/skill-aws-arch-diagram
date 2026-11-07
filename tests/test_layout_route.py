@@ -327,6 +327,32 @@ class Shapes(unittest.TestCase):
             e.op = "->"
         self.assertEqual([R._topology(spec)[n].shape for n in (1, 2)], ["VH", "HVH"])
 
+    def test_fan_ignores_a_forced_spoke(self):
+        """A spoke forced HVH (shape: or sides) is no fan member: the other spoke keeps its own
+        rule instead of flipping to VHV; a spoke forced VHV is a member, and the other
+        mirrors it."""
+        def topo(force):
+            return R._topology(layout_spec.load({
+                "name": "fanf", "mode": "slide", "cols": ["a1", "a2", "a3"], "rows": ["top", "main"],
+                "groups": [{"id": "cloud", "type": "cloud"}],
+                "nodes": [{"id": "hub", "icon": "service/AWS-Transit-Gateway", "label": "Hub", "in": "cloud",
+                           "at": ["a2", "main"]},
+                          {"id": "l", "icon": "service/Amazon-Virtual-Private-Cloud", "label": "L", "in": "cloud",
+                           "at": ["a1", "top"]},
+                          {"id": "r", "icon": "service/Amazon-Virtual-Private-Cloud", "label": "R", "in": "cloud",
+                           "at": ["a3", "top"]}],
+                "edges": [dict({"e": "hub -- l"}, **force), {"e": "hub -- r"}]}))
+        for force in ({"shape": "HVH"}, {"from_side": "left", "to_side": "right"}):
+            with self.subTest(force=force):
+                t = topo(force)
+                self.assertEqual((t[0].shape, t[1].shape), ("HVH", "HVH"))
+                self.assertNotIn("fan", t[1].note)
+        for force in ({"shape": "VHV"}, {"from_side": "top", "to_side": "bottom"}):
+            with self.subTest(force=force):
+                t = topo(force)
+                self.assertEqual((t[0].shape, t[1].shape), ("VHV", "VHV"))
+                self.assertIn("fan of spokes", t[1].note)
+
     def test_users_route53_is_vh(self):
         spec = layout_spec.load(spec_path("alb"))
         self.assertEqual(R.shapes(spec)[4], "VH")

@@ -233,14 +233,19 @@ def _topology(spec: Spec) -> Dict[int, _Topo]:
                 occ.add((e.a, sa))
             if e.b_kind == "node" and sb:
                 occ.add((e.b, sb))
-    # fans: a node's headless diagonal lines toward one vertical side, by horizontal side
+    # fans: a node's headless diagonal lines toward one vertical side, by horizontal side:
+    # the lines the rules below shape, and forced VHVs through that side (a forced HVH /
+    # HV / VH is no member, so forcing one spoke does not flip the other: fan_forced)
     fan: Dict[Tuple[str, int], set] = {}
     for e in spec.edges:
         t = out[e.n]
         if t.dx in (1, -1) and t.dy in (1, -1) and not (e.head_end or e.head_start) and not e.points:
-            if e.a_kind == "node":
+            sa, sb = _sides(e, VHV, t.dx, t.dy) if t.shape == VHV else (_vside(t.dy), _vside(-t.dy))
+            if t.shape not in (None, VHV):
+                continue
+            if e.a_kind == "node" and sa == _vside(t.dy):
                 fan.setdefault((e.a, t.dy), set()).add(t.dx)
-            if e.b_kind == "node":
+            if e.b_kind == "node" and sb == _vside(-t.dy):
                 fan.setdefault((e.b, -t.dy), set()).add(-t.dx)
     for e in spec.edges:
         t = out[e.n]
