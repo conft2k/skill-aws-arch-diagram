@@ -249,11 +249,8 @@ cases:
     what: "spec without a rows key is refused (rows is required, even when empty)"
     from: "r4-port/rf/r2_norows_key.layout.json"
   - path: flowcol/r2-overlay-mixed.layout.yaml
-    expect: refuse
-    note: "overlay over a node inside the VPC and one outside it: contradictory x"
-    match: "contradictory x constraint 'overlay og right of group:vpc'"
-    rules: [R-flow, R-reject]
-    what: "overlay group spanning a VPC template node (ec2.1) and a flow-column node (cw)"
+    rules: [R-flow]
+    what: "overlay group over a VPC template node (ec2.1) and a flow-column node (cw): drawn as two boxes titled Monitored (og in the App subnet, og.2 in the Region outside the VPC), with a warning"
     from: "r4-port/rf/r2_overlay_mixed.layout.json"
   - path: flowcol/r2-pin-bottom.layout.yaml
     rules: [R-flow]

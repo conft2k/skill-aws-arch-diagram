@@ -988,6 +988,82 @@ class FlowColumns(unittest.TestCase):
         self.assertEqual((s.cols[2].flow, s.cols[2].align), (float(s.const.flow_pitch), "center"))
 
 
+class SplitOverlays(unittest.TestCase):
+    """An overlay whose members sit in nested containers (an EC2 in a subnet of the VPC,
+    CloudWatch in the Region outside it) is drawn as boxes that cross no group border."""
+    MIXED = ROOT / "tests" / "corpus" / "flowcol" / "r2-overlay-mixed.layout.yaml"
+    WARN = ("groups[6] og: members ec2.1 (in vpc) and cw (outside vpc) cannot share one box without crossing a "
+            "group border; drew 2 boxes titled 'Monitored' (og around ec2.1; og.2 around cw); for one box, list "
+            "in `over:` only members on one side of vpc's border, or move cw into appsn.1")
+
+    def mixed(self, f=None):
+        yaml, loader = L._yaml_loader()
+        d = yaml.load(self.MIXED.read_text(encoding="utf-8"), Loader=loader)
+        if f:
+            f(d)
+        return L.load(d)
+
+    def test_nested_containers_split(self):
+        s = self.mixed()
+        self.assertEqual(list(s.groups)[-2:], ["og", "og.2"])
+        og, og2 = s.groups["og"], s.groups["og.2"]
+        self.assertEqual((og.over, og2.over), (["ec2.1"], ["cw"]))
+        same = [(g.type, g.label, g.dash, g.header, g.pad, g.src) for g in (og, og2)]
+        self.assertEqual(same[0], same[1])
+        self.assertEqual(same[0][:2], ("generic", "Monitored"))
+        self.assertEqual(s.warnings, [self.WARN])
+        g = layout_solve.solve(s, [])
+        box, box2 = g.groups["og"].rect, g.groups["og.2"].rect
+        self.assertTrue(g.groups["appsn.1"].rect.contains(box))
+        self.assertTrue(box.contains(g.nodes["ec2.1"].icon))
+        self.assertTrue(g.groups["region"].rect.contains(box2))
+        self.assertFalse(g.groups["vpc"].rect.overlaps(box2))
+        self.assertTrue(box2.contains(g.nodes["cw"].icon))
+        for i in ("acm", "s3"):
+            self.assertFalse(box2.overlaps(g.nodes[i].footprint()), i)
+
+    def test_one_container_stays_one_box(self):
+        for over in (["ec2.*"], ["acm", "cw"], ["ec2.1", "nat.1"]):
+            with self.subTest(over):
+                s = self.mixed(lambda d: d["groups"][-1].update(over=over, label="Monitored"))
+                self.assertNotIn("og.2", s.groups)
+                self.assertEqual(s.warnings, [])
+
+    def test_shipped_specs_keep_one_box(self):
+        """Every docs/examples and corpus spec but r2-overlay-mixed draws each overlay as one box."""
+        specs = sorted((ROOT / "docs" / "examples" / "specs").glob("*.layout.yaml"))
+        specs += sorted((ROOT / "tests" / "corpus").rglob("*.layout.yaml"))
+        split = []
+        for p in specs:
+            try:
+                s = L.load(p)
+            except SpecError:
+                continue
+            if any("cannot share one box" in w for w in s.warnings):
+                split.append(p.relative_to(ROOT).as_posix())
+        self.assertEqual(split, ["tests/corpus/flowcol/r2-overlay-mixed.layout.yaml"])
+
+    def test_edge_to_a_split_overlay(self):
+        s = self.mixed(lambda d: d["edges"].extend([{"e": "acm ..> og"}, {"e": "alb -> og"}, {"e": "og ..> s3"}]))
+        self.assertEqual([(e.a, e.b, e.b_kind) for e in s.edges[-3:]],
+                         [("acm", "og.2", "group"), ("alb", "og", "group"), ("og.2", "s3", "node")])
+        self.assertEqual(s.warnings, [self.WARN])
+        s = self.mixed(lambda d: d["edges"].append({"e": "acm ..> og.2"}))       # a box by its id
+        self.assertEqual(s.edges[-1].b, "og.2")
+
+    def test_edge_equally_near_two_boxes_warns(self):
+        def f(d):
+            d["groups"][-1]["over"] = ["ec2.*", "alb"]
+            d["edges"].append({"e": "users -> og"})
+        s = self.mixed(f)
+        self.assertEqual((s.groups["og"].over, s.groups["og.2"].over), (["ec2.1", "ec2.2"], ["alb"]))
+        self.assertEqual(s.edges[-1].b, "og")
+        self.assertEqual(s.warnings[1:], [
+            "edges[5] users -> og: 'og' is drawn as 2 boxes (og, og.2) and users is as near to og and og.2; drew "
+            "the line to og (name og.2 for the other)"])
+        self.assertIn("members ec2.1 (in az.1) and alb (outside az.1)", s.warnings[0])
+
+
 class Errors(unittest.TestCase):
     def test_each_kind(self):
         for case, f, want in ERRORS:

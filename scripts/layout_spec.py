@@ -20,6 +20,7 @@ to its Expr, so W5 substitutes with re.sub(r"\\{([^{}]+)\\}", …) and looks the
 """
 from __future__ import annotations
 
+import dataclasses
 import difflib
 import functools
 import json
@@ -977,6 +978,7 @@ class _Loader:
         self.inst: Dict[str, List[Tuple[int, str]]] = {}   # templated base id → [(n, id)]
         self.dropped: Dict[str, str] = {}                  # instance id left out by `only` → its src
         self.restricted: set = set()                       # base ids with `only` (directly or by a parent)
+        self.overlay_boxes: Dict[str, List[str]] = {}      # split overlay id → its box ids (split_overlay)
 
         def emit(base: str, n: Optional[int], parent: Optional[str], depth: int) -> None:
             r = self.graw[base]
@@ -1121,6 +1123,7 @@ class _Loader:
 
     def overlays(self) -> None:
         sp = self.spec
+        extra: Dict[str, Group] = {}
         for gid in self.gorder:
             r = self.graw[gid]
             if not r["over"]:
@@ -1138,6 +1141,90 @@ class _Loader:
             g.over = members
             if not members:
                 self.err(loc, "over: no member nodes")
+            else:
+                extra.update(self.split_overlay(g))
+        if extra:            # each split box right after the one keeping the id
+            order = list(sp.groups.items())
+            sp.groups.clear()
+            for gid, g in order:
+                sp.groups[gid] = g
+                for bid in self.overlay_boxes.get(gid, [])[1:]:
+                    sp.groups[bid] = extra[bid]
+
+    def split_overlay(self, g: Group) -> Dict[str, Group]:
+        """An overlay is one box around its members with its edges inside their containers
+        (an ASG across AZ columns spans the AZ borders between its member subnets). A member
+        whose container holds another member's (CloudWatch in the Region, an EC2 in a subnet
+        of the Region's VPC) cannot share that box: its edge would cross the inner member's
+        borders out to it. Such members go in boxes of their own, drawn with the same title
+        and style: the innermost containers first (none holds another member's), then the
+        next ones out, and so on. The box with the first member listed keeps the id, the
+        others are <id>.2, <id>.3 (edges to the id: overlay_end). Returns the new boxes."""
+        sp = self.spec
+        par = {m: sp.nodes[m].parent for m in g.over}
+
+        def holds(p, q):         # p strictly holds q (None, the top level, holds every group)
+            return p != q and (p is None or p in sp.ancestors(q))
+
+        left, parts = list(g.over), []
+        while left:
+            ps = {par[m] for m in left}
+            inner = {p for p in ps if not any(holds(p, q) for q in ps)}
+            parts.append([m for m in left if par[m] in inner])
+            left = [m for m in left if par[m] not in inner]
+        if len(parts) == 1:
+            return {}
+        parts.sort(key=lambda part: g.over.index(part[0]))
+        a, b = next((a, b) for a in g.over for b in g.over if holds(par[b], par[a]) or holds(par[a], par[b]))
+        inner_m, outer_m = (a, b) if holds(par[b], par[a]) else (b, a)
+        chain = sp.ancestors(par[inner_m])
+        border = chain[chain.index(par[outer_m]) - 1] if par[outer_m] is not None else chain[-1]
+        side = {inner_m: f"in {border}", outer_m: f"outside {border}"}
+        ids = [g.id] + [f"{g.id}.{k}" for k in range(2, len(parts) + 1)]
+        out = {bid: dataclasses.replace(g, id=bid, over=part, children=[], nodes=[])
+               for bid, part in zip(ids[1:], parts[1:])}
+        g.over = parts[0]
+        self.overlay_boxes[g.id] = ids
+        titled = f" titled {g.label!r}" if g.label else ""
+        boxes = "; ".join(f"{bid} around {', '.join(part)}" for bid, part in zip(ids, parts))
+        self.warn(g.src, f"members {a} ({side[a]}) and {b} ({side[b]}) cannot share one box without "
+                         f"crossing a group border; drew {len(parts)} boxes{titled} ({boxes}); for one box, "
+                         f"list in `over:` only members on one side of {border}'s border, or move {outer_m} "
+                         f"into {par[inner_m]}")
+        return out
+
+    def overlay_end(self, loc: str, x: str, other: str) -> str:
+        """An edge end naming an overlay drawn as several boxes (split_overlay): the box on
+        the other end's side of the borders — the one sharing its innermost container, then
+        the one fewer borders away (`s3 ..> og` with og around an EC2 in a subnet and og.2
+        around CloudWatch beside S3: og.2). A tie keeps the first box and warns."""
+        boxes = self.overlay_boxes.get(x)
+        if not boxes:
+            return x
+        sp = self.spec
+
+        def chain(eid):
+            if eid in sp.nodes:
+                return sp.node_chain(eid)
+            g = sp.groups[eid]
+            if not g.overlay:
+                return sp.ancestors(eid)
+            chains = [sp.node_chain(m) for m in g.over]
+            return [c for c in chains[0] if all(c in ch for ch in chains[1:])]
+
+        oc = chain(other)
+
+        def key(bid):
+            bc = chain(bid)
+            shared = sum(1 for c in oc if c in bc)
+            return -shared, len(oc) + len(bc) - 2 * shared
+
+        best = min(boxes, key=key)
+        tied = [bid for bid in boxes if key(bid) == key(best)]
+        if len(tied) > 1:
+            self.warn(loc, f"{x!r} is drawn as {len(boxes)} boxes ({', '.join(boxes)}) and {other} is as near "
+                           f"to {' and '.join(tied)}; drew the line to {best} (name {tied[1]} for the other)")
+        return best
 
     def ranges(self) -> None:
         """Group.cols / rows: the track range of descendants, over members, span, per row."""
@@ -1204,16 +1291,15 @@ class _Loader:
         def tracks(kind, a, b):
             return f"{kind} {a}" if a == b else f"{kind}s {a}–{b}"
 
-        for gid in self.gorder:
-            g = sp.groups.get(gid)
-            if g is None or not g.overlay or not g.cols or not g.rows:
+        for gid, g in sp.groups.items():          # split boxes too (split_overlay)
+            if not g.overlay or not g.cols or not g.rows:
                 continue
             (c0, c1), (r0, r1) = [(idx[a], idx[b]) for a, b in (g.cols, g.rows)]
             stray = [n.id for n in sp.nodes.values()
                      if n.id not in g.over and n.xy is None and n.col is not None and n.row is not None
                      and meets(c0, c1, (n.col, n.col2 or n.col)) and meets(r0, r1, (n.row, n.row))]
             if stray:
-                self.err(self.graw[gid]["loc"],
+                self.err(g.src if gid in self.graw else f"{g.src} (box {gid})",
                          f"over: its box covers {tracks('column', *g.cols)} and {tracks('row', *g.rows)}, "
                          f"so it would also hold {', '.join(stray)} (not members); list them in `over:`, move them "
                          f"off those tracks, or split the overlay")
@@ -1324,6 +1410,7 @@ class _Loader:
                 out += [(a, b) for (_, a), (_, b) in zip(As, Bt)]
             else:
                 out += [(a, b) for _, a in A for _, b in B]
+        out = [(self.overlay_end(loc, a, b), self.overlay_end(loc, b, a)) for a, b in out]
         for a, b in out:
             if a == b:
                 self.err(loc, f"e: {a!r} connects to itself")
