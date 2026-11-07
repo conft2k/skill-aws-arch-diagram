@@ -29,6 +29,7 @@ import embed  # noqa: E402
 import layout_const as K  # noqa: E402
 import layout_model as M  # noqa: E402
 import layout_solve as LS  # noqa: E402
+import layout_spec as LP  # noqa: E402
 from layout_model import Group, Node, NoteBlock, Requirement, SolveError, Spec, Track  # noqa: E402
 
 VERBOSE = "-v" in sys.argv
@@ -287,9 +288,10 @@ def side_vpcs(label2="EC2 with a much longer label here", icon2="service/Amazon-
     return build("side", ["c1", "d1"], ["r1", "r2"], groups, nodes)
 
 
-def asg_vpcs(asg=(True, False), label="Auto Scaling group web tier"):
-    """Two VPCs side by side, each one Private subnet with two EC2s on one row; an
-    ASG over VPC v's two EC2s where asg[v - 1] (its long title widens what it is over)."""
+def asg_vpcs(asg=(True, False), label="Auto Scaling group web tier", label1="EC2 with a much longer label"):
+    """Two VPCs side by side, each one Private subnet with two EC2s on one row (VPC 1's
+    first one titled label1); an ASG over VPC v's two EC2s where asg[v - 1] (its long title
+    widens what it is over)."""
     groups = [dict(id="cloud", type="cloud"), dict(id="region", type="region", label="Region", parent="cloud")]
     nodes, cols = [], []
     for v in ("1", "2"):
@@ -297,11 +299,51 @@ def asg_vpcs(asg=(True, False), label="Auto Scaling group web tier"):
                    dict(id=f"sn{v}", type="private", label="Private subnet", parent=f"vpc{v}")]
         for k in ("a", "b"):
             cols.append(f"{k}{v}")
-            nodes.append(dict(id=f"e{v}{k}", icon="service/Amazon-EC2", label="EC2", parent=f"sn{v}",
-                              col=f"{k}{v}", row="r1"))
+            nodes.append(dict(id=f"e{v}{k}", icon="service/Amazon-EC2", label=label1 if v + k == "1a" else "EC2",
+                              parent=f"sn{v}", col=f"{k}{v}", row="r1"))
     groups += [dict(id=f"asg{v}", type="asg", label=label, over=[f"e{v}a", f"e{v}b"])
                for v, on in zip(("1", "2"), asg) if on]
     return build("asg", cols, ["r1"], groups, nodes)
+
+
+def asg_az_vpcs(mode="document", asg=(True, True), igw=False, explicit=False, span=None):
+    """Two VPCs side by side over rows r1 / r2 (an AZ per row, a subnet in each, one EC2 in
+    each subnet: VPC 1's with a longer label), an ASG over each VPC's EC2s where asg[v - 1]:
+    the ASG reaches into both AZs of its VPC. igw: an IGW on VPC 1 only (the VPCs are no
+    twins, their AZs still are); explicit: hand-written AZs az<v>_<k> instead of a `per`
+    template (instances az<v>.<k>);
+    span: the ASGs' span (VPC v's columns: c<v>, g<v>, d<v>; the EC2s on c<v>, an empty
+    gap column g<v>, an IGW / nothing on d<v>)."""
+    groups = [{"id": "cloud", "type": "cloud"}, {"id": "region", "type": "region", "label": "Region", "in": "cloud"}]
+    nodes, cols = [], []
+    for v, label in (("1", "EC2 with a much longer label here"), ("2", "EC2")):
+        cols += [f"c{v}", f"g{v}", f"d{v}"]
+        groups.append({"id": f"vpc{v}", "type": "vpc", "label": f"VPC {v}", "cidr": f"10.{v}.0.0/16", "in": "region"})
+        if explicit:
+            for k, row in (("1", "r1"), ("2", "r2")):
+                groups += [{"id": f"az{v}_{k}", "type": "az", "label": "AZ", "in": f"vpc{v}"},
+                           {"id": f"sn{v}_{k}", "type": "private", "label": "App subnet", "in": f"az{v}_{k}"}]
+                nodes.append({"id": f"e{v}_{k}", "icon": "service/Amazon-EC2", "label": label, "in": f"sn{v}_{k}",
+                              "at": [f"c{v}", row]})
+        else:
+            groups += [{"id": f"az{v}", "type": "az", "label": "AZ", "in": f"vpc{v}", "per": ["r1", "r2"]},
+                       {"id": f"sn{v}", "type": "private", "label": "App subnet", "in": f"az{v}"}]
+            nodes.append({"id": f"e{v}", "icon": "service/Amazon-EC2", "label": label, "in": f"sn{v}", "col": f"c{v}"})
+        if span:
+            nodes.append({"id": f"x{v}", "icon": "service/Amazon-EC2", "label": "EC2", "in": f"vpc{v}",
+                          "at": [f"d{v}", "main"]})
+        if asg[int(v) - 1]:
+            g = {"id": f"asg{v}", "type": "asg", "label": "ASG",
+                 "over": [f"e{v}_1", f"e{v}_2"] if explicit else [f"e{v}.*"]}
+            if span:
+                g["span"] = {"cols": [f"c{v}", f"{span}{v}"]}
+            groups.append(g)
+    if igw:
+        cols.insert(0, "igw")
+        nodes.append({"id": "igw", "icon": "resource/Amazon-VPC_Internet-Gateway", "label": "IGW", "on": "vpc1",
+                      "at": ["igw", "main"]})
+    return LP.load({"name": "asg-az", "mode": mode, "cols": cols, "rows": ["r1", "main", "r2"], "groups": groups,
+                    "nodes": nodes})
 
 
 def flowcol_spec(mode="slide", pitch=100, align="center", n=4):
@@ -1282,7 +1324,7 @@ class TwinTest(unittest.TestCase):
         spec = asg_vpcs((True, False))
         self.assertEqual(LS._Model(spec).twin_sets(), [])
         g = LS.solve(spec, [])
-        bare = LS.solve(asg_vpcs((False, False)), [])
+        bare = LS.solve(asg_vpcs((False, False), label1="EC2"), [])
         for d in ("vpc2", "sn2"):
             self.assertEqual(g.groups[d].rect.w, bare.groups[d].rect.w, d)
         self.assertLess(g.groups["vpc2"].rect.w, g.groups["vpc1"].rect.w)
@@ -1294,6 +1336,71 @@ class TwinTest(unittest.TestCase):
         gb = LS.solve(both, [])
         self.assertEqual(self.rel(gb, "sn1", "vpc1"), self.rel(gb, "sn2", "vpc2"))
         self.assertEqual(self.rel(gb, "asg1", "vpc1"), self.rel(gb, "asg2", "vpc2"))
+
+    @staticmethod
+    def classes(spec):
+        return sorted(sorted(c[0] for c in cls) for cls in LS._Model(spec).twin_sets())
+
+    def assert_alike(self, g, pairs):
+        for a, b, ra, rb in pairs:
+            self.assertEqual(self.rel(g, a, ra), self.rel(g, b, rb), (a, b))
+
+    def test_an_asg_across_the_azs_of_twin_vpcs(self):
+        """Each VPC's ASG reaches into both of its AZs (template instances, or hand-written
+        AZs alike) and VPC 1's EC2 has the longer label: the VPCs, the AZs and subnets of one
+        instance number and the ASGs are all drawn alike, no warning."""
+        for mode in ("document", "slide"):
+            for explicit in (False, True):
+                with self.subTest(mode=mode, explicit=explicit):
+                    spec = asg_az_vpcs(mode, explicit=explicit)
+                    k1, k2 = ("_1", "_2") if explicit else (".1", ".2")
+                    self.assertEqual(self.classes(spec), [[f"az1{k1}", f"az2{k1}"], [f"az1{k2}", f"az2{k2}"],
+                                                          [f"sn1{k1}", f"sn2{k1}"], [f"sn1{k2}", f"sn2{k2}"],
+                                                          ["vpc1", "vpc2"]])
+                    g = LS.solve(spec, [])
+                    self.assertEqual(g.warnings, [])
+                    self.assert_alike(g, [(f"{d}1{k}", f"{d}2{k}", "vpc1", "vpc2")
+                                          for d in ("az", "sn") for k in (k1, k2)])
+                    self.assertEqual(self.rel(g, "vpc1", "region")[2:], self.rel(g, "vpc2", "region")[2:])
+                    self.assert_alike(g, [("asg1", "asg2", "vpc1", "vpc2"),
+                                          ("asg1", "asg2", f"az1{k1}", f"az2{k1}")])
+                    self.assertEqual(check(spec, g), [])
+
+    def test_an_asg_across_the_azs_of_vpcs_that_differ(self):
+        """An IGW on VPC 1 only: the VPCs are no twins, but the AZs and subnets each ASG
+        reaches into still are (the same part of an equal ASG), drawn alike with their
+        ASGs; with an ASG in VPC 1 only, the AZs are no twins either."""
+        for mode in ("document", "slide"):
+            with self.subTest(mode=mode):
+                spec = asg_az_vpcs(mode, igw=True)
+                self.assertEqual(self.classes(spec), [["az1.1", "az2.1"], ["az1.2", "az2.2"],
+                                                      ["sn1.1", "sn2.1"], ["sn1.2", "sn2.2"]])
+                g = LS.solve(spec, [])
+                self.assertEqual(g.warnings, [])
+                for k in (".1", ".2"):
+                    self.assertEqual(self.rel(g, f"az1{k}", "vpc1")[2:], self.rel(g, f"az2{k}", "vpc2")[2:])
+                    self.assert_alike(g, [(f"sn1{k}", f"sn2{k}", f"az1{k}", f"az2{k}"),
+                                          ("asg1", "asg2", f"az1{k}", f"az2{k}")])
+                self.assertEqual(check(spec, g), [])
+                self.assertEqual(self.classes(asg_az_vpcs(mode, asg=(True, False), igw=True)), [])
+
+    def test_an_asg_beside_another_az_is_not_its_twin(self):
+        """One VPC's two hand-written AZs under one ASG: the first holds its header (first
+        member row), the second its foot — not the same structure, like template instances."""
+        spec = asg_az_vpcs(explicit=True, asg=(True, False))
+        self.assertNotIn(["az1_1", "az1_2"], self.classes(spec))
+        self.assertIn(["az2_1", "az2_2"], self.classes(spec))     # without it they twin
+
+    def test_an_overlay_span_on_an_empty_track(self):
+        """An ASG whose span ends on a gap column between the tracks its VPC uses stays
+        inside the VPC: the VPCs still twin, the ASGs drawn alike (with an ASG in VPC 1 only
+        they do not)."""
+        spec = asg_az_vpcs(span="g")
+        self.assertIn(["vpc1", "vpc2"], self.classes(spec))
+        g = LS.solve(spec, [])
+        self.assertEqual(g.warnings, [])
+        self.assert_alike(g, [("asg1", "asg2", "vpc1", "vpc2")])
+        self.assertNotIn(["vpc1", "vpc2"], self.classes(asg_az_vpcs(span="g", asg=(True, False))))
 
     def test_an_overlay_across_the_boundary_rules_out_twins(self):
         """An ASG over one EC2 of each VPC crosses both VPCs: neither twins with the other."""

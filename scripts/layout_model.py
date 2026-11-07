@@ -398,15 +398,22 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     signature — group types, titles (a vpc / account / region / onprem / cloud root's own
     excluded), CIDR or not, per box its nodes' icons, caption line counts (1 + sub) and
     border sides, every range as ranks among the tracks the subtree covers, each overlay
-    whose members all lie in the subtree (type, title, header, ranges, members by index;
-    an overlay crossing the subtree's boundary rules the box out) — plus, for a template
-    instance, its instance number (instances of one template keep DESIGN 2.2's rule).
-    Per axis each twin's measures from its L / T edge (its R / B, each subtree box's two
-    edges in signature order, each covered track) are raised to the class's
-    largest by soft lower bounds (why "twins alike …", dropped first in a positive cycle),
-    re-solving x (with hug and flow centering) and y (with even_insets) until they hold, at
-    most TWIN_ROUNDS; a round that leaves them less alike than the best one stops the loop
-    and the best is kept; still unlike → one warning per class and axis.
+    with a member in the subtree (type, title, header given and beside or not, its end
+    tracks as ranks — between two covered tracks a half rank, past the subtree's tracks
+    none: that edge lies outside the box — and its members in the subtree by index, each
+    with whether it is on the overlay's first / last member row; members outside count
+    only through those flags, so the AZ an ASG across a VPC's AZs reaches into twins with
+    the AZ holding the same part of an equal ASG, and a box with an overlay part twins
+    with no box without it) — plus, for a template instance, its instance number
+    (instances of one template keep DESIGN 2.2's rule). Per axis each twin's measures
+    (from its L / T edge: its R / B, each subtree box's two edges in signature order, each
+    covered track, each overlay's R / B inside it; from each overlay's L / T inside it to
+    the twin's R / B — the overlay hugs its members, so the larger is the wider) are
+    raised to the class's largest by soft lower bounds (why "twins alike …", dropped first
+    in a positive cycle), re-solving x (with hug and flow centering) and y (with
+    even_insets) until they hold, at most TWIN_ROUNDS; a round that leaves them less alike
+    than the best one stops the loop and the best is kept; still unlike → one warning per
+    class and axis.
 """
 from __future__ import annotations
 

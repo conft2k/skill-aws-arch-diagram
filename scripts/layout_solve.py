@@ -43,6 +43,7 @@ sit under the overlay's header title, and which icons sit under a group badge.
 """
 from __future__ import annotations
 
+import bisect
 import math
 import sys
 from collections import defaultdict
@@ -876,33 +877,49 @@ class _Model:
         norder = [nid for _, _, nid in nodes] + [n for (_, _, ns), _ in kids for n in ns]
         return sig, order, norder
 
-    def _overlay_shape(self, norder, rank):
-        """The overlays over gid's subtree (norder: its nodes in signature order) as part of
-        its signature: per overlay its type, title, header placement, track ranks and
-        members by their index in norder, sorted. None when an overlay crosses the
-        subtree's boundary (some members inside, some out, or a span past its tracks):
-        such a box twins with nothing."""
+    def _overlay_shape(self, norder, used):
+        """The overlays reaching into gid's subtree (norder: its nodes in signature order;
+        used: the (rows, cols) indexes it covers) as part of its signature, and per overlay
+        the edges inside it on each axis. Per overlay with a member in the subtree: its type,
+        title, header placement (given, and beside its first row or not), per axis the rank
+        of each end track among `used` (between two used tracks: the gap's rank − 0.5;
+        outside the subtree: None — that edge is not the box's), and its members in the
+        subtree by index in norder, each with whether it sits on the overlay's first and
+        last member row (which decides where the header goes and which subnets it insets).
+        Members outside the subtree count only through those flags, so a box an overlay
+        reaches into from outside (an ASG across a VPC's AZs) twins with the box holding the
+        same part of an equal overlay. Sorted; the edges come in the same order."""
         idx = {nid: k for k, nid in enumerate(norder)}
         out = []
         for o in self.overlays:
-            inside = [m in idx for m in o.over]
-            if not any(inside):
+            if not any(m in idx for m in o.over):
                 continue
-            if not all(inside):
-                return None
-            rr = []
-            for axis, rk in (("y", rank[0]), ("x", rank[1])):
+            rows = [self._member_row(m) for m in o.over]
+            first, last = min(rows), max(rows)
+            mem = tuple(sorted((idx[m], r == first, r == last) for m, r in zip(o.over, rows) if m in idx))
+            rr, edges = [], []
+            for axis, ts, lo, hi in (("y", used[0], "T", "B"), ("x", used[1], "L", "R")):
                 r = self.group_rng(o.id, axis)
-                if r is not None and not (r[0] in rk and r[1] in rk):
-                    return None
-                rr.append(None if r is None else (rk[r[0]], rk[r[1]]))
-            out.append((o.type, o.label, o.header, tuple(rr), tuple(sorted(idx[m] for m in o.over))))
-        return tuple(sorted(out, key=repr))
+                ends, es = [], []
+                for t, e in (() if r is None or not ts else ((r[0], lo), (r[1], hi))):
+                    if not ts[0] <= t <= ts[-1]:
+                        ends.append(None)
+                        continue
+                    k = bisect.bisect_left(ts, t)
+                    ends.append(k if ts[k] == t else k - 0.5)
+                    es.append(e)
+                rr.append(tuple(ends))
+                edges.append(es)
+            out.append(((o.type, o.label, o.header, self._overlay_beside(o), tuple(rr), mem),
+                        (o.id, edges[1], edges[0])))
+        out.sort(key=lambda it: repr(it[0]))
+        return tuple(sh for sh, _ in out), [e for _, e in out]
 
     def twin_sets(self) -> List[list]:
         """Containers of one structure anywhere in the drawing (twins), per class of two or
         more: (box id, (its row ids, its col ids) in rank order, its subtree's boxes in
-        corresponding order). Instances of one template keep their own rule (alike in a
+        corresponding order, the overlays reaching into it with their edges inside it, see
+        _overlay_shape). Instances of one template keep their own rule (alike in a
         document, each hugging its content on a slide): an instance only twins with boxes
         of its own instance number."""
         if self._twins is not None:
@@ -914,48 +931,55 @@ class _Model:
                 continue
             rank = ({r: k for k, r in enumerate(rows)}, {c: k for k, c in enumerate(cols)})
             sig, order, norder = self._shape(g.id, rank, root=True)
-            over = self._overlay_shape(norder, rank)
-            if over is None:
-                continue
+            over, oedges = self._overlay_shape(norder, (rows, cols))
             key = (repr((sig, over)), g.instance if g.template else None)
             classes[key].append((g.id, ([self.spec.rows[i].id for i in rows], [self.spec.cols[i].id for i in cols]),
-                                 order))
+                                 order, oedges))
         self._twins = [v for v in classes.values() if len(v) > 1]
         return self._twins
 
-    def _twin_measures(self, axis, member) -> Tuple[str, List[str]]:
-        """A twin's base variable (its left / top edge) and the variables measured from it
-        in corresponding order: its far edge, each box of its subtree's two edges, each
-        track it covers."""
-        gid, (rows, cols), order = member
+    def _twin_measures(self, axis, member) -> List[Tuple[str, str, str]]:
+        """A twin's measures on this axis in corresponding order, each (a, b, what): b − a
+        is measured, what names it. From its left / top edge: its far edge, each box of
+        its subtree's two edges, each covered track, each overlay's right / bottom edge
+        inside it; an overlay's left / top edge inside it to its far edge (an overlay hugs
+        its members from outside, so the larger value is the wider overlay)."""
+        gid, (rows, cols), order, oedges = member
         lo, hi = ("L", "R") if axis == "x" else ("T", "B")
-        out = [f"group:{gid}.{hi}"]
+        base, far = f"group:{gid}.{lo}", f"group:{gid}.{hi}"
+        out = [far]
         for d in order[1:]:
             out += [f"group:{d}.{lo}", f"group:{d}.{hi}"]
         out += [f"{'col' if axis == 'x' else 'row'}:{t}" for t in (cols if axis == "x" else rows)]
-        return f"group:{gid}.{lo}", out
+        ms = [(base, v, v) for v in out]
+        for oid, xe, ye in oedges:
+            for e in (xe if axis == "x" else ye):
+                v = f"group:{oid}.{e}"
+                ms.append((v, far, v) if e == lo else (base, v, v))
+        return ms
 
     def twins_even(self, axis, val: Dict[str, float], have: Dict[tuple, Requirement]) -> bool:
         """Twins on this axis: every measure (size, each inner box's edges, each track, from
-        the twin's own left / top edge) at the largest its class has, as soft lower bounds
-        in `have` ((base, var) → requirement, raised in place) — offsets, never positions,
-        so twins on other tracks stay where they are. True when one was added or raised.
-        Twins whose tracks other twins share can push each other on without end: the
-        caller keeps the round with the least twins_spread and stops when a round does not
-        lower it (twins_unlike then warns)."""
+        the twin's own left / top edge; an overlay's edges, see _twin_measures) at the
+        largest its class has, as soft lower bounds in `have` ((a, b) → requirement, raised
+        in place) — offsets, never positions, so twins on other tracks stay where they are.
+        True when one was added or raised. Twins whose tracks other twins share can push
+        each other on without end: the caller keeps the round with the least twins_spread
+        and stops when a round does not lower it (twins_unlike then warns)."""
         changed = False
         for cls in self.twin_sets():
             ms = [self._twin_measures(axis, mem) for mem in cls]
-            for k in range(len(ms[0][1])):
-                vals = [val[v[k]] - val[b] for b, v in ms]
+            for k in range(len(ms[0])):
+                vals = [val[m[k][1]] - val[m[k][0]] for m in ms]
                 top = max(vals)
                 like = cls[vals.index(top)][0]
-                for (b, v), got, mem in zip(ms, vals, cls):
-                    key = (b, v[k])
+                for m, got, mem in zip(ms, vals, cls):
+                    a, b, what = m[k]
+                    key = (a, b)
                     if got >= top - 0.25 or (key in have and have[key].d >= top - _EPS):
                         continue
-                    have[key] = Requirement(axis, b, v[k], top, f"{TWIN_WHY} {mem[0]} like {like} "
-                                            f"({fmt_num(top)} to {v[k].split(':', 1)[1]})", f"group:{mem[0]}", True)
+                    have[key] = Requirement(axis, a, b, top, f"{TWIN_WHY} {mem[0]} like {like} "
+                                            f"({fmt_num(top)} to {what.split(':', 1)[1]})", f"group:{mem[0]}", True)
                     changed = True
         return changed
 
@@ -964,8 +988,8 @@ class _Model:
         out = 0.0
         for cls in self.twin_sets():
             ms = [self._twin_measures(axis, mem) for mem in cls]
-            for k in range(len(ms[0][1])):
-                vals = [val[v[k]] - val[b] for b, v in ms]
+            for k in range(len(ms[0])):
+                vals = [val[m[k][1]] - val[m[k][0]] for m in ms]
                 out += max(vals) - min(vals)
         return out
 
@@ -975,13 +999,13 @@ class _Model:
         out = []
         for cls in self.twin_sets():
             ms = [self._twin_measures(axis, mem) for mem in cls]
-            for k in range(len(ms[0][1])):
-                vals = [val[v[k]] - val[b] for b, v in ms]
+            for k in range(len(ms[0])):
+                vals = [val[m[k][1]] - val[m[k][0]] for m in ms]
                 if max(vals) - min(vals) > 0.5:
                     a, b = cls[vals.index(min(vals))][0], cls[vals.index(max(vals))][0]
                     out.append(f"{self.spec.groups[a].src} {a}: same structure as {b} but drawn "
                                f"{fmt_num(max(vals) - min(vals))} px unlike it on {axis} "
-                               f"({ms[vals.index(min(vals))][1][k].split(':', 1)[1]}); other constraints keep "
+                               f"({ms[vals.index(min(vals))][k][2].split(':', 1)[1]}); other constraints keep "
                                f"them apart")
                     break
         return out
