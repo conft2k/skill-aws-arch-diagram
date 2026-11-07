@@ -1,0 +1,73 @@
+# Source: ~/.cache/skill-design/qa/T4/minimal/three_az_writer_9nodes.layout.yaml
+name: three_az_writer_9nodes
+mode: document
+cols:
+- order
+- endpoint
+- db
+rows:
+- az1
+- az2
+- az3
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: 서울 리전 · ap-northeast-2
+  in: cloud
+- id: vpc
+  type: vpc
+  label: 고객 서비스 VPC
+  cidr: 10.60.0.0/16
+  in: region
+- id: az
+  type: az
+  label: Availability Zone {n}
+  per:
+  - az1
+  - az2
+  - az3
+  in: vpc
+- id: appsn
+  type: private
+  label: App
+  cidr:
+    1: 10.60.11.0/24
+    2: 10.60.12.0/24
+    3: 10.60.13.0/24
+  in: az
+- id: datasn
+  type: private
+  label: Data
+  cidr:
+    1: 10.60.21.0/24
+    2: 10.60.22.0/24
+    3: 10.60.23.0/24
+  in: az
+nodes:
+- id: orders
+  icon: service/Amazon-EC2
+  label: Order {n}
+  sub: HTTP :9000
+  col: order
+  in: appsn
+- id: ep
+  icon: resource/Amazon-VPC_Endpoints
+  label: Endpoint {n}
+  sub: ssm · ssmmessages
+  col: endpoint
+  in: appsn
+- id: db
+  icon: service/Amazon-Aurora
+  label:
+    1: Aurora writer
+    2: Aurora reader 2
+    3: Aurora reader 3
+  sub: PostgreSQL :5432
+  col: db
+  in: datasn
+edges:
+- e: orders.* -> db.1
+  label: PostgreSQL :5432
+  trunk: true

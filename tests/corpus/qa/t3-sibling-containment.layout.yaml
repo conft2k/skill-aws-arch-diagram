@@ -1,0 +1,12 @@
+# Source: ~/.cache/skill-design/qa/T3/minimal/sibling-containment.layout.yaml
+name: sibling-containment
+cols: [app, {id: global, min_gap_before: 140}]
+rows: [top, bottom]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Seoul, in: cloud}
+nodes:
+  - {id: ec2, icon: service/Amazon-EC2, label: EC2, in: region, at: [app, top]}
+  - {id: rule, icon: resource/Amazon-Route-53_Resolver, label: Resolver rule, in: region, at: [global, bottom]}
+  - {id: phz, icon: resource/Amazon-Route-53-Hosted-Zone, label: Private zone, in: cloud, at: [global, top]}
+edges: []

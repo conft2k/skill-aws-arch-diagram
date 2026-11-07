@@ -1,0 +1,176 @@
+# Source: ~/.cache/skill-design/qa/T3/hybrid-dns.layout.yaml
+name: hybrid-dns
+mode: document
+cols:
+- dns
+- router
+- dx
+- dxgw
+- zone
+- vgw
+- inbound
+- outbound
+- rt
+- app
+- rules
+rows:
+- az1
+- main
+- az2
+groups:
+- id: dc
+  type: onprem
+  label: Corporate DC
+  cidr: 172.20.0.0/16
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: Seoul
+  in: cloud
+- id: vpc
+  type: vpc
+  label: DNS VPC
+  cidr: 10.40.0.0/16
+  in: region
+  pad_top: 100
+- id: az
+  type: az
+  in: vpc
+  per:
+  - az1
+  - az2
+- id: dnsnet
+  type: private
+  label: DNS subnet
+  in: az
+- id: appnet
+  type: private
+  label: App subnet
+  in: az
+nodes:
+- id: corp_dns
+  icon: resource/Server
+  label: Corporate DNS
+  sub:
+  - 172.20.10.53
+  - aws.internal forward
+  in: dc
+  at:
+  - dns
+  - main
+- id: router
+  icon: resource/Amazon-VPC_Customer-Gateway
+  label: DX router
+  in: dc
+  at:
+  - router
+  - main
+- id: dx
+  icon: service/AWS-Direct-Connect
+  label: Direct Connect
+  sub: private VIF / BGP
+  at:
+  - dx
+  - main
+- id: dxgw
+  icon: resource/AWS-Direct-Connect_Gateway
+  label: DX gateway
+  in: cloud
+  at:
+  - dxgw
+  - main
+- id: vgw
+  icon: resource/Amazon-VPC_VPN-Gateway
+  label: VGW
+  'on': vpc
+  at:
+  - vgw
+  - main
+- id: inbound
+  icon: resource/Amazon-Route-53_Resolver
+  label: Inbound ENI
+  sub:
+    1: 10.40.1.10
+    2: 10.40.2.10
+  in: dnsnet
+  col: inbound
+- id: outbound
+  icon: resource/Amazon-Route-53_Resolver
+  label: Outbound ENI
+  sub:
+    1: 10.40.1.20
+    2: 10.40.2.20
+  in: dnsnet
+  col: outbound
+- id: dnsrt
+  icon: resource/Amazon-Route-53_Route-Table
+  label: DNS RT
+  sub: 172.20.0.0/16 → VGW
+  in: dnsnet
+  col: rt
+  for:
+  - dnsnet
+- id: app
+  icon: service/Amazon-EC2
+  label: DNS client EC2
+  sub: AmazonProvidedDNS
+  in: appnet
+  col: app
+- id: phz
+  icon: resource/Amazon-Route-53-Hosted-Zone
+  label: Private zone
+  sub: aws.internal
+  in: cloud
+  at:
+  - zone
+  - az1
+- id: rule
+  icon: resource/Amazon-Route-53_Resolver
+  label: Forward rule
+  sub:
+  - corp.example
+  - 172.20.10.53
+  in: region
+  at:
+  - rules
+  - az2
+edges:
+- e: corp_dns -> router
+  label: UDP/TCP :53
+  step: 1
+- e: router -- dx
+- e: dx -- dxgw
+- e: dxgw -- vgw
+  step: 2
+- e: vgw -> inbound.*
+  trunk: true
+  step: 3
+- e: inbound.* ..> phz
+  verb: Resolve aws.internal
+  trunk: true
+- e: app.* ..> rule
+  verb: Query corp.example
+  trunk: true
+  step: 4
+- e: rule ..> outbound.*
+  trunk: true
+  step: 5
+- e: outbound.* ..> vgw
+  label: UDP/TCP :53
+  trunk: true
+  shape: VHV
+  from_side: top
+  to_side: top
+note:
+  steps:
+  - - Corporate DNS → DX router
+    - aws.internal → both inbound IPs; UDP/TCP 53.
+  - - DX → VGW
+    - 'BGP: 172.20.0.0/16 ↔ 10.40.0.0/16.'
+  - - VGW → inbound
+    - One endpoint, ENIs in 2 AZs; associated private zone.
+  - - EC2 → forwarding rule
+    - VPC-associated corp.example rule.
+  - - Rule → outbound
+    - DNS RT → VGW → DX → corporate DNS.

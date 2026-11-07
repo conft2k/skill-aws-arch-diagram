@@ -1,0 +1,15 @@
+# Source: ~/.cache/skill-design/qa/T3/minimal/account-containment.layout.yaml
+name: account-containment
+cols: [app, {id: logs, min_gap_before: 180}]
+rows: [top, bottom]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: netacct, type: account, label: Network account, in: cloud}
+  - {id: netreg, type: region, label: Seoul network, in: netacct}
+  - {id: logacct, type: account, label: Log archive, in: cloud}
+  - {id: logreg, type: region, label: Seoul logs, in: logacct}
+nodes:
+  - {id: ec2, icon: service/AWS-Transit-Gateway, label: TGW, in: netreg, at: [app, top]}
+  - {id: nat, icon: service/Amazon-Virtual-Private-Cloud, label: Egress VPC, in: netreg, at: [logs, bottom]}
+  - {id: s3, icon: service/Amazon-Simple-Storage-Service, label: Audit S3, in: logreg, at: [logs, top]}
+edges: []

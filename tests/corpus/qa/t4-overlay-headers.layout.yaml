@@ -1,0 +1,51 @@
+# Source: ~/.cache/skill-design/qa/T4/minimal/overlay_headers.layout.yaml
+name: overlay_headers
+cols:
+- app
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  in: cloud
+  type: region
+- id: vpc
+  in: region
+  type: vpc
+- id: az
+  in: vpc
+  per:
+  - a
+  - b
+  type: az
+- id: sn
+  in: az
+  label: App
+  type: private
+- header: below
+  id: asg
+  label: Web ASG
+  over:
+  - web.*
+  type: asg
+- id: tg
+  type: generic
+  label: web-tg
+  dash: 6,3
+  header: below
+  over:
+  - web.*
+- id: sg
+  type: sg
+  label: app-sg
+  header: below
+  over:
+  - web.*
+nodes:
+- col: app
+  icon: service/Amazon-EC2
+  id: web
+  in: sn
+  label: Web {n}
+rows:
+- a
+- b

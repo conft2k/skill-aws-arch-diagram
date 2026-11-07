@@ -1,0 +1,248 @@
+# Source: ~/.cache/skill-design/qa/T4/order_14steps.layout.yaml
+name: order_14steps
+mode: document
+cols:
+- users
+- edge
+- c1
+- c2
+- c3
+- c4
+- c5
+- c6
+rows:
+- request
+- event
+- delivery
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: 주문 처리 · 서울 리전
+  in: cloud
+- id: order
+  type: generic
+  label: 주문 접수 및 비동기 저장
+  in: region
+- id: notify
+  type: generic
+  label: 고객 알림 배포 단위
+  in: region
+nodes:
+- id: users
+  icon: resource/Users
+  label: 주문 고객
+  at:
+  - users
+  - request
+- id: cf
+  icon: service/Amazon-CloudFront
+  label: CloudFront
+  at:
+  - edge
+  - request
+  in: cloud
+- id: api
+  icon: service/Amazon-API-Gateway
+  label: Order API
+  at:
+  - c1
+  - request
+  in: region
+- id: ingest
+  icon: service/AWS-Lambda
+  label: 접수 함수
+  at:
+  - c2
+  - request
+  in: order
+- id: queue
+  icon: service/Amazon-Simple-Queue-Service
+  label: 주문 큐
+  at:
+  - c3
+  - request
+  in: order
+- id: worker
+  icon: service/AWS-Lambda
+  label: 저장 워커
+  at:
+  - c4
+  - request
+  in: order
+- id: db
+  icon: service/Amazon-DynamoDB
+  label: 주문 테이블
+  at:
+  - c5
+  - request
+  in: order
+- id: stream
+  icon: resource/Amazon-DynamoDB_Stream
+  label: 변경 스트림
+  at:
+  - c1
+  - event
+  in: region
+- id: pipes
+  icon: resource/Amazon-EventBridge_Pipes
+  label: 이벤트 필터
+  at:
+  - c2
+  - event
+  in: region
+- id: bus
+  icon: service/Amazon-EventBridge
+  label: 주문 이벤트 버스
+  at:
+  - c3
+  - event
+  in: region
+- id: notifyq
+  icon: service/Amazon-Simple-Queue-Service
+  label: 알림 큐
+  at:
+  - c4
+  - event
+  in: region
+- id: notifyfn
+  icon: service/AWS-Lambda
+  label: 알림 조립 함수
+  at:
+  - c5
+  - event
+  in: notify
+- id: sns
+  icon: service/Amazon-Simple-Notification-Service
+  label: 고객 알림 토픽
+  at:
+  - c6
+  - event
+  in: notify
+- id: mailfn
+  icon: service/AWS-Lambda
+  label: 메일 작성 함수
+  at:
+  - c1
+  - delivery
+  in: region
+- id: ses
+  icon: service/Amazon-Simple-Email-Service
+  label: 메일 발송
+  at:
+  - c2
+  - delivery
+  in: region
+- id: receipts
+  icon: service/Amazon-Simple-Storage-Service
+  label: 영수증 PDF
+  at:
+  - c3
+  - delivery
+  in: region
+- id: cw
+  icon: service/Amazon-CloudWatch
+  label: 실패 지표
+  at:
+  - c4
+  - delivery
+  in: region
+- id: dlq
+  icon: service/Amazon-Simple-Queue-Service
+  label: 알림 DLQ
+  at:
+  - c5
+  - delivery
+  in: region
+edges:
+- e: users -> cf
+  step: 1
+  label: HTTPS :443
+- e: cf -> api
+  step: 2
+  label: HTTPS :443
+- e: api -> ingest
+  step: 3
+- e: ingest -> queue
+  step: 4
+- e: queue -> worker
+  step: 5
+- e: worker -> db
+  step: 6
+- e: db -> stream
+  step: 7
+  shape: VHV
+  from_side: bottom
+  to_side: top
+- e: stream -> pipes
+  step: 8
+- e: pipes -> bus
+  step: 9
+- e: bus -> notifyq
+  step: 10
+- e: notifyq -> notifyfn
+  step: 11
+- e: notifyfn -> sns
+  step: 12
+- e: sns -> mailfn
+  step: 13
+  shape: VHV
+  from_side: bottom
+  to_side: top
+- e: mailfn -> ses
+  step: 14
+- e: mailfn ..> receipts
+  verb: 첨부 읽기
+  shape: VHV
+  from_side: bottom
+  to_side: bottom
+  bend_y: mailfn.label.y1+40
+  from_offset: -12
+- e: notifyq ..> dlq
+  verb: 5회 실패 후 이동
+  shape: VHV
+  from_side: bottom
+  to_side: top
+  bend_y: sns.y1+70
+  label_at:
+    x: dlq.cx+8
+    y: dlq.y0-16
+    anchor: start
+- e: mailfn ..> cw
+  verb: 실패 지표
+  shape: VHV
+  from_side: bottom
+  to_side: bottom
+  bend_y: mailfn.label.y1+88
+  from_offset: 12
+note:
+  steps:
+  - - users → cf
+    - HTTPS :443 주문 요청
+  - - cf → api
+    - 캐시를 우회하여 API 호출
+  - - api → ingest
+    - 유효성 검증 및 주문 ID 발급
+  - - ingest → queue
+    - 주문 ID를 메시지로 적재
+  - - queue → worker
+    - 최소 1회 배달 · 멱등성 검사
+  - - worker → db
+    - 조건부 쓰기로 중복 주문 방지
+  - - db → stream
+    - 변경 이벤트 생성
+  - - stream → pipes
+    - INSERT 레코드 필터 및 변환
+  - - pipes → bus
+    - 주문 완료 이벤트 전달
+  - - bus → notifyq
+    - 규칙으로 알림 큐에 적재
+  - - notifyq → notifyfn
+    - 배치 메시지 처리 및 재시도
+  - - notifyfn → sns
+    - 구독자에게 알림 배포
+  - - sns → mailfn
+    - 이메일 구독 함수 실행
+  - - mailfn → ses
+    - HTTPS API로 고객에게 발송

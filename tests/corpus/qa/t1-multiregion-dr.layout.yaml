@@ -1,0 +1,49 @@
+# Source: ~/.cache/skill-design/qa/T1/multiregion-dr.layout.yaml
+name: multiregion-dr
+mode: document
+cols: [globaldns, slb, {id: sapp, min_gap_before: 225}, {id: sdb, min_gap_before: 380}, shub, srt, peercol, trt, thub, tlb, {id: tapp, min_gap_before: 225}, {id: tdb, min_gap_before: 380}]
+rows: [azone, main, aztwo]
+groups:
+  - {id: cloud, type: cloud, pad_bottom: 140}
+  - {id: seoul, type: region, label: Seoul ap-northeast-2, in: cloud}
+  - {id: tokyo, type: region, label: Tokyo ap-northeast-1, in: cloud}
+  - {id: svpc, type: vpc, label: Primary VPC, cidr: 10.40.0.0/16, in: seoul}
+  - {id: tvpc, type: vpc, label: DR VPC, cidr: 10.50.0.0/16, in: tokyo}
+  - {id: saz, type: az, label: "Seoul AZ {n}", in: svpc, per: [azone, aztwo]}
+  - {id: taz, type: az, label: "Tokyo AZ {n}", in: tvpc, per: [azone, aztwo]}
+  - {id: sappsn, type: private, label: App subnet, in: saz}
+  - {id: sdbsn, type: private, label: DB subnet, in: saz}
+  - {id: tappsn, type: private, label: App subnet, in: taz}
+  - {id: tdbsn, type: private, label: DB subnet, in: taz}
+nodes:
+  - {id: r53, icon: service/Amazon-Route-53, label: Route 53 failover, sub: Private DNS · alarm health, in: cloud, at: [globaldns, main]}
+  - {id: snlb, icon: resource/Elastic-Load-Balancing_Network-Load-Balancer, label: Internal NLB, sub: PRIMARY alias, in: svpc, at: [slb, main]}
+  - {id: tnlb, icon: resource/Elastic-Load-Balancing_Network-Load-Balancer, label: Internal NLB, sub: SECONDARY alias, in: tvpc, at: [tlb, main]}
+  - {id: sapp, icon: service/Amazon-EC2, label: App, sub: "10.50.0.0/16 → TGW", in: sappsn, col: sapp}
+  - {id: tapp, icon: service/Amazon-EC2, label: DR App, sub: "10.40.0.0/16 → TGW", in: tappsn, col: tapp}
+  - {id: sdb, icon: resource/Amazon-Aurora-Instance, label: {1: Aurora writer, 2: Aurora reader}, sub: Global DB · primary, in: sdbsn, col: sdb}
+  - {id: tdb, icon: resource/Amazon-Aurora-Instance, label: Aurora reader, sub: Global DB · secondary, in: tdbsn, col: tdb}
+  - {id: stgw, icon: service/AWS-Transit-Gateway, label: Seoul TGW, in: seoul, at: [shub, main]}
+  - {id: ttgw, icon: service/AWS-Transit-Gateway, label: Tokyo TGW, in: tokyo, at: [thub, main]}
+  - {id: srt, icon: resource/Amazon-Route-53_Route-Table, label: Seoul TGW RT, sub: ["10.40.0.0/16 propagated", "10.50.0.0/16 → peer"], in: seoul, xy: [stgw.cx, stgw.y1+74], for: [svpc, peer], via: stgw}
+  - {id: trt, icon: resource/Amazon-Route-53_Route-Table, label: Tokyo TGW RT, sub: ["10.50.0.0/16 propagated", "10.40.0.0/16 → peer"], in: tokyo, xy: [ttgw.cx, ttgw.y1+74], for: [tvpc, peer], via: ttgw}
+  - {id: peer, icon: resource/Amazon-VPC_Peering-Connection, label: TGW peering, sub: Static routes only, in: cloud, at: [peercol, main]}
+edges:
+  - {e: "r53 ..> snlb", verb: PRIMARY DNS, step: 1}
+  - {e: "r53 ..> tnlb", verb: SECONDARY DNS, step: 4, shape: VHV, from_side: bottom, to_side: bottom}
+  - {e: "snlb -> sapp.*", label: "TCP :443", trunk: true, shape: HVH, bend_x: col.slb+100}
+  - {e: "tnlb -> tapp.*", label: "TCP :443", trunk: true, shape: HVH, bend_x: col.tlb+100}
+  - {e: "sapp.1 -> sdb.1", label: "PostgreSQL :5432", step: 2, label_at: above, step_at: gap}
+  - {e: "sapp.2 -> sdb.1", label: "PostgreSQL :5432"}
+  - {e: "tapp.* -> tdb.*", label: "PostgreSQL :5432", label_at: above}
+  - {e: "sdb.1 ..> tdb.1", verb: Async replication, step: 3}
+  - {e: "svpc -- stgw", verb: VPC attachment}
+  - {e: "stgw -- peer"}
+  - {e: "peer -- ttgw"}
+  - {e: "ttgw -- tvpc"}
+note:
+  steps:
+    - ["DNS → Seoul", "사내 네트워크에서 조회하는 private failover 레코드입니다. 외부 직접 probe 대신 앱 경보 기반 health check를 사용합니다."]
+    - ["App → Writer", "서울 앱은 로컬 writer에 쓰고, 도쿄 DR 앱은 secondary에서 읽습니다. 각 리전 VPC는 2 AZ를 사용합니다."]
+    - ["Global DB 복제", "Aurora Global Database의 관리형 비동기 복제이며 TGW peering을 통과하는 고객 VPC 트래픽이 아닙니다."]
+    - ["DNS → Tokyo", "재해 시 도쿄 클러스터를 승격하고 앱을 활성화한 뒤 SECONDARY로 DNS failover합니다. TGW 양쪽 remote CIDR은 static peer 경로입니다."]

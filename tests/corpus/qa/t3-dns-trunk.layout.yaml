@@ -1,0 +1,17 @@
+# Source: ~/.cache/skill-design/qa/T3/minimal/dns-trunk.layout.yaml
+name: dns-trunk
+cols: [vgw, inbound, outbound]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+  - {id: vpc, type: vpc, in: region}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: subnet, type: private, in: az}
+nodes:
+  - {id: vgw, icon: resource/Amazon-VPC_VPN-Gateway, label: VGW, on: vpc, at: [vgw, main]}
+  - {id: inbound, icon: resource/Amazon-Route-53_Resolver, label: Inbound ENI, in: subnet, col: inbound}
+  - {id: outbound, icon: resource/Amazon-Route-53_Resolver, label: Outbound ENI, in: subnet, col: outbound}
+edges:
+  - {e: 'vgw -> inbound.*', trunk: true}
+  - {e: 'outbound.* ..> vgw', label: 'UDP/TCP :53', trunk: true}

@@ -1,0 +1,54 @@
+# Source: ~/.cache/skill-design/qa/T1/privatelink.layout.yaml
+name: privatelink
+mode: document
+cols: [appcol, interfacecol, routecol, s3gateway, ddbgateway, servicecol, loadbalancer, backend, regional]
+rows: [azone, main, {id: aztwo, min_gap_before: 280}]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Seoul ap-northeast-2, in: cloud}
+  - {id: ca, type: vpc, label: Consumer A VPC, cidr: 10.60.0.0/16, in: region, pad_top: 120}
+  - {id: cb, type: vpc, label: Consumer B VPC, cidr: 10.70.0.0/16, in: region, pad_top: 120}
+  - {id: caaz, type: az, label: ap-northeast-2a, in: ca}
+  - {id: cbaz, type: az, label: ap-northeast-2c, in: cb}
+  - {id: casn, type: private, label: App subnet, in: caaz, pad_left: 140}
+  - {id: cbsn, type: private, label: App subnet, in: cbaz, pad_left: 140}
+  - {id: provider, type: vpc, label: Provider VPC, cidr: 10.80.0.0/16, in: region}
+  - {id: paz, type: az, label: "Provider AZ {n}", in: provider, per: [azone, aztwo]}
+  - {id: psn, type: private, label: Service subnet, in: paz}
+nodes:
+  - {id: appa, icon: service/Amazon-EC2, label: Client A, in: casn, at: [appcol, azone]}
+  - {id: appb, icon: service/Amazon-EC2, label: Client B, in: cbsn, at: [appcol, aztwo]}
+  - {id: epa, icon: resource/Amazon-VPC_Endpoints, label: Interface endpoint, sub: Private DNS · SG 443, in: casn, at: [interfacecol, azone]}
+  - {id: epb, icon: resource/Amazon-VPC_Endpoints, label: Interface endpoint, sub: Private DNS · SG 443, in: cbsn, at: [interfacecol, aztwo]}
+  - {id: rta, icon: resource/Amazon-Route-53_Route-Table, label: App RT A, sub: ["VPC CIDR → local", "S3 / DDB prefix → VPCE"], in: ca, at: [routecol, azone], for: [casn]}
+  - {id: rtb, icon: resource/Amazon-Route-53_Route-Table, label: App RT B, sub: ["VPC CIDR → local", "S3 / DDB prefix → VPCE"], in: cb, at: [routecol, aztwo], for: [cbsn]}
+  - {id: s3a, icon: resource/Amazon-VPC_Endpoints, label: S3 gateway EP, in: ca, at: [s3gateway, azone]}
+  - {id: s3b, icon: resource/Amazon-VPC_Endpoints, label: S3 gateway EP, in: cb, at: [s3gateway, aztwo]}
+  - {id: ddba, icon: resource/Amazon-VPC_Endpoints, label: DDB gateway EP, in: ca, at: [ddbgateway, azone]}
+  - {id: ddbb, icon: resource/Amazon-VPC_Endpoints, label: DDB gateway EP, in: cb, at: [ddbgateway, aztwo]}
+  - {id: es, icon: service/AWS-PrivateLink, label: Endpoint service, sub: Accepted principals only, in: provider, at: [servicecol, main]}
+  - {id: nlb, icon: resource/Elastic-Load-Balancing_Network-Load-Balancer, label: Internal NLB, sub: TCP passthrough, in: provider, at: [loadbalancer, main]}
+  - {id: api, icon: service/Amazon-EC2, label: Private API, in: psn, col: backend}
+  - {id: s3, icon: service/Amazon-Simple-Storage-Service, label: S3, in: region, at: [regional, azone]}
+  - {id: ddb, icon: service/Amazon-DynamoDB, label: DynamoDB, in: region, at: [regional, aztwo]}
+edges:
+  - {e: "appa -> epa", label: "TLS :443", step: 1}
+  - {e: "appb -> epb", label: "TLS :443"}
+  - {e: "epa -> es", step: 2}
+  - {e: "epb -> es"}
+  - {e: "es -> nlb", step: 3}
+  - {e: "nlb -> api.*", label: "TCP :443", trunk: true, step: 4}
+  - {e: "appa ..> s3a", label: HTTPS, shape: VHV, from_side: top, to_side: top}
+  - {e: "appa ..> ddba", label: HTTPS, shape: VHV, from_side: bottom, to_side: bottom}
+  - {e: "appb ..> s3b", label: HTTPS, shape: VHV, from_side: top, to_side: top}
+  - {e: "appb ..> ddbb", label: HTTPS, shape: VHV, from_side: bottom, to_side: bottom}
+  - {e: "s3a ..> s3"}
+  - {e: "s3b ..> s3", shape: VHV, from_side: top, to_side: bottom, bend_y: row.main-90}
+  - {e: "ddba ..> ddb", shape: VHV, from_side: bottom, to_side: top, bend_y: row.main+100}
+  - {e: "ddbb ..> ddb"}
+note:
+  steps:
+    - ["Client → ENI", "Interface endpoint의 private DNS와 subnet local route로 접속합니다. SG는 TCP 443을 허용하며 인터넷·NAT 경로가 필요하지 않습니다."]
+    - ["ENI → 서비스", "소비자 두 VPC에서 제공자 endpoint service에 접속합니다. 제공자의 연결 승인과 allowed principals를 적용합니다."]
+    - ["서비스 → NLB", "Endpoint service는 internal NLB를 제공합니다. S3·DynamoDB는 별도의 gateway endpoint이며 두 App RT에 prefix-list 경로를 추가합니다."]
+    - ["NLB → API", "NLB는 TCP 443을 그대로 전달하고 API가 TLS를 종료합니다. Gateway endpoint는 VPC 내부·서브넷 외부, interface ENI는 서브넷 내부입니다."]

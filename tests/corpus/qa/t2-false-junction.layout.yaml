@@ -1,0 +1,16 @@
+# Source: ~/.cache/skill-design/qa/T2/repro-false-junction.layout.yaml
+name: repro-false-junction
+mode: document
+cols: [etl, storage, catalog]
+rows: [landing, query]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+nodes:
+  - {id: raw, icon: service/Amazon-Simple-Storage-Service, label: S3 raw, in: region, at: [storage, landing]}
+  - {id: catalog, icon: resource/AWS-Glue_Data-Catalog, label: Glue Catalog, in: region, at: [catalog, landing]}
+  - {id: etl, icon: service/AWS-Glue, label: Glue ETL, in: region, at: [etl, query]}
+  - {id: athena, icon: service/Amazon-Athena, label: Athena, in: region, at: [storage, query]}
+edges:
+  - {e: 'raw -> etl', verb: Read batch, shape: VHV, from_side: bottom, to_side: top}
+  - {e: 'catalog ..> athena', verb: Read metadata, shape: VHV, from_side: bottom, to_side: top}

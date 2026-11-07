@@ -1,0 +1,66 @@
+# Source: ~/.cache/skill-design/qa/T4/minimal/shared_lane_5nodes.layout.yaml
+cols:
+- a
+- b
+- c
+- d
+rows:
+- event
+- delivery
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  in: cloud
+nodes:
+- id: sns
+  icon: service/Amazon-Simple-Notification-Service
+  label: SNS
+  in: region
+  at:
+  - d
+  - event
+- id: queue
+  icon: service/Amazon-Simple-Queue-Service
+  label: Queue
+  in: region
+  at:
+  - b
+  - event
+- id: mailfn
+  icon: service/AWS-Lambda
+  label: Mail
+  in: region
+  at:
+  - a
+  - delivery
+- id: dlq
+  icon: service/Amazon-Simple-Queue-Service
+  label: DLQ
+  in: region
+  at:
+  - c
+  - delivery
+- id: notifyfn
+  icon: service/AWS-Lambda
+  label: Notify
+  in: region
+  at:
+  - c
+  - event
+edges:
+- e: queue -> notifyfn
+- e: notifyfn -> sns
+- e: sns -> mailfn
+  shape: VHV
+  from_side: bottom
+  to_side: top
+  step: 1
+- e: queue ..> dlq
+  verb: 5회 실패 후 이동
+note:
+  steps:
+  - - SNS → Mail
+    - 고객 메일 작성 함수 실행
+name: shared_lane_5nodes

@@ -18,7 +18,8 @@
 #              R-border a connector does not read as part of a group's box: it keeps 12px from a
 #                       border it runs along (check_layout LINE HUGS BORDER) and stays out of a
 #                       group's header band (badge, title, CIDR line; user decision 2026-11-07)
-#              R-fit    a slide fits 1108 × 540 (titled) at ≥ 10pt
+#              R-fit    text meets the medium's target: ≥ 11px in a 760px document column,
+#                       ≥ 10pt on a 1108 × 540 titled slide
 #              R-reject the spec is rejected with a clear message
 #   good     rules the case's drafts keep: the rule checker (scripts/rules.py) finds no
 #            violation of them in any drawn run (the runner reports a run that disagrees)
@@ -128,6 +129,7 @@ cases:
     what: "nfw doc with min_gap_before 170 on rtsp and 130 on tgw, spoke edge verb label_at above, step_at end"
     from: "e-nfw/doc.layout.yaml"
   - path: slide-fit/nfw-s2.layout.yaml
+    modes: [slide, slide-no-title]   # good R-fit is judged in slide modes only
     rules: [R-fit, R-rt, R-label]
     what: "nfw slide with empty att column and spoke subnet boxes dropped (EC2 placed directly in VPC A / B)"
     from: "e-nfw/s2.layout.yaml"
@@ -146,6 +148,7 @@ cases:
     what: "nfw doc with min_gap_before 170 on rtsp only, spoke edge verb label_at above, step badge step_at end"
     from: "e-nfw/t2.layout.yaml"
   - path: slide-fit/nfw-t3.layout.yaml
+    modes: [slide, slide-no-title]   # good R-fit is judged in slide modes only
     rules: [R-fit, R-rt, R-label]
     what: "nfw slide, empty att col, no spoke subnet boxes, VPC attachment verb on single tgw<->eni.* VH edge"
     from: "e-nfw/t3.layout.yaml"
@@ -1046,6 +1049,98 @@ cases:
     rules: [R-rt, R-label]
     what: "nfw slide with only an empty att column added between the spoke VPCs and the Spoke RT column"
     from: "withsn2.layout.yaml"
+  # QA backlog repros (2026-11-07): preserve the submitted specs; originals when reduction loses the defect.
+  # 규칙 위반이 있어도 `Layout OK`: F3/F5가 나와도 exit 0이라 사용자는 끝났다고 믿습니다.
+  # rules.py 미검출: success-summary semantics; false-junction below has F5 and Layout OK / exit 0.
+  # slide size failures in the docs/examples are already listed by reference below; do not duplicate their specs.
+  # 작성 안내 부족(처음 사용자): multi-account 작성 패턴, CloudFront VPC origin → internal ALB 예제,
+  # DX+VPN+TGW 2개 RT 패턴, Route 53 Resolver inbound/outbound 아이콘 검색 결과 없음, F3/F5에 `fix:` 안내 없음,
+  # `rule:`의 펼친 edge 번호와 YAML `edges[n]` 번호가 다름, 범례 hop이 표시 이름 대신 node ID.
+  # rules.py 미검출: authoring guidance has no draft rule; original QA specs retain the relevant flows.
+  # 3 AZ 큰 그림에서 AZ 3 → DB 선이 AZ 2 서버를 지나갑니다(T4 large_3az). 축소본 three_az_writer_9nodes에서는 Endpoint/Aurora reader를 관통합니다.
+  # rules.py 미검출: intermediate icon/text crossings; the B2/F5 diagnostics are separate defects.
+  - path: qa/t4-three-az-writer.layout.yaml
+    rules: [R-flow]
+    what: "9-node reduction: writer traffic crosses Endpoint/Aurora reader icons; rules.py 미검출"
+  # NAT trunk가 Route-Table 아이콘을 관통합니다(T3 nat-route-table).
+  # rules.py 미검출: slide LINE OVER ICON has no corresponding rule violation.
+  - path: qa/t3-nat-route-table.layout.yaml
+    rules: [R-flow]
+    what: "5-node NAT trunk crosses route-table icons on slides; rules.py 미검출"
+  # DNS outbound가 inbound 아이콘을 관통합니다(T3 dns-trunk).
+  # rules.py 미검출: intermediate icon crossings; F1 detects the shared segments, not the icon crossing.
+  - path: qa/t3-dns-trunk.layout.yaml
+    rules: [R-flow]
+    what: "5-node outbound DNS trunk crosses inbound ENIs on slides; rules.py 미검출: icon crossing (F1 separately detects shared ingress segments)"
+  # SSM trunk가 서비스 라벨을 관통합니다(T3 ssm-trunk).
+  # rules.py 미검출: service-text crossings; F5 concerns another edge's HTTPS label.
+  - path: qa/t3-ssm-trunk.layout.yaml
+    rules: [R-flow]
+    what: "6-node SSM trunk crosses the Session Manager service label on slides; rules.py 미검출"
+  # PrivateLink S3 경로가 다른 endpoint를 관통합니다(T1 privatelink slide).
+  # rules.py 미검출: intermediate icon/text crossings; F1/F3/F5 and FIT are separate diagnostics.
+  - path: qa/t1-privatelink.layout.yaml
+    rules: [R-flow, R-fit]
+    what: "Original PrivateLink: consumer B S3 path crosses another endpoint on a slide; no equivalent reduction; rules.py 미검출: icon/text crossing"
+  # 복제 라벨이 SQL/요청 선에 더 가깝습니다(T2 repro-badge-replication, T3 cache-label).
+  # Smallest submitted reproduction: cache-label has 6 nodes, versus badge-replication's 7.
+  - path: qa/t3-cache-label.layout.yaml
+    rules: [R-flow]
+    what: "6-node reduction: DB/cache replication labels attach to request traffic"
+    bad: {R-flow: {slide: edge:3, slide-no-title: edge:3}}
+  # DR 복제 배지가 NLB 선에 0px로 붙습니다(T1 multiregion-dr).
+  # DNS 제어선과 앱 선이 한 선처럼 이어집니다(T1 multiregion-dr slide).
+  # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
+  - path: qa/t1-multiregion-dr.layout.yaml
+    rules: [R-flow, R-fit]
+    what: "Original DR: replication badge touches NLB traffic; slide DNS control and app paths read as one line; page/slide text is below target; no equivalent reduction"
+    bad:
+      R-flow: {document: edge:10, slide: edge:1, slide-no-title: edge:1}   # F5 badge in document; F2 DNS/app gap on slides
+      R-fit: canvas
+  # DLQ의 "5회 실패 후 이동" 라벨이 자기 선보다 다른 선에 더 가깝습니다(T4 shared_lane_5nodes).
+  - path: qa/t4-shared-lane.layout.yaml
+    rules: [R-flow]
+    what: "5-node reduction: DLQ label reads as another flow while the engine reports Layout OK / exit 0"
+    bad: {R-flow: edge:3}
+  # bend 옆 8–12px 교차가 있습니다(T3 원본 remote-access, hybrid-dns. 축소본에는 F3가 남지 않습니다).
+  # Smallest submitted F3 reproduction: hybrid-dns has 15 nodes, versus remote-access's 16.
+  - path: qa/t3-hybrid-dns.layout.yaml
+    rules: [R-flow, R-fit]
+    what: "Original hybrid DNS: inbound/outbound paths cross beside VGW bends; page/slide text is below target; reduced DNS spec loses F3"
+    bad: {R-flow: edge:4, R-fit: canvas}
+  # 두 선이 같은 꺾임점을 씁니다(T2 attempts/data-lake.slide.v2. 축소본 repro-false-junction은 수직 구간 6px 겹침).
+  # rules.py 미검출: 6px overlap is below F1's overlap threshold; the F5 label diagnostic is separate.
+  # rules.py 미검출: Layout OK / exit 0 remains despite the slide's F5 violation (smallest submitted success-summary repro).
+  - path: qa/t2-false-junction.layout.yaml
+    rules: [R-flow]
+    what: "4-node reduction: raw/metadata vertical segments overlap by 6px; rules.py 미검출: short false junction and Layout OK / exit 0 despite F5"
+  # 241px 구간을 함께 씁니다(T4 order_14steps slide, F1).
+  # Current main draws a 229px shared segment; the submitted spec is unchanged.
+  - path: qa/t4-order-14steps.layout.yaml
+    rules: [R-flow, R-fit]
+    what: "Original 14-step order pipeline: PDF read and metrics paths share a slide segment; page/slide text is below target; shared-lane reduction preserves only F5"
+    bad: {R-flow: {slide: edge:14, slide-no-title: edge:14}, R-fit: canvas}
+  # `in: cloud`인 private hosted zone이 Region 안에 그려짐(T3 sibling-containment, 경고 없음), 형제 account가 다른 account 안에 그려짐(T3 account-containment).
+  # rules.py 미검출: declared container membership is not checked.
+  - path: qa/t3-sibling-containment.layout.yaml
+    rules: [R-border]
+    what: "3-node private hosted zone incorrectly drawn inside Region; rules.py 미검출"
+  # `in: cloud`인 private hosted zone이 Region 안에 그려짐(T3 sibling-containment, 경고 없음), 형제 account가 다른 account 안에 그려짐(T3 account-containment).
+  # rules.py 미검출: sibling containment is not checked (check_layout reports the crossed VPC icon).
+  - path: qa/t3-account-containment.layout.yaml
+    rules: [R-border]
+    what: "3-node sibling account drawn inside another account; rules.py 미검출"
+  # 같은 멤버를 공유하는 overlay 3개의 제목이 겹침(T4 overlay_headers).
+  # rules.py 미검출: overlay title collisions are reported only by check_layout.
+  - path: qa/t4-overlay-headers.layout.yaml
+    rules: [R-border]
+    what: "2 EC2 nodes share ASG/target-group/SG overlays whose titles overlap; rules.py 미검출"
+  # T2 repro-alb-trunk-header의 slide는 797f782에서도 관통합니다.
+  # `LINE IN HEADER`와 `R-border B2`가 나오고 exit 1입니다.
+  - path: qa/t2-alb-trunk-header.layout.yaml
+    rules: [R-border]
+    what: "6-node ALB trunk crosses the next AZ subnet header; LINE IN HEADER / R-border B2"
+    bad: {R-border: {slide: edge:3, slide-no-title: edge:3}}
 examples:
   - path: ../../docs/examples/specs/alb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin]
@@ -1095,6 +1190,7 @@ examples:
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "GWLB inspection slide: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs"
   - path: ../../docs/examples/specs/slides/nfw-reference-architecture.layout.yaml
+    modes: [slide, slide-no-title]   # good R-fit is judged in slide modes only
     rules: [R-flow, R-label, R-rt, R-fit, R-border]
     what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
     good: [R-flow, R-rt, R-label, R-fit, R-border]   # golden slide: RTs inside their brackets, 10.04pt titled; R-border as the document

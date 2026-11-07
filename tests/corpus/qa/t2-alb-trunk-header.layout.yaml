@@ -1,0 +1,98 @@
+# Source: ~/.cache/skill-design/qa/T2/repro-alb-trunk-header.layout.yaml
+name: repro-alb-trunk-header
+mode: document
+cols:
+- client
+- edge
+- border
+- ingress
+- app
+rows:
+- az1
+- main
+- az2
+groups:
+- id: cloud
+  type: cloud
+- id: region
+  type: region
+  label: Seoul Region
+  in: cloud
+- id: vpc
+  type: vpc
+  label: RAG VPC
+  in: region
+- id: az
+  type: az
+  label: AZ {n}
+  in: vpc
+  per:
+  - az1
+  - az2
+- id: ingresssn
+  type: private
+  label: ALB subnet
+  in: az
+  span:
+    cols:
+    - ingress
+    - ingress
+- id: appsn
+  type: private
+  label: App subnet
+  in: az
+nodes:
+- id: client
+  icon: resource/Users
+  label: Employees
+  at:
+  - client
+  - main
+- id: cf
+  icon: service/Amazon-CloudFront
+  label: CloudFront
+  sub: VPC origin
+  in: cloud
+  at:
+  - edge
+  - main
+- id: igw
+  icon: resource/Amazon-VPC_Internet-Gateway
+  label: IGW
+  'on': vpc
+  at:
+  - border
+  - az1
+- id: alb
+  icon: resource/Elastic-Load-Balancing_Application-Load-Balancer
+  label: ALB
+  sub: internal / 2 AZ
+  in: vpc
+  at:
+  - ingress
+  - main
+- id: app
+  icon: service/AWS-Fargate
+  label: Fargate app {n}
+  sub: ECS / RAG API
+  in: appsn
+  col: app
+edges:
+- e: client -> cf
+  label: HTTPS :443
+  step: 1
+- e: cf -> alb
+  label: HTTPS :443
+  step: 2
+- e: alb -> app.*
+  label: HTTP :8080
+  trunk: true
+  step: 3
+note:
+  steps:
+  - - Users → edge
+    - 사용자가 HTTPS로 질문합니다.
+  - - Edge → origin
+    - VPC origin으로 internal ALB에 접근합니다.
+  - - ALB → app
+    - 두 AZ의 Fargate 태스크로 분산합니다.

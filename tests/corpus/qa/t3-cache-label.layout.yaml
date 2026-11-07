@@ -1,0 +1,19 @@
+# Source: ~/.cache/skill-design/qa/T3/minimal/cache-label.layout.yaml
+name: cache-label
+cols: [app, db, cache]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+  - {id: vpc, type: vpc, in: region}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: apps, type: private, label: App subnet, in: az}
+  - {id: data, type: private, label: Data subnet, in: az}
+nodes:
+  - {id: web, icon: service/Amazon-EC2, label: EC2, in: apps, col: app}
+  - {id: db, icon: service/Amazon-RDS, label: {1: RDS primary, 2: RDS standby}, in: data, col: db}
+  - {id: cache, icon: service/Amazon-ElastiCache, label: {1: Cache primary, 2: Cache replica}, in: data, col: cache}
+edges:
+  - {e: 'web.* -> cache.1', label: 'TLS :6379', trunk: true}
+  - {e: 'db.1 ..> db.2', verb: Sync replication}
+  - {e: 'cache.1 ..> cache.2', verb: Async replication}

@@ -1,0 +1,19 @@
+# Source: ~/.cache/skill-design/qa/T3/minimal/ssm-trunk.layout.yaml
+name: ssm-trunk
+cols: [users, ec2, endpoint, service]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+  - {id: vpc, type: vpc, in: region}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: subnet, type: private, in: az}
+nodes:
+  - {id: user, icon: resource/Client, label: Engineer, at: [users, az1]}
+  - {id: ec2, icon: service/Amazon-EC2, label: EC2, in: subnet, col: ec2}
+  - {id: ep, icon: resource/Amazon-VPC_Endpoints, label: SSM endpoints, in: subnet, col: endpoint}
+  - {id: ssm, icon: resource/AWS-Systems-Manager_Session-Manager, label: Session Manager, sub: IAM authorized sessions, in: region, at: [service, main]}
+edges:
+  - {e: 'user ..> ssm', label: 'HTTPS :443'}
+  - {e: 'ec2.* ..> ep.*', label: 'HTTPS :443'}
+  - {e: 'ep.* <..> ssm', trunk: true}
