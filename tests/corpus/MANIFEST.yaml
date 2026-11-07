@@ -17,6 +17,12 @@
 #                       1:1 with note rows
 #              R-fit    a slide fits 1108 × 540 (titled) at ≥ 10pt
 #              R-reject the spec is rejected with a clear message
+#   good     rules the case's drafts keep: the rule checker (scripts/rules.py) finds no
+#            violation of them in any drawn run (the runner reports a run that disagrees)
+#   bad      rule -> owner id (edge:3, node:rtsp, group:vpca), or a map of some of its
+#            modes to one: rules its drafts break, each drawn run (of those modes) with a
+#            violation of that rule naming that owner. Tag only what the draft shows, with
+#            the reason in a comment
 #   what     what the case exercises
 #   match    on an entry that rejects or refuses: text one of the refusal's lines must
 #            contain (or a map of those modes to texts)
@@ -47,6 +53,8 @@ cases:
     rules: [R-flow, R-rt, R-label]
     what: "centralized egress: RTs on inner rows a2/b1, one-way spoke trunks into TGW, separate tgw <-> eni.1/.2 lines"
     from: "bench/latest2/centralized-egress.layout.yaml"
+    good: [R-label]
+    bad: {R-rt: node:rtsp}   # as v2-1: RTs on the inner rows of the TGW column, outside their brackets
   - path: bench/latest3-egress.layout.yaml
     rules: [R-flow, R-rt, R-label]
     what: "centralized egress: RTs on outer rows a1/b2, bidirectional spoke trunks, separate tgw <-> enis.1/.2 lines"
@@ -55,6 +63,8 @@ cases:
     rules: [R-flow, R-rt, R-label]
     what: "centralized egress: RTs on inner rows a2/b1, bidirectional spoke trunks, separate tgw <-> eni.1/.2 lines"
     from: "bench/v2-1/centralized-egress.layout.yaml"
+    good: [R-label]
+    bad: {R-rt: node:rtsp}   # Spoke RT above / Firewall RT below the TGW, each between a spoke and a Security VPC line (in no bracket of its own); 'appliance mode' above its horizontal piece at a corner
   - path: bench/v2-2-egress.layout.yaml
     rules: [R-flow, R-rt, R-label]
     what: "centralized egress: RTs on outer rows a1/b2, bidirectional spoke trunks, separate TGW lines, one-way eni -> fwe"
@@ -95,6 +105,7 @@ cases:
     rules: [R-rt, R-label]
     what: "nfw slide without rtsp/rtfw/att cols: Firewall RT above TGW (tgw,az1), Spoke RT with sub below (tgw,az2)"
     from: "e-eng/nfw-noatt.layout.yaml"
+    bad: {R-rt: node:rtfw}   # Firewall RT above / Spoke RT below the TGW, between a spoke and an inspection line
   - path: trunk/eng-egress-tgw.layout.yaml
     rules: [R-flow, R-label]
     what: "centralized-egress with an empty sp column before Spoke RT and the TGW label shortened to \"TGW\""
@@ -115,10 +126,12 @@ cases:
     rules: [R-fit, R-rt, R-label]
     what: "nfw slide with empty att column and spoke subnet boxes dropped (EC2 placed directly in VPC A / B)"
     from: "e-nfw/s2.layout.yaml"
+    good: [R-fit]   # 10.04 / 10.06pt
   - path: slide-fit/nfw-slide.layout.yaml
     rules: [R-fit, R-rt, R-label]
     what: "nfw slide, empty att col, App subnet labels, verb on vpca<->tgw, one tgw<->eni.* VH edge for both AZs"
     from: "e-nfw/slide.layout.yaml"
+    bad: {R-fit: {slide: canvas, slide-no-title: canvas}}   # 9.49pt (SLIDE TOO SMALL too)
   - path: slide-fit/nfw-t.layout.yaml
     rules: [R-fit, R-rt, R-label]
     what: "nfw slide, empty att col, App subnet labels, VPC attachment verb on a single tgw<->eni.* VH template edge"
@@ -131,10 +144,12 @@ cases:
     rules: [R-fit, R-rt, R-label]
     what: "nfw slide, empty att col, no spoke subnet boxes, VPC attachment verb on single tgw<->eni.* VH edge"
     from: "e-nfw/t3.layout.yaml"
+    good: [R-fit]   # 10.04 / 10.06pt
   - path: slide-fit/nfw-t4.layout.yaml
     rules: [R-fit, R-rt, R-label]
     what: "nfw slide, empty att col, no spoke subnet boxes, verb on vpca<->tgw, single tgw<->eni.* VH edge"
     from: "e-nfw/t4.layout.yaml"
+    bad: {R-fit: {slide: canvas, slide-no-title: canvas}}   # 9.65pt (SLIDE TOO SMALL too)
   - path: flowcol/fc.layout.yaml
     rules: [R-flow, R-label]
     what: "flow column with edge labels/verbs and Korean sub lines on stacked ACM/CloudWatch/S3"
@@ -220,10 +235,12 @@ cases:
     rules: [R-flow]
     what: "3 per-row AZs: ALB forks to 3 EC2s that merge dashed into CloudWatch on a bottom-aligned flow column"
     from: "r3-merge/v3az.layout.json"
+    bad: {R-flow: edge:3}   # ALB fan: edge:4 crosses edge:3's vertical 12px below its bend (the fan's lines swap)
   - path: trunk/merge-v3az-top.layout.yaml
     rules: [R-flow]
     what: "merge-v3az with the CloudWatch flow column set to align: top: 3 EC2s merge dashed into a top-pinned node"
     from: "r3-merge/v3az_top.layout.json"
+    bad: {R-flow: edge:3}   # same fan crossing as merge-v3az
   - path: trunk/merge-vfan.layout.yaml
     rules: [R-flow]
     what: "2 per-row AZs: EC2s merge dashed into CloudWatch (bottom flow column); S3 on a top row fans dashed to them"
@@ -370,6 +387,7 @@ cases:
     rules: [R-flow]
     what: "per-AZ template node (Lambda in app subnet) placed on the flow column"
     from: "r4-port/rf/t9_tmpl_on_flowcol.layout.json"
+    bad: {R-flow: edge:4}   # edge:4 runs on top of edge:5 (check_layout LINE ON LINE too)
   - path: ports/io.layout.yaml
     rules: [R-flow]
     what: "HVH edges into and out of T on the same side (y -> t, t -> x) must not merge into one stem"
@@ -382,6 +400,7 @@ cases:
     rules: [R-flow]
     what: "four nodes in a row with all six pairwise edges: nested skip-edge detours sharing ports"
     from: "review-check/u3.layout.yaml"
+    bad: {R-flow: edge:3}   # nested detours under A cross 12px from a bend
   - path: ports/u4.layout.yaml
     rules: [R-flow]
     what: "four nodes in a row with chain plus skip edges a -> c and b -> d (no a -> d)"
@@ -390,6 +409,7 @@ cases:
     rules: [R-flow, R-label]
     what: "order pipeline in lanes (base): VHV bus -> rule wrap with bend_y gap(auth,ana), trunk from_offset 0, Aurora overlay"
     from: "review-lanes/a.yaml"
+    bad: {R-flow: {slide: edge:9, slide-no-title: edge:9}}   # on a slide edge:9's arrowhead ends sideways between Cognito's caption and the rule's icon
   - path: lanes/b.layout.yaml
     rules: [R-flow, R-label]
     what: "lanes with ana min_gap_before 180, sfn -> reserve.* trunk without from_offset 0"
@@ -426,6 +446,7 @@ cases:
     rules: [R-flow, R-label]
     what: "lanes with ana min_gap_before 180, no Aurora overlay: labeled writer/reader, proxy -> writer.1"
     from: "review-lanes/j.yaml"
+    good: [R-label]   # 'PostgreSQL :5432' above its horizontal piece at a corner
   - path: lanes/k.layout.yaml
     rules: [R-flow, R-label]
     what: "reworked lanes: WAF row, Cognito in web row, dbsn span, no overlay, step_at stem, proxy -> writer.1 HV"
@@ -580,6 +601,7 @@ cases:
     rules: [R-flow]
     what: "s pinned at xy [q.cx, q.cy] on top of grid node q, HVH out-and-back p -> s on the right sides"
     from: "review-small/xy3.yaml"
+    bad: {R-flow: edge:0}   # s pinned on top of q: the arrow into s ends on q
   - path: xy/fan-forced.layout.yaml
     rules: [R-flow]
     what: "hub below with two undirected links to diagonal top neighbours, one forced HVH, one routed freely"
@@ -720,6 +742,7 @@ cases:
     rules: [R-twin]
     what: "one VPC with 2 AZ columns side by side, one ASG over both EC2s; AZ a's EC2 has a long label"
     from: "rr-asgcols/b_document.layout.yaml"
+    good: [R-twin]   # twins drawn alike (no solver twin warning)
   - path: twin/ell.layout.yaml
     rules: [R-twin]
     what: "L-shaped ASG over the EC2s in both AZs' app subnets plus a worker EC2 in AZ a's second subnet only"
@@ -735,26 +758,32 @@ cases:
     rules: [R-twin]
     what: "2x2 grid of web and worker subnets in 2 AZs, ASG header right over all four EC2s, long worker labels"
     from: "rr-asgcols/grid.layout.yaml"
+    good: [R-twin]   # twins drawn alike (no solver twin warning)
   - path: twin/sub.layout.yaml
     rules: [R-twin]
     what: "3 AZ columns with app + DB subnets, ALB forking to 3 EC2s; ASG (header right) covers only the first two AZs"
     from: "rr-asgcols/sub.layout.yaml"
+    good: [R-twin]   # twins drawn alike (no solver twin warning)
   - path: twin/three.layout.yaml
     rules: [R-twin]
     what: "3 AZ columns with app + DB subnets, ALB forking to 3 EC2s and EC2 -> RDS per AZ; ASG over all three EC2s"
     from: "rr-asgcols/three.layout.yaml"
+    good: [R-twin]   # twins drawn alike (no solver twin warning)
   - path: twin/tw-long.layout.yaml
     rules: [R-twin]
     what: "two VPCs stacked in shared columns, each 2 AZs with an ASG over both EC2s; VPC 2 AZ b subnet has a long label"
     from: "rr-asgcols/tw_long.layout.yaml"
+    good: [R-twin]   # twins drawn alike (no solver twin warning)
   - path: twin/tw-side.layout.yaml
     rules: [R-twin]
     what: "two identical VPCs side by side (4 columns), each with 2 AZs and an ASG over both EC2s"
     from: "rr-asgcols/tw_side.layout.yaml"
+    good: [R-twin]   # twins drawn alike (no solver twin warning)
   - path: twin/tw-stack.layout.yaml
     rules: [R-twin]
     what: "two identical VPCs stacked in shared columns, each with 2 AZs and an ASG over both EC2s"
     from: "rr-asgcols/tw_stack.layout.yaml"
+    good: [R-twin]   # twins drawn alike (no solver twin warning)
   - path: ports/ce-tgw.layout.yaml
     rules: [R-flow, R-label]
     what: "centralized egress with Firewall RT sub line lengthened to '10.1.0.0/16 → Transit Gateway'"
@@ -795,6 +824,7 @@ cases:
     rules: [R-flow]
     what: "three nodes into a VPC group side plus outgoing vpc -> s: in and out ports on one group"
     from: "rr-port2/g/g1.layout.yaml"
+    bad: {R-flow: edge:0}   # vpc -> s leaves the VPC side and crosses edge:0's arrow 12px after its bend
   - path: ports/g2.layout.yaml
     rules: [R-flow]
     what: "trunk u -> az.* into per-AZ groups plus v -> az.1 into the same AZ box: AZ group-side ports"
@@ -1016,9 +1046,12 @@ examples:
   - path: ../../docs/examples/specs/bedrock-dx-reference-architecture.layout.yaml
     rules: [R-flow, R-label]
     what: "Claude Code on Amazon Bedrock over Direct Connect: on-premises PC → DX → VGW → VPC endpoints in Seoul (+ us-west-2 option B), with a step legend pane"
+    good: [R-flow]
+    bad: {R-label: {slide: edge:2, slide-no-title: edge:2}}   # bus drop badges 4-6 sit by their drops (one net with the bus); on a slide 'DNS :53' goes left of its vertical line (the engine warns: no room right of it)
   - path: ../../docs/examples/specs/centralized-egress.layout.yaml
     rules: [R-flow, R-label, R-rt]
     what: "Centralized egress through a Security VPC: App VPC A and App VPC B (EC2 → TGW ENI per AZ) → TGW (Spoke RT on the spoke side, Firewall RT on the Security VPC side) → Security VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet"
+    good: [R-flow, R-rt, R-label]   # golden: Spoke RT between the spoke attachments, Firewall RT between the Security VPC ones
   - path: ../../docs/examples/specs/example.layout.yaml
     rules: [R-flow, R-label]
     what: "Skeleton (docs/example.svg): one VPC over two AZs, IGW → internet-facing ALB → an Auto Scaling group / target group of one EC2 per AZ"
@@ -1028,9 +1061,11 @@ examples:
   - path: ../../docs/examples/specs/nfw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt]
     what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
+    good: [R-flow, R-rt, R-label]   # golden (rules-design R-rt: Spoke RT and Firewall RT inside their brackets); Layout OK
   - path: ../../docs/examples/specs/nlb-mtls-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin]
     what: "NLB mutual TLS: client → IGW → NLB (nlb-sg, trust store from S3) → same-AZ EC2 in backend-sg, with a left legend pane"
+    good: [R-flow]   # badge 3 / 'TCP :80' are placed by the spec (step_at / label_at); arrows into the SGs end 4px inside the subnet borders
   - path: ../../docs/examples/specs/nlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin]
     what: "Internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and regional ACM / CloudWatch / S3"
@@ -1040,6 +1075,7 @@ examples:
   - path: ../../docs/examples/specs/tgw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt]
     what: "TGW reference: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it"
+    good: [R-flow, R-rt]   # golden (TGW A RT inside the Dev/Test hull; each TGW's only table beside it)
   - path: ../../docs/examples/specs/slides/alb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "ALB 3-tier slide: Users → IGW → internet-facing ALB → one ASG / target group over two AZs → RDS Multi-AZ, with Route 53 and the regional services (ACM, WAF, CloudWatch, S3) in one column right of the VPC"
@@ -1049,12 +1085,14 @@ examples:
   - path: ../../docs/examples/specs/slides/nfw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt, R-fit]
     what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
+    good: [R-flow, R-rt, R-label, R-fit]   # golden slide: RTs inside their brackets, 10.04pt titled
   - path: ../../docs/examples/specs/slides/nlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "Slide: internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and a regional ACM / CloudWatch / S3 column"
   - path: ../../docs/examples/specs/slides/tgw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt, R-fit]
     what: "TGW reference slide: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it"
+    good: [R-flow, R-rt, R-label]   # golden slide; the VPC attachment verb sits above the horizontal piece at a corner
 
 # Not kept from the review scratch (about 440 spec files, 230 kept):
 #   - exact duplicates (same content ignoring name and mode: the -document/-slide pairs,

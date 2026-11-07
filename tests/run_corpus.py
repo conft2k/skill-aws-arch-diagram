@@ -28,12 +28,16 @@ a file listed twice, …), or a corpus or docs/examples spec it does not list, s
 before it starts. An entry with `known_fail: <why>` that does not end as expected is reported
 as a known failure without failing the run, and is reported again once it passes.
 
-The user rules (R-flow, R-rt, R-twin, R-label, R-fit) are not checked yet: rule_violations()
-is the hook a rule checker plugs into, by --rule-checker module:function (or path.py:function),
+The user rules (R-flow, R-rt, R-twin, R-label, R-fit) are judged by a rule checker plugged
+into rule_violations() (scripts/rules.py:corpus is the one), by --rule-checker module:function (or path.py:function),
 or, in process with -j 1 only, by appending to RULE_CHECKERS (worker processes load only the
 --rule-checker ones; -j > 1 with appended checkers stops). Each checker gets (spec, build,
 draft, run) — run a copy of the run's record — and returns a list of violations
-({"rule": "R-rt", "msg": "..."} dicts); they land in the report's `violations`.
+({"rule": "R-rt", "msg": "..."} dicts); they land in the report's `violations`. An entry's
+`good` (rules with no violation in any drawn run) and `bad` (rule → an owner id some violation
+of it must name, in every drawn run, or a map of some modes to one) are compared with them:
+the disagreeing runs are printed and kept in the report's `tag_misses`, without changing the
+exit status.
 
 Needs PyYAML (the manifest and the specs are YAML). Python 3.9+.
 """
@@ -73,8 +77,10 @@ ALL_MODES = list(MODES)
 # expect → the run result it requires
 EXPECT = {"load": "drawn", "reject": "rejected", "refuse": "layout-error"}
 # the keys a manifest entry may have
-ENTRY_KEYS = {"path", "modes", "expect", "match", "rules", "what", "from", "note", "known_fail"}
+ENTRY_KEYS = {"path", "modes", "expect", "match", "rules", "what", "from", "note", "known_fail", "good", "bad"}
 RULES = ("R-flow", "R-rt", "R-twin", "R-label", "R-fit", "R-reject")
+# the rules a rule checker judges (good / bad tags name these)
+CHECKED = ("R-flow", "R-rt", "R-twin", "R-label", "R-fit")
 
 
 # =======================================================================================
@@ -194,6 +200,17 @@ def load_manifest(path: Path = MANIFEST) -> List[Dict[str, Any]]:
             e["match_by_mode"] = mt or {}
             if "known_fail" in e and not (isinstance(e["known_fail"], str) and e["known_fail"]):
                 raise SystemExit(f"{path}: {e['path']}: known_fail must be a non-empty text (why it fails)")
+            good, bad = e.get("good", []), e.get("bad", {})
+
+            def owner_ok(o):
+                return (isinstance(o, str) and o) or (isinstance(o, dict) and o and set(o) <= set(e["modes"])
+                                                     and all(isinstance(v, str) and v for v in o.values()))
+            if not (isinstance(good, list) and all(r in CHECKED for r in good)) or not (
+                    isinstance(bad, dict) and all(r in CHECKED and owner_ok(o) for r, o in bad.items())) \
+                    or set(good) & set(bad):
+                raise SystemExit(f"{path}: {e['path']}: good must be a list of rules ({', '.join(CHECKED)}) and bad a "
+                                 f"map of other such rules to the owner id a violation must name (edge:3, node:rtsp, …), "
+                                 f"or to a map of some of the entry's modes to one")
             e["expect_label"] = ex[e["modes"][0]] if len(set(ex.values())) == 1 else "mixed"
             entries.append(e)
     if path.resolve() == MANIFEST.resolve():
@@ -343,6 +360,28 @@ def failed(entry: Dict[str, Any], runs: List[Dict[str, Any]]) -> Optional[str]:
     return "; ".join(why) or None
 
 
+def tag_misses(entry: Dict[str, Any], runs: List[Dict[str, Any]]) -> List[str]:
+    """Where a drawn run's rule violations disagree with the entry's good / bad tags: a good
+    rule violated, or a bad rule with no violation naming its owner."""
+    out = []
+    for r in runs:
+        if r["result"] != "drawn":
+            continue
+        for rule in entry.get("good", []):
+            got = [v for v in r["violations"] if v.get("rule") == rule]
+            if got:
+                out.append(f"{r['mode']}: good {rule}, but {len(got)} violation{'s' if len(got) != 1 else ''}: "
+                           f"{got[0].get('msg', '')[:160]}")
+        for rule, owner in entry.get("bad", {}).items():
+            if isinstance(owner, dict):
+                if r["mode"] not in owner:
+                    continue
+                owner = owner[r["mode"]]
+            if not any(v.get("rule") == rule and owner in str(v.get("owners", "")).split(",") for v in r["violations"]):
+                out.append(f"{r['mode']}: bad {rule}, but no violation names {owner}")
+    return out
+
+
 def cell(r: Dict[str, Any]) -> str:
     if r["result"] == "rejected":
         return "REJ"
@@ -443,9 +482,19 @@ def main(argv: Optional[List[str]] = None) -> int:
           f"problems {sum(codes.values())}; runs with warnings {warn_runs}; slide runs < {K.SLIDE_MIN_PT}pt: {len(slide_small)}")
     for k, v in codes.most_common():
         print(f"  {v:5d}  {k}")
+    misses = []
     if saved or a.rule_checker:
         vio = Counter(v.get("rule", "?") for r in results for v in r["violations"])
         print("rule violations: " + (", ".join(f"{k} {v}" for k, v in vio.most_common()) or "none"))
+        tagged = [e for e in entries if e.get("good") or e.get("bad")]
+        for e in tagged:
+            misses += [(e["path"], m) for m in tag_misses(e, by_entry.get(e["path"], []))]
+        n_good = sum(len(e.get("good", [])) for e in tagged)
+        n_bad = sum(len(e.get("bad", {})) for e in tagged)
+        print(f"rule tags: {len(tagged)} tagged entries ({n_good} good, {n_bad} bad rule tags); "
+              f"{len(misses)} run{'s' if len(misses) != 1 else ''} disagreeing (reported, not failing the run)")
+        for p, m in misses:
+            print(f"  tag: {p}: {m}")
     print("slowest runs:")
     for r in sorted(results, key=lambda r: -r["time"])[:8]:
         print(f"  {r['time']:7.2f}s  {r['path']} [{r['mode']}]")
@@ -453,7 +502,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"total: {total:.1f}s wall ({cpu:.1f}s summed over runs, -j {a.jobs})")
     report = {"root": str(ROOT), "jobs": a.jobs, "wall_s": round(total, 2), "summed_s": round(cpu, 2),
               "entries": len(entries), "runs": results, "codes": dict(codes), "failures": fails,
-              "known_failures": known, "known_fail_fixed": fixed}
+              "known_failures": known, "known_fail_fixed": fixed, "tag_misses": misses}
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(report, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"report: {a.out}")
