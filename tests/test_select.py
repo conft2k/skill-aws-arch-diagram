@@ -2,6 +2,7 @@
 import json
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import layout
 import layout_spec
 import rules
+import check_layout as CL
 
 
 def invoke(source, tmp_path, capsys, *args):
@@ -96,6 +98,21 @@ def test_hard_route_is_kept_and_warned(tmp_path, capsys):
     assert "rule violation" in text.splitlines()[-1]
     evaluated, budget = map(int, re.search(r"evaluated (\d+)/(\d+) candidates", text).groups())
     assert 0 <= evaluated <= budget == 16
+
+
+@pytest.mark.parametrize("title", [True, False], ids=["slide", "slide-no-title"])
+def test_return_flow_is_not_clipped_to_reduce_other_checks(tmp_path, capsys, title):
+    source = ROOT / "tests/corpus/rt/gw-ret.layout.yaml"
+    args = ["--mode", "slide"] + ([] if title else ["--no-title"])
+    _, draft, _ = invoke(source, tmp_path, capsys, *args)
+    root = ET.fromstring(draft)
+    spec = layout_spec.load(source, mode="slide", title=title)
+    edge = next(e for e in spec.edges if e.a == "ec2.2" and e.b == "users")
+    group = root.find(f"{{{layout.SVG_NS}}}g[@id='edge:{edge.n}']")
+    assert group is not None and any(e.tag.rsplit("}", 1)[-1] in {"polyline", "line"} for e in group)
+    problems = CL.run_checks(root)
+    assert not [p.msg for p in problems if p.kind in
+                {"LINE OFF CANVAS", "OFF CANVAS", "BADGE OFF CANVAS"}]
 
 
 @pytest.mark.parametrize("checker", ["check", "score"])

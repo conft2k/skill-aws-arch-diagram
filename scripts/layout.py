@@ -1514,7 +1514,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         all_before = rule_guard.verdict(b, data, probs, enabled=False)
         if all_after is None or all_before is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
-        if candidate_score < score and candidate_score[2] <= score[2] and all_after < all_before:
+        if candidate_score < score and candidate_score.checks <= score.checks and all_after < all_before:
             best, score = result, candidate_score
     budget = MAX_CANDIDATES[b.spec.mode]
     tried = {base_decisions}
@@ -1554,7 +1554,11 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
             tier = rule_guard.verdict(cb, cb.svg, [])
             if tier is None or rule_guard.error is not None:
                 return default, ["selection: default kept (rule checker unavailable)"]
-            if cb.svg not in drafts and tier[:2] <= score[:2]:
+            # Clipping is unknown until drawing checks. An already clipped incumbent
+            # may improve that critical part even if its rule-only tier 0 is worse.
+            tier_worse = ((tier.tier_0_count, tier.tier_0_cost)
+                          > (score.tier_0_count, score.tier_0_cost))
+            if cb.svg not in drafts and (score.clipping or not tier_worse):
                 drafts.add(cb.svg)
                 cd, fixed = fixed_build(cb, scratch, rule_guard)
                 cp = rule_guard.problems(cd)
@@ -1566,7 +1570,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
                 # The enabled group steers the search; other rules and checks still
                 # protect the corpus. A changed draft must improve its full Verdict.
                 if (candidate_score < round_score and all_after < all_before
-                        and candidate_score[2] <= score[2]):
+                        and candidate_score.checks <= score.checks):
                     round_best = (cb, cd, fixed, cp, best[4], best[5], dict(decisions.skip))
                     round_score, round_index = candidate_score, count
             if count >= budget:
@@ -1587,7 +1591,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         best_score = rule_guard.verdict(best[0], best[1], best[3], enabled=False)
         if result_score is None or best_score is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
-        if result_score < best_score and result_score[2] <= best_score[2]:
+        if result_score < best_score and result_score.checks <= best_score.checks:
             best = result
         after = rule_guard.check(best[0].spec, best[0].geom, best[1])
         removed = Counter((v.rule, v.code) for v in first) - Counter((v.rule, v.code) for v in after)
@@ -1597,10 +1601,12 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         if final_score is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
         gains = []
-        if final_score[1] < first_score[1]:
-            gains.append(f"tier-0 cost {first_score[1]:.6g} → {final_score[1]:.6g}")
-        if final_score[3] < first_score[3]:
-            gains.append(f"R-fit shortfall {first_score[3]:.6g} → {final_score[3]:.6g}")
+        if final_score.clipping < first_score.clipping:
+            gains.append(f"canvas clipping checks {first_score.clipping} → {final_score.clipping}")
+        if final_score.tier_0_cost < first_score.tier_0_cost:
+            gains.append(f"tier-0 cost {first_score.tier_0_cost:.6g} → {final_score.tier_0_cost:.6g}")
+        if final_score.text_shortfall < first_score.text_shortfall:
+            gains.append(f"R-fit shortfall {first_score.text_shortfall:.6g} → {final_score.text_shortfall:.6g}")
         lines = [f"selection: candidate {index} ({changes}); "
                  f"removed {detail}" + (f"; {'; '.join(gains)}" if gains else "")
                  + f"; evaluated {count}/{budget} candidates"]

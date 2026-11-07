@@ -77,22 +77,22 @@ def test_self_comparison_has_no_changes_or_deltas(tmp_path):
     assert all(r["verdict"] == "same" for r in got["runs"])
 
 
-@pytest.mark.parametrize("index", range(6))
+@pytest.mark.parametrize("index", range(7))
 @pytest.mark.parametrize("direction,expected", [(-1, "better"), (1, "worse")])
 def test_verdict_uses_each_part_in_spec_order(tmp_path, index, direction, expected):
     # Every later part points the opposite way: only the first differing part wins.
-    baseline_parts = [2, 20, 2, 2, 2, 10000]
+    baseline_parts = [2, 2, 20, 4, 2, 2, 10000]
     current_parts = baseline_parts[:]
     current_parts[index] += direction
-    for later in range(index + 1, 6):
+    for later in range(index + 1, 7):
         current_parts[later] -= direction
 
     def scored(parts):
-        count, cost, checks, shortfall, misses, area = parts
+        clipping, count, cost, checks, shortfall, misses, area = parts
         return run(
             violations=[violation(cost=cost / count) for _ in range(count)]
             + [violation("R-fit", shortfall, 2)],
-            codes=["LINE OVER TEXT"] * checks,
+            codes=["LINE OFF CANVAS"] * clipping + ["LINE OVER TEXT"] * (checks - clipping),
             warnings=["edge:0 drew VH instead of HV"] * misses,
             canvas=[area, 1],
         )
@@ -148,8 +148,8 @@ def test_fit_uses_effective_text_when_no_fit_violation_was_recorded(tmp_path):
     now = report(run(text={"actual": 10, "target": 11}))
     got = compare(tmp_path, now, base)
     assert got["runs"][0]["verdict"] == "better"
-    assert got["runs"][0]["baseline_verdict"][3] == 2
-    assert got["runs"][0]["current_verdict"][3] == 1
+    assert got["runs"][0]["baseline_verdict"][4] == 2
+    assert got["runs"][0]["current_verdict"][4] == 1
 
 
 def test_refused_shape_warning_does_not_count_as_shape_miss(tmp_path):
@@ -272,8 +272,8 @@ def test_draft_shortfall_precedes_smaller_area_despite_rounded_fit_cost(tmp_path
     assert before["runs"][0]["violations"][0]["cost"] == now["runs"][0]["violations"][0]["cost"] == 1.88
     got = compare(tmp_path, now, before, drawing(width, 999), drawing(1000, 1000))
     assert got["runs"][0]["verdict"] == "worse"
-    assert got["runs"][0]["current_verdict"][3] > got["runs"][0]["baseline_verdict"][3]
-    assert got["runs"][0]["current_verdict"][3] == pytest.approx(11 - 12 * 760 / width)
+    assert got["runs"][0]["current_verdict"][4] > got["runs"][0]["baseline_verdict"][4]
+    assert got["runs"][0]["current_verdict"][4] == pytest.approx(11 - 12 * 760 / width)
 
 
 @pytest.mark.parametrize("expect,old_result,new_result", [

@@ -465,10 +465,9 @@ def _verdict(run: Dict[str, Any], draft: Optional[bytes], judged: bool) -> Optio
     misses = run.get("shape_misses")
     if misses is None:
         misses = layout.shape_misses(SimpleNamespace(warnings=run["warnings"]))
-    score = list(rules.score(viol, run["codes"], geom, None, misses))
+    score = rules.score(viol, run["codes"], geom, None, misses)
     # Recompute from both drafts, retaining even smaller shortfalls before area.
-    score[3] = short
-    return score
+    return list(score._replace(text_shortfall=short))
 
 
 def _deltas(current: Counter, baseline: Counter) -> dict:

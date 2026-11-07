@@ -1,5 +1,8 @@
 # Ticket 04 validation
 
+이 문서는 최초 구현 `c3fa8e8`의 기록이다. 현재 결과와 동일 병렬도 재검증은
+[canvas clipping review fix](04-canvas-clipping-review-fix.md)를 참조한다.
+
 브랜치: `t04-select`. 기준: `main-cc17a2d.json`과 `main-cc17a2d-drafts/`.
 시작 HEAD는 `4aab3b3`이며 기준과 Draft가 같다. 기준과 다른 multiregion DR
 태그는 시작 worktree의 Mode별 태그를 사용했다.

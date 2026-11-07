@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import layout  # noqa: E402
+import check_layout as CL  # noqa: E402
 import layout_const as K  # noqa: E402
 import layout_model as M  # noqa: E402
 import layout_spec  # noqa: E402
@@ -575,7 +576,7 @@ class Score(unittest.TestCase):
         hard = rules.Violation("R-rt", ("node:rt",), "x", 2.0)
         fit = rules.Violation("R-fit", ("canvas",), "y", 1.5, rules.TIER_FIT)
         self.assertLess(rules.score([fit], [1, 2, 3], geom, None, 0), rules.score([hard], [], geom, None, 0))
-        self.assertEqual(rules.score([hard, fit], [], geom, None, 1), (1, 2.0, 0, 1.5, 1, 10000.0))
+        self.assertEqual(rules.score([hard, fit], [], geom, None, 1), (0, 1, 2.0, 0, 1.5, 1, 10000.0))
 
     def test_enabled_group_keeps_fit_and_the_verdict_order(self):
         geom = M.Geometry(mode="document", S=48, canvas_w=100, canvas_h=100, cols={}, rows={})
@@ -587,9 +588,20 @@ class Score(unittest.TestCase):
         ]
         enabled = {"R-border", "R-flow"}
         score = rules.score(violations, [1], geom, None, 2, enabled_rules=enabled)
-        self.assertEqual(score, (2, 5, 1, 0.00001, 2, 10000))
-        self.assertEqual(rules.score(violations, [], geom, None, 0, enabled_rules=())[0], 0)
-        self.assertGreater(rules.score(violations, [], geom, None, 0, enabled_rules=())[3], 0)
+        self.assertEqual(score, (0, 2, 5, 1, 0.00001, 2, 10000))
+        self.assertEqual(rules.score(violations, [], geom, None, 0, enabled_rules=()).tier_0_count, 0)
+        self.assertGreater(rules.score(violations, [], geom, None, 0, enabled_rules=()).text_shortfall, 0)
+
+    def test_clipping_is_critical_even_when_other_checks_and_rules_improve(self):
+        geom = M.Geometry(mode="document", S=48, canvas_w=100, canvas_h=100, cols={}, rows={})
+        hard = rules.Violation("R-flow", ("edge:0",), "F3", 2)
+        before = rules.score([hard], ["LINE OVER ICON"] * 6, geom, None, 0)
+        for code in ("LINE OFF CANVAS", "OFF CANVAS", "BADGE OFF CANVAS"):
+            with self.subTest(code=code):
+                issue = CL.Issue(code, "", [], {})
+                problem = layout.Problem(issue, [], [])
+                for checks in ([code], [issue], [problem]):
+                    self.assertGreater(rules.score([], checks, geom, None, 0), before)
 
 
 class CorpusTags(unittest.TestCase):

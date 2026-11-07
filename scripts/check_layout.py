@@ -1095,6 +1095,15 @@ def ref_id(r):
     return r
 
 
+CANVAS_CLIPPING_CODES = frozenset(("LINE OFF CANVAS", "OFF CANVAS", "BADGE OFF CANVAS"))
+
+
+def clipping_count(problems):
+    """Count lost canvas content in checker Issues, engine Problems or corpus codes."""
+    return sum(getattr(getattr(p, "iss", p), "kind", p if isinstance(p, str) else None)
+               in CANVAS_CLIPPING_CODES for p in problems)
+
+
 @scaled_svg
 def run_checks(root):
     texts, segs, masks, icons, canvas = collect(root)

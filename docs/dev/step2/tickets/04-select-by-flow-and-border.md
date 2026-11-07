@@ -11,13 +11,14 @@
 
 **Blocked by:** 01, 02, 03
 
-**Status:** implemented; identical runtime parallelism remains unverified
+**Status:** implemented and validated
 
 Evidence: [ticket 04 validation](../results/04-select-by-flow-and-border.md).
-The supplied baseline used `-j 6`; the requested full run used `-j 4`. Every measured
-runtime limit passes, but identical parallelism has not been measured.
+Review fix: [canvas clipping validation](../results/04-canvas-clipping-review-fix.md).
+The review-fix full run used `-j 6`, matching the supplied baseline; all runtime limits
+pass. New clipping cannot win by reducing other checks.
 
-- [x] Verdict order: tier-0 count, tier-0 cost, check problems, effective text shortfall, shape misses, canvas area. Tier-0 counts only R-border and R-flow, and R-fit always counts.
+- [x] Verdict order: critical canvas clipping count, tier-0 count, tier-0 cost, check problems, effective text shortfall, shape misses, canvas area. Tier-0 counts only R-border and R-flow, and R-fit always counts.
 - [x] Budget: at most 12 candidates for documents and 16 for slides, not counting the default drawing and not counting text scale tries.
 - [x] Determinism: the same spec gives byte-identical drafts on repeated runs.
 - [x] Corpus (ticket 01 report against the baseline of the starting main commit):
@@ -26,7 +27,7 @@ runtime limit passes, but identical parallelism has not been measured.
   - Tags the evidence fixes move from bad to good, each with its reason.
   - Check problems not higher.
   - Each changed draft has a better verdict.
-- [ ] Runtime is measured on this machine with the full corpus at `-j 4`, one run, under the same conditions as the baseline. Per diagram it is at most 3× and never over 30 s; corpus wall time is at most 3×.
+- [x] Runtime is measured on this machine with the full corpus at `-j 4`, one run, under the same conditions as the baseline. Per diagram it is at most 3× and never over 30 s; corpus wall time is at most 3×. The review-fix instruction supersedes the parallelism with `-j 6`, matching the baseline.
 - [x] Tags change only on evidence. A bad tag becomes good only when every tagged mode passes. A case improved in some modes only gets a per-mode tag.
 - [x] Command-line tests on small specs:
   - The summary names the winner's index and differing decisions, and the final line still counts remaining violations.

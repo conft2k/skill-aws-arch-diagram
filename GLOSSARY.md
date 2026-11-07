@@ -119,7 +119,7 @@ One complete drawing of a spec under one set of layout decisions. Candidates are
 _Avoid_: attempt, variant
 
 **Verdict**:
-The ordered score of a candidate. Its parts, in order: tier-0 violation count, tier-0 cost, check problem count, effective text shortfall, shape misses, canvas area.
+The ordered score of a candidate. Its parts, in order: canvas clipping check count (critical like tier 0, before all other parts), tier-0 violation count, tier-0 cost, check problem count, effective text shortfall, shape misses, canvas area.
 _Avoid_: grade, fitness
 
 ## Corpus

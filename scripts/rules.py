@@ -62,7 +62,7 @@ after hug.png the border hug and the header band crossing as the tier-0 rule R-b
 
 Violation(rule, owners, message, cost, tier, code): owners are draft element ids (edge:3,
 node:rtsp, group:vpca, canvas, note); tier 0 a hard rule, 2 the slide fit. score() orders
-candidate drafts by them (not used by the engine yet). corpus() is tests/run_corpus.py's
+candidate drafts with critical canvas clipping first, for selection and later stages. corpus() is tests/run_corpus.py's
 --rule-checker hook. Thresholds and helpers come from check_layout / layout_const; only the
 concepts new here are defined here.
 """
@@ -72,7 +72,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_layout as CL  # noqa: E402
@@ -871,18 +871,29 @@ def check(spec, geom, draft: bytes, drawn: Optional[Drawn] = None) -> List[Viola
     return list(out)
 
 
+class Verdict(NamedTuple):
+    clipping: int
+    tier_0_count: int
+    tier_0_cost: float
+    checks: int
+    text_shortfall: float
+    shape_misses: int
+    canvas_area: float
+
+
 def score(viol: Sequence[Violation], probs: Sequence, geom, spec, misses: int,
           enabled_rules=None) -> tuple:
-    """Verdict: tier-0 count and cost, checks, effective text shortfall, misses, area.
+    """Verdict: canvas clipping, tier-0 count/cost, checks, text shortfall, misses, area.
 
     Only enabled rules count in tier 0 during selection. R-fit always counts, at
     full precision so a larger canvas cannot hide even a small text regression.
+    Lost canvas content is critical: reducing other problems cannot buy new clipping.
     """
     hard = [v for v in viol if v.tier == TIER_HARD
             and (enabled_rules is None or v.rule in enabled_rules)]
     fit = sum(v.cost for v in viol if v.rule == "R-fit")
-    return (len(hard), round(sum(v.cost for v in hard), 3), len(probs), fit, misses,
-            round(geom.canvas_w * geom.canvas_h, 1))
+    return Verdict(CL.clipping_count(probs), len(hard), round(sum(v.cost for v in hard), 3),
+                   len(probs), fit, misses, round(geom.canvas_w * geom.canvas_h, 1))
 
 
 def lines(viol: Sequence[Violation]) -> List[str]:
