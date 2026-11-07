@@ -18,8 +18,10 @@ arch.svg, all -> <out-dir>/arch.svg), a slide preview would land on a draft's PN
 output would overwrite one of the drafts, the script names the clash, writes nothing and
 exits with status 1. Names that differ only in case (Arch.svg, arch.svg) or in Unicode
 normalisation (NFC or NFD Korean) count as the same file, as they are on macOS (and, for
-case, on Windows); the same draft given twice, by any path or link, is not a clash. This
-check needs no icons: the official icon bundle is loaded (and downloaded on first use)
+case, on Windows); the same draft given twice, by any path or link, is not a clash. An
+output that already exists but may not be written (chmod 444, or a link to such a file)
+is named the same way and nothing is written. These
+checks need no icons: the official icon bundle is loaded (and downloaded on first use)
 only when the drafts are checked. Every draft is checked next — icon refs (embed.py) and
 the shared draft subset (svg2pptx.py) — whatever formats are asked for, so one draft
 always works for all of them. If any draft fails, nothing is
@@ -41,7 +43,7 @@ import cairosvg  # noqa: E402
 import embed  # noqa: E402
 import render_pptx  # noqa: E402
 import svg2pptx  # noqa: E402
-from outfile import write_atomic  # noqa: E402
+from outfile import unwritable, write_atomic  # noqa: E402
 
 
 def stem(path: Path) -> str:
@@ -157,11 +159,17 @@ def main():
         ap.error("more --title values than drafts")
 
     # check everything before writing anything: output paths first, then the drafts
-    problems = clashes(a.drafts, planned_outputs(a.drafts, a.svg, a.png, a.out_dir, a.pptx, a.preview))
+    plan = planned_outputs(a.drafts, a.svg, a.png, a.out_dir, a.pptx, a.preview)
+    problems = clashes(a.drafts, plan)
     if problems:
         print("Output name clash:")
         print("\n".join(f"  {p}" for p in problems))
         sys.exit("Nothing written; rename a draft or the deck, or use a separate --out-dir.")
+    locked = unwritable(dict.fromkeys(out for out, _, _ in plan))
+    if locked:
+        print("Output not writable (it exists and may not be written):")
+        print("\n".join(f"  {p}" for p in locked))
+        sys.exit("Nothing written; make the file(s) writable or write somewhere else.")
 
     embedded, failed = {}, False
     for d in a.drafts:

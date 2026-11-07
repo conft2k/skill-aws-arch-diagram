@@ -24,6 +24,8 @@ sys.path.insert(0, str(SCRIPTS))
 import outfile  # noqa: E402
 
 HAS_PPTX = all(importlib.util.find_spec(m) for m in ("pptx", "cairosvg"))
+# root may write any file, so a chmod 444 output cannot be refused for it (os.access is True)
+IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 GOOD = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
         '<rect x="10" y="10" width="20" height="20" fill="#FF0000"/></svg>')
@@ -34,9 +36,22 @@ BAD_SHAPE = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
              '<path d="M0,0 L9,9"/></svg>')
 
 
-def run(script, *args):
+def run(script, *args, umask=None):
     return subprocess.run([sys.executable, str(SCRIPTS / script), *map(str, args)],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True,
+                          preexec_fn=None if umask is None else (lambda: os.umask(umask)))
+
+
+class umask_set:
+    """Run a block under this process's umask `mask`, restoring the old one after."""
+    def __init__(self, mask):
+        self.mask = mask
+
+    def __enter__(self):
+        self.old = os.umask(self.mask)
+
+    def __exit__(self, *exc):
+        os.umask(self.old)
 
 
 class Work(unittest.TestCase):
@@ -118,6 +133,32 @@ class EmbedKeepsFiles(Work):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertFalse((self.work / "new").exists())
 
+    def test_new_output_follows_umask(self):
+        # the review's repro: under umask 077 the output came out 0644, not 0600
+        src = self.file("draft.svg", GOOD)
+        for mask, mode in ((0o077, 0o600), (0o002, 0o664)):
+            dst = self.work / f"final-{mask:03o}.svg"
+            r = run("embed.py", src, dst, umask=mask)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(dst.stat().st_mode & 0o777, mode, f"umask {mask:03o}")
+
+    @unittest.skipIf(IS_ROOT, "root may write a read-only file")
+    def test_read_only_output_is_refused(self):
+        # the review's repro: a chmod 444 output was replaced instead of refused
+        src = self.file("draft.svg", GOOD)
+        dst = self.file("ro/final.svg", "old")
+        dst.chmod(0o444)
+        link = self.work / "link.svg"
+        link.symlink_to(dst)
+        for out in (dst, link):
+            r = run("embed.py", src, out)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("not writable", r.stderr)
+            self.assertEqual(dst.read_text(encoding="utf-8"), "old")
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(self.leftovers(dst.parent), [])
+        self.assertEqual(self.leftovers(), [])
+
 
 @unittest.skipUnless(HAS_PPTX, "needs python-pptx and cairosvg")
 class DeckKeepsFiles(Work):
@@ -168,6 +209,32 @@ class DeckKeepsFiles(Work):
         self.assertEqual(len(Presentation(str(deck)).slides), 1)
         self.assertEqual(self.leftovers(deck.parent), [])
 
+    def test_cli_new_deck_follows_umask(self):
+        src = self.file("draft.svg", GOOD)
+        for mask, mode in ((0o077, 0o600), (0o002, 0o664)):
+            deck = self.work / f"deck-{mask:03o}.pptx"
+            r = run("svg2pptx.py", src, "-o", deck, umask=mask)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(deck.stat().st_mode & 0o777, mode, f"umask {mask:03o}")
+
+    @unittest.skipIf(IS_ROOT, "root may write a read-only file")
+    def test_read_only_deck_is_refused(self):
+        src = self.file("draft.svg", GOOD)
+        deck = self.file("ro/deck.pptx", "previous deck")
+        deck.chmod(0o444)
+        link = self.work / "link.pptx"
+        link.symlink_to(deck)
+        for out in (deck, link):
+            ok, log = self.build([src], out)
+            self.assertFalse(ok)
+            self.assertIn("not writable", log)
+            self.assertEqual(deck.read_text(encoding="utf-8"), "previous deck")
+        r = run("svg2pptx.py", src, "-o", deck)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(deck.read_text(encoding="utf-8"), "previous deck")
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(self.leftovers(deck.parent), [])
+
     def test_cli_failure_makes_no_folder(self):
         src = self.file("draft.svg", BAD_SHAPE)
         r = run("svg2pptx.py", src, "-o", self.work / "new" / "deck.pptx")
@@ -200,14 +267,41 @@ class WriteAtomic(Work):
         self.assertTrue(link.is_symlink())
         self.assertEqual(target.read_text(encoding="utf-8"), "new")
 
-    def test_mode_kept_and_new_file_readable(self):
+    def test_mode_kept_and_new_file_follows_umask(self):
         out = self.file("out.svg", "old")
-        out.chmod(0o600)
-        outfile.write_atomic(out, "new")
-        self.assertEqual(out.stat().st_mode & 0o777, 0o600)
-        fresh = self.work / "fresh.svg"
-        outfile.write_atomic(fresh, "new")
-        self.assertEqual(fresh.stat().st_mode & 0o777, 0o644)
+        out.chmod(0o640)
+        with umask_set(0o077):
+            outfile.write_atomic(out, "new")
+        self.assertEqual(out.stat().st_mode & 0o777, 0o640)  # a replaced file keeps its mode
+        for mask, mode in ((0o022, 0o644), (0o077, 0o600), (0o002, 0o664)):
+            fresh = self.work / f"fresh-{mask:03o}.svg"
+            with umask_set(mask):
+                outfile.write_atomic(fresh, "new")
+            self.assertEqual(fresh.stat().st_mode & 0o777, mode, f"umask {mask:03o}")
+
+    def test_current_umask_leaves_the_umask_as_it_was(self):
+        for mask in (0o077, 0o002):
+            with umask_set(mask):
+                self.assertEqual(outfile.current_umask(), mask)
+                # without /proc (macOS, BSD) the umask is read by setting and restoring it
+                with patch.object(outfile, "open", side_effect=OSError, create=True):
+                    self.assertEqual(outfile.current_umask(), mask)
+                self.assertEqual(os.umask(mask), mask)
+
+    @unittest.skipIf(IS_ROOT, "root may write a read-only file")
+    def test_read_only_output_is_refused_before_a_temp_file(self):
+        out = self.file("out.svg", "old")
+        out.chmod(0o444)
+        link = self.work / "link.svg"
+        link.symlink_to(out)
+        for path in (out, link):
+            with patch.object(outfile.tempfile, "mkstemp") as mkstemp, \
+                    self.assertRaises(PermissionError):
+                outfile.write_atomic(path, "new")
+            mkstemp.assert_not_called()
+            self.assertEqual(out.read_text(encoding="utf-8"), "old")
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(outfile.unwritable([out, link, self.work / "missing.svg"]), [out, link])
 
     def test_same_file(self):
         a = self.file("a.svg", "x")

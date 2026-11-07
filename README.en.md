@@ -177,7 +177,7 @@ scripts/fetch_icons.py       download the pinned AWS icon package and build icon
 scripts/build_bundle.py      pack an extracted icon package into icons.json
 scripts/macos_cairo.py       let cairosvg find Homebrew's cairo on Apple Silicon
 scripts/outfile.py           write outputs through a temp file renamed in when complete;
-                             refuse an output that is the input
+                             refuse an output that is the input or a read-only file
 ```
 
 ### Drawing a new diagram with the layout engine

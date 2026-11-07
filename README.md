@@ -161,7 +161,7 @@ scripts/check_layout.py      선이 라벨·아이콘을 지나는지, 라벨 �
 scripts/fetch_icons.py       고정한 AWS 아이콘 패키지를 받아 icons.json 만들기
 scripts/build_bundle.py      압축을 푼 아이콘 패키지를 icons.json으로 묶기
 scripts/macos_cairo.py       macOS(Apple Silicon)에서 Homebrew의 cairo를 찾게 함
-scripts/outfile.py           결과 파일 쓰기: 임시 파일을 끝까지 쓴 뒤 교체하고, 입력과 같은 파일이면 거부
+scripts/outfile.py           결과 파일 쓰기: 임시 파일을 끝까지 쓴 뒤 교체하고, 입력과 같은 파일이거나 쓰기 금지된 기존 파일이면 거부
 ```
 
 ### 레이아웃 엔진으로 새 구성도 그리기

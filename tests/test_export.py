@@ -28,11 +28,16 @@ def draft(path, color):
     return path
 
 
-def export(*args, cwd=None):
+# root may write any file, so a chmod 444 output cannot be refused for it (os.access is True)
+IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def export(*args, cwd=None, umask=None):
     # UTF-8 both ways: the Korean (NFC / NFD) file names below are printed in the report
     return subprocess.run([sys.executable, str(EXPORT), *map(str, args)],
                           capture_output=True, text=True, encoding="utf-8", cwd=cwd,
-                          env={**os.environ, "PYTHONUTF8": "1"})
+                          env={**os.environ, "PYTHONUTF8": "1"},
+                          preexec_fn=None if umask is None else (lambda: os.umask(umask)))
 
 
 class OutputClash(unittest.TestCase):
@@ -318,6 +323,59 @@ class OutputClash(unittest.TestCase):
         for name in self.written():
             self.assertGreater((self.out / name).stat().st_size, 0, name)
         self.assertEqual(ET.parse(self.out / "b.svg").getroot()[0].get("fill"), "#0000FF")
+
+
+class OutputPermissions(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.work = Path(self._tmp.name)
+        self.out = self.work / "out"
+
+    def test_new_outputs_follow_umask(self):
+        # the review's repro: under umask 077 every output came out 0644, not 0600
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        for mask, mode in ((0o077, 0o600), (0o002, 0o664)):
+            out = self.work / f"out-{mask:03o}"
+            r = export(a, "--svg", "--png", "--out-dir", out, "--pptx", out / "deck.pptx",
+                       umask=mask)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            for name in ("a.svg", "a.png", "deck.pptx"):
+                self.assertEqual((out / name).stat().st_mode & 0o777, mode,
+                                 f"{name} under umask {mask:03o}")
+
+    @unittest.skipIf(IS_ROOT, "root may write a read-only file")
+    def test_one_read_only_output_stops_every_write(self):
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        b = draft(self.work / "b.draft.svg", "#0000FF")
+        self.out.mkdir()
+        locked = self.out / "b.svg"
+        locked.write_text("old", encoding="utf-8")
+        locked.chmod(0o444)
+        r = export(a, b, "--svg", "--png", "--out-dir", self.out, "--pptx", self.out / "deck.pptx")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("not writable", r.stdout)
+        self.assertIn(str(locked), r.stdout)
+        self.assertIn("Nothing written", r.stderr)
+        self.assertEqual(locked.read_text(encoding="utf-8"), "old")
+        self.assertEqual(sorted(p.name for p in self.out.iterdir()), ["b.svg"])
+
+    @unittest.skipIf(IS_ROOT, "root may write a read-only file")
+    def test_deck_symlinked_to_a_read_only_file(self):
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        target = self.work / "ro" / "deck.pptx"
+        target.parent.mkdir()
+        target.write_bytes(b"previous deck")
+        target.chmod(0o444)
+        link = self.work / "deck.pptx"
+        link.symlink_to(target)
+        r = export(a, "--svg", "--out-dir", self.out, "--pptx", link, "--preview")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("not writable", r.stdout)
+        self.assertEqual(target.read_bytes(), b"previous deck")
+        self.assertTrue(link.is_symlink())
+        self.assertFalse(self.out.exists())
+        self.assertEqual(sorted(p.name for p in target.parent.iterdir()), ["deck.pptx"])
 
 
 class DraftProblems(unittest.TestCase):

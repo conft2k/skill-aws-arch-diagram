@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_icons import load_sets  # noqa: E402
-from outfile import same_file, write_atomic  # noqa: E402
+from outfile import same_file, unwritable, write_atomic  # noqa: E402
 
 
 @cache
@@ -156,6 +156,9 @@ def main():
     src, dst = Path(args[0]), Path(args[1])
     if same_file(src, dst):
         sys.exit(f"Nothing written: the output {dst} is the input {src}; name a different output.")
+    if unwritable([dst]):
+        sys.exit(f"Nothing written: the output {dst} exists and is not writable; "
+                 "make it writable or name a different output.")
     if reverse:
         out, n, report = unembed(src.read_text(encoding="utf-8"))
         if report:

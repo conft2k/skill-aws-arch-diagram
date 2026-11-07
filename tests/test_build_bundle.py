@@ -84,9 +84,19 @@ class BuildBundleTest(unittest.TestCase):
         self.assertEqual(list(bundle["sets"]["service"]), ["Test"])
         self.assertEqual(self.leftovers(), [])
 
-    def test_bundle_is_readable_file(self):
-        self.build()
-        self.assertEqual(self.out.stat().st_mode & 0o777, 0o644)
+    def test_new_bundle_mode_follows_umask(self):
+        # a new bundle gets 0666 less the umask, as open() would; a rebuilt one keeps its mode
+        for mask, mode in ((0o022, 0o644), (0o077, 0o600), (0o002, 0o664)):
+            self.out.unlink(missing_ok=True)
+            old = os.umask(mask)
+            try:
+                self.build()
+            finally:
+                os.umask(old)
+            self.assertEqual(self.out.stat().st_mode & 0o777, mode, f"umask {mask:03o}")
+        self.out.chmod(0o640)
+        self.build("again")
+        self.assertEqual(self.out.stat().st_mode & 0o777, 0o640)
         self.assertEqual(self.leftovers(), [])
 
     def assert_failure_keeps_old_bundle(self, target, error):

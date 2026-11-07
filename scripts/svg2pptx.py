@@ -53,7 +53,7 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
 from embed import icon_sets  # noqa: E402,F401  (one cached load shared with embed.py)
-from outfile import same_file, write_atomic  # noqa: E402
+from outfile import same_file, unwritable, write_atomic  # noqa: E402
 
 
 @cache
@@ -526,7 +526,8 @@ class Deck:
 def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
     """Convert layout SVGs into a deck at `out`; return False (writing nothing) on a bad SVG.
     A file already at `out` is left as it was on failure and replaced only by the complete
-    deck; `out` naming one of the SVGs (by any path or link) is refused. `out`'s directory
+    deck; `out` naming one of the SVGs (by any path or link), or an existing `out` that may
+    not be written, is refused. `out`'s directory
     is created once every SVG has passed."""
     if len(titles) > len(svgs):
         print("more --title values than SVGs")
@@ -534,6 +535,10 @@ def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
     inputs = [path for path in svgs if same_file(path, out)]
     if inputs:
         print(f"Nothing written: the deck {out} is the input {inputs[0]}; name a different output.")
+        return False
+    if unwritable([out]):
+        print(f"Nothing written: the deck {out} exists and is not writable; "
+              "make it writable or name a different output.")
         return False
     parsed, failed = [], False
     for path in svgs:
