@@ -34,9 +34,12 @@ Reports, and exits with status 1 on any of them:
   LINE ON LINE     two connectors run on top of each other (on one line, or 2px apart or
                    less) for more than 8px: two flows read as one line that splits
                    unannounced, and out-of-phase dashes look solid. Lines joined at a
-                   point — an end of one on the other: a trunk and its branches, a stem
-                   out of one shared port, a route drawn in pieces — are one net and are
-                   not reported
+                   point — an end of one on the other's interior (a trunk and its
+                   branches), both starting at one point (a stem out of one shared port)
+                   or ending at one (a merge), a route drawn in pieces — are one net and
+                   are not reported; an arrowhead into the point another line leaves from
+                   (Y → T, then T → X out of T's same port) is two flows and is
+                   reported
   LINE OFF CANVAS  a connector runs past (or on) the edge of the viewBox (when that piece
                    also leaves the box its ends are in, on the same side, the line says so
                    and it is not reported again as LINE LEAVES BOX)
@@ -527,9 +530,45 @@ ON_LINE_GAP = 2
 ON_LINE_RUN = 8
 
 
+def _head_at(run, k):
+    """Does end k (0: start, 1: end) of a connector carry an arrowhead?"""
+    s = run[0] if k == 0 else run[-1]
+    return ("start" if k == 0 else "end") in s.get("heads", ())
+
+
+def chained(run, other):
+    """Does one connector end where the other starts, with an arrowhead at that point (one
+    flow arriving at a node, the next leaving it from the same port)? Two flows, not a net."""
+    for k, o in ((1, 0), (0, 1)):
+        pt = run[0]["p"] if k == 0 else run[-1]["q"]
+        opt = other[0]["p"] if o == 0 else other[-1]["q"]
+        if math.dist(pt, opt) <= JOIN_REACH and (_head_at(run, k) or _head_at(other, o)):
+            return True
+    return False
+
+
+def attached(run, other):
+    """Is end-point contact between two connectors a join (one net)? An end of one on the
+    other's interior (a trunk and its branch), both starting at one point (a fork, a stem
+    out of one shared port), both ending at one (a merge into one port), or one ending where
+    the other starts with no arrowhead there (a route drawn in pieces). An arrowhead into a
+    point the other line leaves from is two flows (chained), not a join."""
+    for k, pt in ((0, run[0]["p"]), (1, run[-1]["q"])):
+        if not any(on_seg(pt, s) for s in other):
+            continue
+        tips = [o for o, opt in ((0, other[0]["p"]), (1, other[-1]["q"])) if math.dist(pt, opt) <= JOIN_REACH]
+        if not tips:
+            return True                                     # on the other's interior
+        if k in tips:
+            return True                                     # fork / merge
+        if not (_head_at(run, k) or _head_at(other, tips[0])):
+            return True                                     # pieces of one route
+    return False
+
+
 def joined(paths):
-    """Connectors joined where an end of one sits on the other's line (a trunk and its
-    branches, a stem out of one shared port, a route drawn in pieces):
+    """Connectors joined where an end of one sits on the other's line (see attached: a trunk
+    and its branches, a stem out of one shared port, a route drawn in pieces):
     {id(element): net number}."""
     ids = list(paths)
     parent = {k: k for k in ids}
@@ -540,12 +579,10 @@ def joined(paths):
             k = parent[k]
         return k
 
-    for k in ids:
-        run = paths[k]
-        for pt in (run[0]["p"], run[-1]["q"]):
-            for o in ids:
-                if o != k and find(o) != find(k) and any(on_seg(pt, s) for s in paths[o]):
-                    parent[find(k)] = find(o)
+    for i, k in enumerate(ids):
+        for o in ids[i + 1:]:
+            if find(o) != find(k) and (attached(paths[k], paths[o]) or attached(paths[o], paths[k])):
+                parent[find(k)] = find(o)
     return {k: find(k) for k in ids}
 
 
@@ -565,13 +602,15 @@ def collinear_run(s, o, gap=ON_LINE_GAP):
 
 def lines_on_lines(paths):
     """Pairs of connectors of different nets (see joined) running on top of each other for
-    more than ON_LINE_RUN px: [(segment, other segment, shared px)], one per pair of lines."""
+    more than ON_LINE_RUN px: [(segment, other segment, shared px)], one per pair of lines.
+    A pair chained at one point (an arrow into it, the next flow out of it) is two flows
+    even when the rest of a net joins them."""
     net = joined(paths)
     ids = list(paths)
     out = []
     for a_i, a in enumerate(ids):
         for b in ids[a_i + 1:]:
-            if net[a] == net[b]:
+            if net[a] == net[b] and not chained(paths[a], paths[b]):
                 continue
             best = None
             for s in paths[a]:
@@ -723,7 +762,8 @@ def run_checks(root):
                 off[k] = past
     # Two flows on one run read as one line (out-of-phase dashes look solid) that then
     # splits: an unannounced merge. Lines joined at a point (a trunk, a stem out of one
-    # port) are one net and share their stem on purpose.
+    # port, a merge into one) are one net and share their stem on purpose; an arrow into
+    # the port the next flow leaves from is not (see attached / chained).
     for s, o, d in lines_on_lines(paths):
         box = union(seg_box(s), seg_box(o))
         if masked((box[0], box[1], box[2] + 0.1, box[3] + 0.1), min(s["o"], o["o"]), masks):

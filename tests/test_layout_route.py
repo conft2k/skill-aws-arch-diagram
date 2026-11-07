@@ -835,5 +835,63 @@ class Lanes(unittest.TestCase):
         a, b = self.legs(R.draw(spec, geom)[0])
         self.assertEqual(a[1][0], b[1][0])
 
+
+class DetourPorts(unittest.TestCase):
+    """A detour (U) or alternative shape ending on a side another edge's chosen shape uses
+    takes a port of its own there, not the center (review: alb -> ec2.2's UHVH came back
+    into EC2's right side at (382,426), the point ec2.2 ..> cw leaves from, 48px on top of
+    it: the solid line read as carrying on as the dashed one)."""
+
+    def setup(self):
+        spec = M.Spec("t", cols=[M.Track("a", "col", 0), M.Track("m", "col", 1), M.Track("b", "col", 2),
+                                 M.Track("c", "col", 3)],
+                      rows=[M.Track("r", "row", 0)])
+        spec.nodes = {i: M.Node(i, "service/Amazon-EC2", i.upper(), col=c, row="r")
+                      for i, c in (("x", "a"), ("z", "m"), ("y", "b"), ("w", "c"))}
+        spec.edges = [M.Edge(0, "x", "y", "->", line=0), M.Edge(1, "y", "w", "..>", line=1)]
+        cols, rows = {"a": 100, "m": 300, "b": 500, "c": 700}, {"r": 200}
+        nodes = {}
+        for nid, n in spec.nodes.items():
+            cx, cy = cols[n.col], rows[n.row]
+            icon = M.Box(cx - 24, cy - 24, cx + 24, cy + 24)
+            nodes[nid] = M.NodeGeom(nid, cx, cy, icon, [M.TextLine(n.label, cx, icon.y1 + 18, 14, K.INK, "", "middle")])
+        geom = M.Geometry("document", 48, 800, 400, cols, rows, nodes=nodes)
+        ctx = R._Ctx(spec, geom)
+        topo = R._topology(spec)
+        xs = {e.n: R._Edge(ctx, e, topo[e.n]) for e in spec.edges}
+        ports = R._assign_ports(ctx, xs)
+        ctx.side_use = R._side_use(xs, ports)
+        return ctx, xs, ports
+
+    def test_u_end_beside_the_next_flows_port(self):
+        ctx, xs, ports = self.setup()
+        x = xs[0]
+        self.assertEqual(ctx.side_use[("y", "right")], [(1, "a", 0.0, 1, False)])
+        us = {}
+        for shape, pa, pb, bend in R._detours(ctx, x, ports):
+            us.setdefault((shape, pb[0] > 524), (pa, pb))
+        pa, pb = us[("UHVH", True)]                     # right / right: into y's right side
+        self.assertEqual(pb, (528, 200 - K.PORT_PITCH))  # y → w leaves from (528, 200)
+        pa, pb = us[("UHVH", False)]                    # left / left: y's left is x → y's own side
+        self.assertEqual(pb[1], 200)
+        self.assertTrue(R._u_taken(ctx, x, "UHVH", (128, 200), (528, 188)))
+        self.assertFalse(R._u_taken(ctx, x, "UVHV", (100, 172), (500, 172)))
+
+    def test_drawn_detour_never_lands_on_the_next_flows_start(self):
+        """Every candidate x → y has: none ends where y → w starts."""
+        ctx, xs, ports = self.setup()
+        for shape, pa, pb, bend in R._candidates(ctx, xs[0], ports):
+            self.assertNotEqual(pb, (528, 200), shape)
+
+    def test_side_offset_falls_back_inside_the_icon(self):
+        ctx, xs, ports = self.setup()
+        ctx.side_use[("y", "right")] = [(1, "a", -12.0, 1, False), (2, "a", 12.0, 2, False)]
+        self.assertEqual(R._end_off(ctx, xs[0], "b", "right", ports), 0.0)    # ±24 is off the icon
+        ctx.side_use[("y", "right")] = [(1, "a", -8.0, 1, False)]
+        self.assertEqual(R._end_off(ctx, xs[0], "b", "right", ports), -20.0)
+        ctx.side_use[("y", "right")] = [(1, "a", -16.0, 1, False)]
+        self.assertEqual(R._end_off(ctx, xs[0], "b", "right", ports), -4.0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

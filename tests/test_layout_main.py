@@ -719,6 +719,22 @@ class Lanes(unittest.TestCase):
                 root = ET.fromstring(data)
                 self.assertEqual([i.msg for i in CL.run_checks(root) if i.kind == "LINE ON LINE"], [])
 
+    def test_detour_into_ec2_keeps_off_the_next_flow(self):
+        """alb -> ec2.2 is drawn as a UHVH back into EC2's right side, where ec2.2 ..> cw
+        leaves: it used to end at that very point (224,290 430,290 430,426 382,426 against
+        382,426 462,426 …, 48px on top of each other, the solid arrow reading as carrying on
+        as the dashed line); now it takes a port of its own, PORT_PITCH toward ALB."""
+        for align in ("bottom", "top"):
+            with self.subTest(align=align):
+                rc, text, data = run_main(lanes_spec(align))
+                self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
+                u, out = edge_points(data, 3), edge_points(data, 5)
+                self.assertEqual(len(u), 4, u)
+                self.assertGreater(u[1][0], u[-1][0])                   # back into EC2's right side
+                self.assertEqual((u[-1][0], out[0][1] - u[-1][1]), (out[0][0], K.PORT_PITCH), (u, out))
+                self.assertLess(u[2][1], out[0][1])                     # its leg stops short of the dashed run
+                self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(data)) if i.kind == "LINE ON LINE"], [])
+
     def test_trunk_merges_on_purpose(self):
         rc, text, data = run_main(lanes_spec(trunk=True))
         self.assertEqual(rc, 0, text)

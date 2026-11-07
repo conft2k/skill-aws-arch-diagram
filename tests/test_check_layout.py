@@ -342,6 +342,53 @@ class LineOnLine(unittest.TestCase):
                    POLY.format(pts="232,154 300,154 300,204 376,204"))
         self.assertEqual(kinds(root, "LINE ON LINE"), [])
 
+    def test_arrow_in_where_the_next_flow_leaves(self):
+        """Y → T arrives at T's port and T → X leaves from it, sharing (320,144)→(376,144):
+        two flows (it reads as Y forking to T and X), flagged solid or dashed, although an
+        end of each sits on the other."""
+        box = (BOX.format(x=100, y=20, w=400, h=260), TITLE.format(x=112, y=38, s="AWS Cloud"),
+               ICON.format(x=380, y=120), ICON.format(x=180, y=200), ICON.format(x=180, y=60))
+        for out in (POLY, DASHED):
+            with self.subTest(dashed=out is DASHED):
+                iss = kinds(svg(*box, POLY.format(pts="232,224 320,224 320,144 376,144"),
+                                out.format(pts="376,144 320,144 320,84 232,84")), "LINE ON LINE")
+                self.assertEqual([(CL.fmt(i.ctx["s"]), CL.fmt(i.ctx["o"]), i.ctx["d"]) for i in iss],
+                                 [("(320,144)→(376,144)", "(376,144)→(320,144)", 56)], [i.msg for i in iss])
+
+    def test_detour_back_onto_the_next_flows_port(self):
+        """Review t4_one_bottom: alb → ec2.2's UHVH ends at EC2's right port (382,426), the
+        point ec2.2 ..> cw leaves from going right: 48px on top of each other, flagged; on a
+        port of its own 12px up, clean."""
+        head = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 520">'
+        for end, n in ((426, 1), (414, 0)):
+            with self.subTest(end=end):
+                root = ET.fromstring(head + POLY.format(pts=f"224,290 430,290 430,{end} 382,{end}")
+                                     + DASHED.format(pts="382,426 462,426 462,458 494,458") + "</svg>")
+                iss = kinds(root, "LINE ON LINE")
+                self.assertEqual(len(iss), n, [i.msg for i in iss])
+                if n:
+                    self.assertEqual(iss[0].ctx["d"], 48)
+
+    def test_merge_into_one_port_is_one_net(self):
+        """Both lines end at one point (a merge into one port): one net, not flagged."""
+        root = svg(*CLOUD, ICON.format(x=380, y=130), POLY.format(pts="232,104 300,104 300,154 376,154"),
+                   POLY.format(pts="232,204 300,204 300,154 376,154"))
+        self.assertEqual(kinds(root, "LINE ON LINE"), [])
+
+    def test_route_in_pieces_is_one_net(self):
+        """A route drawn in pieces (the first, with no arrowhead, ends where the next starts)
+        is one net; with an arrowhead at that point it is two flows."""
+        for head, nets in (("", 1), (' marker-end="url(#arrow)"', 2)):
+            with self.subTest(head=bool(head)):
+                root = svg(*CLOUD, ICON.format(x=380, y=80),
+                           f'<polyline points="232,204 300,204 300,150" fill="none" stroke="#232F3E"{head}/>',
+                           POLY.format(pts="300,150 300,104 376,104"))
+                paths = {}
+                for seg in CL.collect(root)[1]:
+                    if seg["kind"] == "connector":
+                        paths.setdefault(id(seg["el"]), []).append(seg)
+                self.assertEqual(len(set(CL.joined(paths).values())), nets)
+
     def test_hint_gives_one_its_own_lane(self):
         root = svg(*CLOUD, ICON.format(x=380, y=80), ICON.format(x=380, y=180),
                    POLY.format(pts="232,104 300,104 300,204 232,204"),

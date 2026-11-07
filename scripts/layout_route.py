@@ -950,6 +950,9 @@ class _Ctx:
         self.text_t = [(b.expand(K.LINE_CLEAR).t(), b) for b in self.texts]
         cloud = spec.cloud_id()
         self.cloud = geom.groups[cloud].rect if cloud in geom.groups else None
+        # {(node id, side): [(edge n, end, port offset, spec line, trunk)]}: the ports the
+        # edges' chosen shapes take (draw() fills it after _assign_ports)
+        self.side_use: Dict[Tuple[str, str], List[Tuple[int, str, float, int, bool]]] = {}
 
 
 @dataclass
@@ -1338,37 +1341,114 @@ def _out_and_back(ctx: _Ctx, x: _Edge, leg_x: bool, i: int, pa: Pt, pb: Pt, side
 
 def _candidates(ctx: _Ctx, x: _Edge, ports: Dict[Tuple[int, str], float]):
     """(shape, pa, pb, bend) in preference order: the chosen shape's bends, then the
-    alternative shapes'."""
+    alternative shapes'. An alternative's end on a side another edge's chosen shape uses
+    takes a port of its own beside that edge's (_end_off)."""
     t = x.t
     out = []
     for k, shape in enumerate((t.shape,) + ALTERNATIVES.get(t.shape, ())):
-        oa = x.off_a if x.e.from_offset is not None else ports.get((x.e.n, "a"), 0.0) if k == 0 else 0.0
-        ob = x.off_b if x.e.to_offset is not None else ports.get((x.e.n, "b"), 0.0) if k == 0 else 0.0
+        if k == 0:
+            oa = x.off_a if x.e.from_offset is not None else ports.get((x.e.n, "a"), 0.0)
+            ob = x.off_b if x.e.to_offset is not None else ports.get((x.e.n, "b"), 0.0)
+        else:
+            sa, sb = x.sides(shape)
+            oa = _end_off(ctx, x, "a", sa, ports)
+            ob = _end_off(ctx, x, "b", sb, ports)
         pa, pb = x.ends(shape, oa, ob)
         bends = _bends(ctx, x, shape, pa, pb)
         if shape in (HVH, VHV) and not bends:
             continue
         for b in (bends or [None]):
             out.append((shape, pa, pb, b))
-    out += _detours(ctx, x)
+    out += _detours(ctx, x, ports)
     return out
 
 
-def _detours(ctx: _Ctx, x: _Edge):
+def _side_use(xs: Dict[int, "_Edge"], ports: Dict[Tuple[int, str], float]):
+    """The node sides the edges' chosen shapes use and the port offset each takes there."""
+    out: Dict[Tuple[str, str], List[Tuple[int, str, float, int, bool]]] = {}
+    for n, y in xs.items():
+        if y.t.shape == P:
+            continue
+        sa, sb = y.sides(y.t.shape)
+        trunk = bool(y.e.trunk or y.e.fork)
+        for end, eid, kind, side, fixed in (("a", y.e.a, y.e.a_kind, sa, y.e.from_offset),
+                                            ("b", y.e.b, y.e.b_kind, sb, y.e.to_offset)):
+            if kind != "node" or side is None:
+                continue
+            off = fixed if fixed is not None else ports.get((n, end), 0.0)
+            out.setdefault((eid, side), []).append((n, end, off, y.e.line, trunk))
+    return out
+
+
+def _side_taken(ctx: _Ctx, x: "_Edge", end: str, side: str) -> List[float]:
+    """Port offsets other edges' chosen shapes take on `side` of x's end node (the instances
+    of x's own trunk line share its stem and don't count)."""
+    e = x.e
+    eid, kind = (e.a, e.a_kind) if end == "a" else (e.b, e.b_kind)
+    if kind != "node":
+        return []
+    mine = bool(e.trunk or e.fork)
+    return [o for n, _, o, line, trunk in ctx.side_use.get((eid, side), [])
+            if n != e.n and not (mine and trunk and line == e.line)]
+
+
+def _end_off(ctx: _Ctx, x: "_Edge", end: str, side: str, ports: Dict[Tuple[int, str], float]) -> float:
+    """The port offset of x's `end` on `side` in a shape other than its chosen one: the
+    spec's from_offset / to_offset; on the chosen shape's side its assigned port; on a side
+    other edges use, PORT_PITCH past their outermost port toward the other end (so an arrow
+    into a node never lands on the port the next flow leaves from: alb → ec2.2's detour
+    into EC2's right side beside ec2.2 ..> cw); else the center."""
+    e = x.e
+    fixed = e.from_offset if end == "a" else e.to_offset
+    if fixed is not None:
+        return fixed
+    if x.t.shape != P and side == x.sides(x.t.shape)[0 if end == "a" else 1]:
+        return ports.get((e.n, end), 0.0)
+    others = _side_taken(ctx, x, end, side)
+    if not others:
+        return 0.0
+    g, other = (x.A, x.B) if end == "a" else (x.B, x.A)
+    center, toward = (g.cy, other.cy) if side in HORIZ else (g.cx, other.cx)
+    half = (g.box.y1 - g.box.y0 if side in HORIZ else g.box.x1 - g.box.x0) / 2 - K.END_GAP
+    first = -1 if toward <= center else 1
+    for d in (first, -first):
+        v = (min(others) - K.PORT_PITCH) if d < 0 else (max(others) + K.PORT_PITCH)
+        if abs(v) <= half:
+            return v
+    return 0.0
+
+
+def _detours(ctx: _Ctx, x: _Edge, ports: Optional[Dict[Tuple[int, str], float]] = None):
     """U-shaped candidates for a line whose straight path is blocked: out of the same side
     of both ends (top/top, bottom/bottom for a horizontal run; left/left, right/right for a
-    vertical one) and round the obstacle 24 … 120 px beyond the ports."""
+    vertical one) and round the obstacle 24 … 120 px beyond the ports. Each end takes its
+    side's port (_end_off), not the center another line on that side may be using."""
     out = []
     A, B = x.A, x.B
+    ports = ports or {}
     pairs = (("top", "top", VHV, 1), ("bottom", "bottom", VHV, 1), ("left", "left", HVH, 0), ("right", "right", HVH, 0))
     for sa, sb, shape, i in pairs:
-        pa = _port(A, sa, B.cy if sa in HORIZ else B.cx)
-        pb = _port(B, sb, A.cy if sb in HORIZ else A.cx)
+        pa = _port(A, sa, B.cy if sa in HORIZ else B.cx, _end_off(ctx, x, "a", sa, ports))
+        pb = _port(B, sb, A.cy if sb in HORIZ else A.cx, _end_off(ctx, x, "b", sb, ports))
         sgn = -1 if sa in ("top", "left") else 1
         edge = min(pa[i], pb[i]) if sgn < 0 else max(pa[i], pb[i])
         for k in range(3, 16):
             out.append(("U" + shape, pa, pb, edge + sgn * k * NUDGE))
     return out
+
+
+def _u_taken(ctx: _Ctx, x: "_Edge", shape: str, pa: Pt, pb: Pt) -> bool:
+    """Is this a detour (U) with an end on a side, other than its chosen shape's, that
+    another edge's chosen shape uses?"""
+    if not shape.startswith("U"):
+        return False
+    planned = x.sides(x.t.shape) if x.t.shape != P else (None, None)
+    for k, (end, g, p) in enumerate((("a", x.A, pa), ("b", x.B, pb))):
+        b = g.box
+        side = ("left" if p[0] < b.x0 else "right" if p[0] > b.x1 else "top" if p[1] < b.y0 else "bottom")
+        if side != planned[k] and _side_taken(ctx, x, end, side):
+            return True
+    return False
 
 
 def _drawn(x: _Edge, shape: str, pa: Pt, pb: Pt, bend, lead: Optional[_Route]) -> Tuple[List[Pt], Tuple[int, int]]:
@@ -2030,6 +2110,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
             warns.append(f"{_where(e)}: fork: {e.fork} is phase 2; drawn as a trunk fork")
             break
     ports = _assign_ports(ctx, xs)
+    ctx.side_use = _side_use(xs, ports)
     routes: Dict[int, _Route] = {}
     done_lines: List[Tuple[Pt, Pt]] = []
 
@@ -2064,9 +2145,10 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
             pa, pb = x.ends(t.shape, ports.get((x.e.n, "a"), 0.0), ports.get((x.e.n, "b"), 0.0))
             return build(x, (t.shape, pa, pb, lead.bend))
         # a clean line in the chosen shape beats any other shape (that would change the
-        # gutters plan() reserved); within a shape, the better label / badge spot wins
-        ranked = [((r.quality == 3, r.shape != t.shape, r.quality), i, r)
-                  for i, r in enumerate(build(x, c) for c in _candidates(ctx, x, ports))]
+        # gutters plan() reserved); a detour into (or out of) a side other lines use comes
+        # after every other clean shape; within a shape, the better label / badge spot wins
+        ranked = [((r.quality == 3, r.shape != t.shape, _u_taken(ctx, x, c[0], c[1], c[2]), r.quality), i, r)
+                  for i, (c, r) in enumerate((c, build(x, c)) for c in _candidates(ctx, x, ports))]
         if not ranked:
             pa, pb = x.ends(H, 0, 0)
             return _Route(x.e.n, H, [pa, pb], x.hs, x.he, ["no candidate"])

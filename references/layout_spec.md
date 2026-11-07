@@ -210,8 +210,13 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   (the target past every source on one side — `ec2.* ..> cw` with CloudWatch in a
   bottom-aligned flow column — or one source to targets all on one side), each instance
   gets its own lane, 12px apart and ordered so they don't cross, and the gutter grows by
-  12 per extra lane. Two different lines on one run are a `LINE ON LINE` problem; write
-  `trunk: true` when they are meant to merge.
+  12 per extra lane. A line drawn in another shape than its rule's (a detour `UHVH` /
+  `UVHV` back into a node, or an alternative) never lands on the port another line uses on
+  that side: it takes its own, 12px past theirs toward its other end (alb → ec2.2 coming
+  back into EC2's right side, where `ec2.2 ..> cw` leaves), and a detour onto such a side
+  is drawn only when no other shape is clean. Two different lines on one run are a
+  `LINE ON LINE` problem — an arrow into a node's port and the next flow out of that same
+  port included; write `trunk: true` when they are meant to merge.
 - `label`: protocol and port, 12px squid ink (`"HTTPS :443"`). `verb`: a verb or
   attachment type, 12px grey (`DNS 조회`, `VPC attachment`). The loader rejects either one
   when it names a service with an official icon (SERVICE AS TEXT) — make it a node.
