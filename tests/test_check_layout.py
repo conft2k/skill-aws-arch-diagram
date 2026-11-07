@@ -157,5 +157,128 @@ class ConnectorLeavesBox(unittest.TestCase):
                          [i.msg for i in iss])
 
 
+def hint_of(root, kind="LINE LEAVES BOX", seg=None):
+    adv = CL.Advisor(root)
+    iss = [i for i in adv.issues if i.kind == kind and (seg is None or CL.fmt(i.ctx["s"]) == seg)]
+    return adv, iss, adv.hint(iss[0])
+
+
+class DetourNets(unittest.TestCase):
+    """The fix for a detour moves the other lines of its net with it (a branch's end on the
+    trunk, a bracket's stem, the next <line> piece of a route), shifts a point two collinear
+    runs share once, and is never a move that cuts a line off its net."""
+
+    def check_fix(self, parts, seg, *want):
+        root = svg(*CLOUD, *parts)
+        _, _, h = hint_of(root, seg=seg)
+        for w in want:
+            self.assertIn(w, h.text)
+        before = CL.loose_ends(root)
+        CL.apply_tree(root, h.edits)
+        self.assertEqual(detours(root), [])
+        self.assertEqual(set(CL.loose_ends(root)), set(before))
+        return root
+
+    def test_trunk_takes_its_branch(self):
+        self.check_fix([ICON.format(x=380, y=180), POLY.format(pts="206,76 206,20 404,20 404,176"),
+                        POLY.format(pts="300,20 300,150 228,150 228,204")], "(206,20)→(404,20)",
+                       "down 32px to (206,52)→(404,52), with the end of polyline segment (300,20)→(300,150)")
+
+    def test_bracket_takes_its_stem(self):
+        bar = '<polyline points="232,104 540,104 540,204 232,204" fill="none" stroke="#232F3E" stroke-width="1.5"/>'
+        root = self.check_fix([ICON.format(x=380, y=130), bar, POLY.format(pts="540,154 432,154")],
+                              "(540,104)→(540,204)", "with the end of polyline segment (540,154)→(432,154)")
+        stem = [e for e in root.iter() if e.get("points", "").endswith("432,154")]
+        self.assertEqual(stem[0].get("points"), "488,154 432,154")
+
+    def test_route_in_line_pieces(self):
+        """A detour drawn as three <line>s: the middle one moves with the ends of the others."""
+        root = self.check_fix([ICON.format(x=380, y=80), LINE.format(x1=206, y1=76, x2=206, y2=20),
+                               LINE.format(x1=206, y1=20, x2=404, y2=20), LINE.format(x1=404, y1=20, x2=404, y2=76)],
+                              "(206,20)→(404,20)", "with the ends of line (206,76)→(206,20), line (404,20)→(404,76)")
+        self.assertEqual(sorted((e.get("y1"), e.get("y2")) for e in root.iter(NS_LINE)),
+                         [("52", "52"), ("52", "76"), ("76", "52")])
+
+    def test_collinear_runs_share_a_point(self):
+        root = svg(*CLOUD, POLY.format(pts="232,104 540,104 540,150 540,204 232,204"))
+        _, _, h = hint_of(root)
+        self.assertEqual([e[3] for e in h.edits], ["232,104 488,104 488,150 488,204 232,204"])
+
+    def test_end_running_along_the_run_declines(self):
+        """A line whose end piece lies along the run to move: no move offered, only the why."""
+        _, _, h = hint_of(svg(*CLOUD, ICON.format(x=380, y=80), POLY.format(pts="206,76 206,20 404,20 404,76"),
+                              LINE.format(x1=250, y1=20, x2=300, y2=20)), seg="(206,20)→(404,20)")
+        self.assertFalse(h.edits)
+        self.assertIn("ends on it, running along it: move both lines together", h.text)
+
+    def test_move_that_cuts_a_line_off_is_dirty(self):
+        """trial() counts a new loose end (the branch's end off the trunk) as a new problem."""
+        root = svg(*CLOUD, ICON.format(x=380, y=180), POLY.format(pts="206,76 206,20 404,20 404,176"),
+                   POLY.format(pts="300,20 300,150 228,150 228,204"))
+        adv, iss, _ = hint_of(root, seg="(206,20)→(404,20)")
+        trunk = next(e for e in root.iter() if e.get("points", "").startswith("206,76"))
+        ok, new = adv.trial([("attr", trunk, "points", "206,76 206,52 404,52 404,176")], iss[0].key)
+        self.assertTrue(ok)
+        self.assertIn("LOOSE END", [i.kind for i in new])
+
+    def test_bus_below_the_box(self):
+        """A bus line under the Cloud with drops up to two nodes and a feeder from a: its open
+        ends touch nothing and say nothing about the box — the net's node ends are all in it."""
+        iss = detours(svg(*CLOUD, ICON.format(x=400, y=180), LINE.format(x1=150, y1=280, x2=450, y2=280),
+                          LINE.format(x1=204, y1=280, x2=204, y2=232), LINE.format(x1=424, y1=280, x2=424, y2=232),
+                          POLY.format(pts="232,104 440,104 440,280")))
+        self.assertEqual(sorted(CL.fmt(i.ctx["s"]) for i in iss),
+                         ["(150,280)→(450,280)", "(204,280)→(204,232)", "(424,280)→(424,232)",
+                          "(440,104)→(440,280)"], [i.msg for i in iss])
+
+    def test_stub_to_nowhere_is_no_detour(self):
+        """A line from one node that ends on nothing: no second end, so no way back in."""
+        self.assertEqual(detours(svg(*CLOUD, POLY.format(pts="232,104 540,104"))), [])
+
+    def test_stem_a_px_or_two_off_the_bar_joins_it(self):
+        bar = '<polyline points="232,104 520,104 520,204 232,204" fill="none" stroke="#232F3E" stroke-width="1.5"/>'
+        self.assertEqual(detours(svg(*CLOUD, ICON.format(x=544, y=130), bar,
+                                     LINE.format(x1=522, y1=154, x2=540, y2=154))), [])
+
+
+class OffCanvasOutOfBox(unittest.TestCase):
+    def test_one_problem_for_one_segment(self):
+        """Past the canvas edge and out of the box on the same side: one LINE OFF CANVAS that
+        names the box too, and its fix brings the run inside the box."""
+        root = svg(*CLOUD, POLY.format(pts="232,104 610,104 610,204 232,204"))
+        iss = detours(root)
+        self.assertEqual([i.kind for i in iss], ["LINE OFF CANVAS"], [i.msg for i in iss])
+        self.assertIn("runs 10px past the right edge of the 600 × 300 canvas, 110px out past the right border of "
+                      "'AWS Cloud' (100,40 400×220) where both of its ends are", iss[0].msg)
+        _, _, h = hint_of(root, kind="LINE OFF CANVAS")
+        self.assertIn("left 122px to (488,104)→(488,204)", h.text)
+        self.assertNotIn("grow the viewBox", h.text)
+        CL.apply_tree(root, h.edits)
+        self.assertEqual(detours(root), [])
+
+    def test_grow_the_viewbox(self):
+        parts = (ICON.format(x=500, y=80), ICON.format(x=500, y=180), POLY.format(pts="552,104 610,104 610,204 552,204"))
+        _, _, h = hint_of(svg(*parts), kind="LINE OFF CANVAS")
+        self.assertIn("or grow the viewBox width to 626 (and the white background rect)", h.text)
+        root = svg(*parts)
+        adv = CL.Advisor(root, engine=True)
+        h = adv.hint(adv.issues[0])
+        self.assertNotIn("viewBox", h.text)
+        self.assertIn("from the layout spec", h.text)
+
+    def test_grow_past_the_slide_limit(self):
+        """A 1100-wide canvas grown past 1108: 12px text under 10pt on a slide, said so."""
+        root = ET.fromstring('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 500">'
+                             '<rect x="0" y="0" width="1100" height="500" fill="#FFFFFF"/>'
+                             + ICON.format(x=1000, y=80) + ICON.format(x=1000, y=180)
+                             + POLY.format(pts="1052,104 1110,104 1110,204 1052,204") + '</svg>')
+        _, _, h = hint_of(root, kind="LINE OFF CANVAS")
+        self.assertIn("grow the viewBox width to 1126", h.text)
+        self.assertIn("on a 16:9 slide that takes 12px text under 10pt", h.text)
+
+
+NS_LINE = "{http://www.w3.org/2000/svg}line"
+
+
 if __name__ == "__main__":
     unittest.main()

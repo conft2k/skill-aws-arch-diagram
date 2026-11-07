@@ -28,14 +28,19 @@ Reports, and exits with status 1 on any of them:
                    stuck on a bend or trunk junction)
   LINE HUGS BORDER a connector runs alongside (or on top of) a container border less
                    than 12px from it for more than 20px
-  LINE OFF CANVAS  a connector runs past (or on) the edge of the viewBox
+  LINE OFF CANVAS  a connector runs past (or on) the edge of the viewBox (when that piece
+                   also leaves the box its ends are in, on the same side, the line says so
+                   and it is not reported again as LINE LEAVES BOX)
   LINE LEAVES BOX  a connector runs out of the innermost container that holds all of its
                    ends (the AWS Cloud, a Region, a VPC) and back in — a detour around the
                    outside, not a crossing. An end is the nearest node (icon and the labels
                    under it) within 6px; one at a gateway sitting across a border belongs
-                   to neither side, and lines joined at a junction (a trunk and its
-                   branches, a bracket and its stem) count the ends of the whole net, so a
-                   line between nodes in different boxes is never flagged
+                   to neither side, and lines joined at a junction (an end within 3px of
+                   another line: a trunk and its branches, a bracket and its stem, a bus
+                   and its drops) count the ends of the whole net, so a line between nodes
+                   in different boxes is never flagged. An end that touches nothing (no
+                   node, border or label within 6px: a bus line's open end) is left out
+                   when two or more ends of the net touch something
   TITLE OFFSET     a container title not on its box's header row (baseline box.y + 18;
                    the 15px AWS Cloud title + 22)
   OUTSIDE CLOUD    a Direct Connect location, Internet or Site-to-Site VPN icon inside the
@@ -55,7 +60,11 @@ down 6px: y=406→412") is the smallest one the checker found that clears the pr
 without raising a new one — it re-runs the check with the move applied, and prefers a
 move that also clears the element's other problems (several problems of one element get
 the same move); "(still leaves its ...)", "but then: ..." or "(unverified)" says when it
-found no such move. A line ending in "[--fix]" is one --fix applies by itself.
+found no such move. A line ending in "[--fix]" is one --fix applies by itself. A move of a
+connector run takes the ends of the other lines sitting on it along (a branch, a stem, the
+next <line> of a route drawn in pieces); a move that would leave a line end touching
+nothing it touched before, or hide another line's detour by cutting it off its net, is
+never offered as clean.
 
 --fix repairs, in place, only the problems whose answer is fixed, and only when the
 re-check shows the change clears the problem and raises no new one:
@@ -409,7 +418,11 @@ def shared_box(ends, rects, feet):
     return best
 
 
-def on_seg(pt, s, tol=1.5):
+# A line end this close to another line joins it (a hand-drawn stem a px or two off its bar).
+JOIN_REACH = 3
+
+
+def on_seg(pt, s, tol=JOIN_REACH):
     """Is point pt on segment s (within tol)?"""
     (x1, y1), (x2, y2) = s["p"], s["q"]
     dx, dy = x2 - x1, y2 - y1
@@ -417,9 +430,27 @@ def on_seg(pt, s, tol=1.5):
     return math.hypot(x1 + t * dx - pt[0], y1 + t * dy - pt[1]) <= tol
 
 
-def nets(paths, feet):
+def anchored(pt, feet, rects=(), texts=()):
+    """Does a connector end attach to something: a node, a container border (an arrow into a
+    box) or a label, within END_REACH?"""
+    if end_icon(pt, feet):
+        return True
+    x, y = pt
+    for r in rects:
+        x0, y0, x1, y1 = r[0], r[1], r[0] + r[2], r[1] + r[3]
+        on_x = min(abs(x - x0), abs(x - x1)) <= END_REACH and y0 - END_REACH <= y <= y1 + END_REACH
+        on_y = min(abs(y - y0), abs(y - y1)) <= END_REACH and x0 - END_REACH <= x <= x1 + END_REACH
+        if on_x or on_y:
+            return True
+    return any(contains(expand(t["box"], END_REACH), (x, y, x, y), 0) for t in texts)
+
+
+def nets(paths, feet, rects=(), texts=()):
     """Connectors joined where one's end sits on another's line (a trunk and its branches, a
-    bracket and its stem): [(the runs, the terminal ends — at an icon, or on no other line)]."""
+    bracket and its stem): [(the runs, the terminal ends — on no other line)]. A terminal end
+    that touches nothing (no node, container border or label: a bus line's open end) says
+    nothing about the box the net belongs in and is left out — unless fewer than two ends
+    touch something (a stub from one node: no detour can come back in)."""
     runs = list(paths.values())
     parent = list(range(len(runs)))
 
@@ -441,10 +472,28 @@ def nets(paths, feet):
                 terms.append((i, pt))
     out = {}
     for i, run in enumerate(runs):
-        out.setdefault(find(i), ([], []))[0].append(run)
+        out.setdefault(find(i), ([], [], []))[0].append(run)
     for i, pt in terms:
-        out[find(i)][1].append(pt)
-    return list(out.values())
+        out[find(i)][1 if anchored(pt, feet, rects, texts) else 2].append(pt)
+    return [(rs, ends if len(ends) >= 2 else ends + loose) for rs, ends, loose in out.values()]
+
+
+def loose_ends(root):
+    """The connector ends that touch nothing — no node, no other line, no container border,
+    no label — as {(id(element), 0 | 1): point}: a move that adds one cut a line off."""
+    texts, segs, _, icons, _ = collect(root)
+    feet, rects = footprints(icons, texts), container_rects(root)
+    paths = {}
+    for s in segs:
+        if s["kind"] == "connector":
+            paths.setdefault(id(s["el"]), []).append(s)
+    out = {}
+    for eid, run in paths.items():
+        for k, pt in ((0, run[0]["p"]), (1, run[-1]["q"])):
+            if not anchored(pt, feet, rects, texts) and not any(
+                    on_seg(pt, s) for o, other in paths.items() if o != eid for s in other):
+                out[(eid, k)] = pt
+    return out
 
 
 def box_name(r, texts):
@@ -543,28 +592,43 @@ def run_checks(root):
     for s in segs:
         if s["kind"] == "connector":
             paths.setdefault(id(s["el"]), []).append(s)
-    for run in paths.values():
+    off = {}                            # id(element) -> (segment, side, px) past the canvas edge
+    for k, run in paths.items():
         if cw and ch:
             past = beyond(run, (0.0, 0.0, cw, ch), strict=False)
             if past:
-                s, side, d = past
-                where = f"{d:g}px past" if d > 0 else "on"
-                add("LINE OFF CANVAS", f"LINE OFF CANVAS connector {fmt(s)} runs {where} the {side} edge of the "
-                    f"{cw:g} × {ch:g} canvas — route it inside", [{"el": s["el"]}], s=s, run=run, side=side, d=d,
-                    r=None)
+                off[k] = past
     feet = footprints(icons, texts)
-    for runs, ends in nets(paths, feet):
+    leaves, boxed = [], {}
+    for runs, ends in nets(paths, feet, rects, texts):
         r = shared_box(ends, rects, feet) if ends else None
         if r is None:
             continue
         for run in runs:
             past = beyond(run, (r[0], r[1], r[0] + r[2], r[1] + r[3]), strict=True)
-            if past:
-                s, side, d = past
-                whose = "both of its ends are" if len(runs) == 1 else f"every end of the {len(runs)} lines it joins is"
-                add("LINE LEAVES BOX", f"LINE LEAVES BOX connector {fmt(s)} runs {d:g}px out past the {side} border "
-                    f"of {box_name(r, texts)} and back in — {whose} inside that box; keep the route in it",
-                    [{"el": s["el"]}, r], s=s, run=run, side=side, d=d, r=r)
+            if not past:
+                continue
+            s, side, d = past
+            o = off.get(id(s["el"]))
+            if o and o[0] is s and o[1] == side:
+                boxed[id(s["el"])] = (r, d, len(runs))      # one problem: reported as off the canvas
+            else:
+                leaves.append((run, past, r, len(runs)))
+    for k, (s, side, d) in off.items():
+        where = f"{d:g}px past" if d > 0 else "on"
+        r, bd, n = boxed.get(k, (None, None, 0))
+        also = ""
+        if r is not None:
+            whose = "both of its ends are" if n == 1 else f"every end of the {n} lines it joins is"
+            also = f", {bd:g}px out past the {side} border of {box_name(r, texts)} where {whose}"
+        add("LINE OFF CANVAS", f"LINE OFF CANVAS connector {fmt(s)} runs {where} the {side} edge of the "
+            f"{cw:g} × {ch:g} canvas{also} — route it inside", [{"el": s["el"]}], s=s, run=paths[k], side=side, d=d,
+            r=r, box_d=bd)
+    for run, (s, side, d), r, n in leaves:
+        whose = "both of its ends are" if n == 1 else f"every end of the {n} lines it joins is"
+        add("LINE LEAVES BOX", f"LINE LEAVES BOX connector {fmt(s)} runs {d:g}px out past the {side} border "
+            f"of {box_name(r, texts)} and back in — {whose} inside that box; keep the route in it",
+            [{"el": s["el"]}, r], s=s, run=run, side=side, d=d, r=r)
     for t in texts:
         if t["title"] and CIDR_IN.search(t["s"]):
             add("CIDR IN TITLE", f"CIDR IN TITLE   {t['s']!r} — put the CIDR on its own 12px {CIDR_COLOR.upper()} line "
@@ -858,6 +922,18 @@ def union(a, b):
     return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
 
 
+# A connector's detour problems (a move must clear them, not cut the line off its net).
+DETOURS = {"LINE OFF CANVAS", "LINE LEAVES BOX"}
+# Largest canvas a 16:9 slide fits with 12px text at 10pt or more (layout_const SLIDE_MAX_*).
+SLIDE_MAX_W, SLIDE_MAX_H = 1108, (540, 600)
+SLIDE_FIT = f"≤ {SLIDE_MAX_W} × {SLIDE_MAX_H[0]} with a title band, × {SLIDE_MAX_H[1]} without"
+
+
+def slide_fits(w, h, title):
+    """Does a w × h canvas fit a 16:9 slide (title: with a title band) at ≥ 10pt?"""
+    return w <= SLIDE_MAX_W and h <= SLIDE_MAX_H[0 if title else 1]
+
+
 # Problems no move can clear (a move that leaves them is still a clean move).
 NOT_POSITIONAL = {"SMALL TEXT", "CIDR COLOR", "GLYPH STEP", "SERVICE AS TEXT", "CIDR IN TITLE"}
 
@@ -868,8 +944,9 @@ class Advisor:
 
     MAX_TRIALS = 24
 
-    def __init__(self, root):
+    def __init__(self, root, engine=False):
         self.root = root
+        self.engine = engine                    # a layout.py draft: its spec, not the draft, is edited
         self.order = {id(el): k for k, el in enumerate(root.iter())}
         self.refresh()
 
@@ -880,6 +957,7 @@ class Advisor:
         self.rects = container_rects(self.root)
         self.settled = {}                       # id(element) -> a checked move that clears all its problems
         self.last_keys = set()
+        self.loose = loose_ends(self.root)
         self.titles = {}                        # id(rect el) -> its title text item
         for r in self.rects:
             for t in self.texts:
@@ -894,11 +972,27 @@ class Advisor:
         undo = apply_tree(self.root, edits)
         try:
             after = run_checks(self.root)
+            loose = loose_ends(self.root)
         finally:
             undo()
         keys = {i.key for i in after}
         self.last_keys = keys
-        return target not in keys, [i for i in after if i.key not in self.keys]
+        new = [i for i in after if i.key not in self.keys]
+        # A move that cuts a line off what it touched (a branch's end off a trunk it no longer
+        # reaches) can hide a detour instead of clearing it: a new loose end, or a detour of
+        # a line the move left alone gone with it, makes the move a dirty one.
+        for k, pt in loose.items():
+            if k not in self.loose:
+                new.append(Issue("LOOSE END", f"LOOSE END       a line end at ({fnum(pt[0])},{fnum(pt[1])}) no "
+                                 "longer touches the node, line or border it was on", [], {}))
+                break
+        moved = {id(e[1]) for e in edits}
+        for i in self.issues:
+            if i.kind in DETOURS and i.key != target and i.key not in keys and not key_ids(i.key) & moved:
+                new.append(Issue(i.kind, f"{i.msg.strip()} — hidden, not cleared: the move cuts that line off "
+                                 "the net it belonged to", [], {}))
+                break
+        return target not in keys, new
 
     def pick(self, target, cands, fallback=""):
         """cands: (size, edits, text). The smallest that clears the target without a new
@@ -1030,8 +1124,9 @@ class Advisor:
         tail = "; re-attach its connector ends" if ends else ""
         return edits, f"move {self.idesc(i)}{lab} {direction(dx, dy)}: {', '.join(parts)}{tail}{self.local(i)}"
 
-    def move_run(self, s, dx, dy):
-        """Shift one straight run of a line/polyline sideways (both its points)."""
+    def move_run(self, s, dx, dy, tail=True):
+        """Shift one straight run of a line/polyline sideways (both its points); tail: say
+        when that moves the line's start or end."""
         el = s["el"]
         tag = el.tag.replace(NS, "")
         if tag == "line":
@@ -1049,7 +1144,8 @@ class Advisor:
             ends.append("start")
         if tag == "line" or s["i"] == s["n"] - 1:
             ends.append("end")
-        tail = f" (this moves the line's {' and '.join(ends)} too: keep {'them' if len(ends) > 1 else 'it'} on the node)" if ends else ""
+        tail = (f" (this moves the line's {' and '.join(ends)} too: keep {'them' if len(ends) > 1 else 'it'} on the "
+                "node)" if ends and tail else "")
         return edits, f"move the run {self.sdesc(s)} {direction(dx, dy)} to {new}{tail}{self.local(s)}"
 
     def title_home(self, t):
@@ -1354,7 +1450,9 @@ class Advisor:
 
     def bring_inside(self, iss, run, side, r):
         """Move the runs of a connector that lie wholly past one side of the canvas (r None) or
-        of box r back inside it, together (one polyline edit)."""
+        of box r back inside it, together (one edit per line), with the ends of the other
+        lines that sit on them (a branch off a trunk, a bracket's stem, the next <line> of a
+        route drawn in pieces). Returns (candidates, what, why none)."""
         cw, ch = self.canvas
         box = (0.0, 0.0, cw, ch) if r is None else (r[0], r[1], r[0] + r[2], r[1] + r[3])
         k = SIDES.index(side)
@@ -1363,42 +1461,95 @@ class Advisor:
         out = [s for s in run if all(past(pt[axis]) for pt in (s["p"], s["q"]))
                and abs(s["p"][axis] - s["q"][axis]) < 0.5]
         what = (f"the {cw:g} × {ch:g} canvas" if r is None else self.rdesc(r[4]))
-        if not out:
-            return None, what
+        el = out[0]["el"] if out else None
+        if not out or el.tag.replace(NS, "") not in ("line", "polyline"):
+            return None, what, ""
+        lines = {}                                  # id(element) -> its points, in order
+        for sg in self.segs:
+            if sg["kind"] == "connector":
+                lines.setdefault(id(sg["el"]), [sg["el"], sg["off"], [sg["p"]]])[2].append(sg["q"])
+        name = lambda eid, idx: self.sdesc_pts(lines[eid][0], lines[eid][1], lines[eid][2], idx)  # noqa: E731
+        # the other lines' ends lying on a run that moves: (element id, point index, run)
+        riders = []
+        for eid, (oel, _, pts) in lines.items():
+            if oel is el:
+                continue
+            for idx in (0, len(pts) - 1):
+                on = next((sg for sg in out if on_seg(pts[idx], sg)), None)
+                if on is None:
+                    continue
+                nb = pts[1] if idx == 0 else pts[-2]
+                if abs(nb[1 - axis] - pts[idx][1 - axis]) >= 0.5:
+                    # its end piece runs along the moving run: moving the end alone would bend it
+                    return None, what, (f"{name(eid, idx)} ends on it, running along it: move both lines "
+                                        "together")
+                riders.append((eid, idx, on))
         margins = (12, 16, 20, 24, 32, 40, 48) if r is None else tuple(HUG_CLEAR + e for e in (0, 4, 8, 12, 16, 24, 32))
-        el = out[0]["el"]
-        tag = el.tag.replace(NS, "")
         cands = []
         for m in margins:
             target = edge + inward * m
-            if tag == "polyline":
-                pts = el.get("points", "")
-                for s in out:
-                    dv = target - s["p"][axis]
-                    pts = shift_points(pts, {s["i"], s["i"] + 1}, dv if axis == 0 else 0, dv if axis == 1 else 0)
-                edits = [("attr", el, "points", pts)]
-                _, text = self.move_run(out[0], *((target - out[0]["p"][0], 0) if axis == 0
-                                                 else (0, target - out[0]["p"][1])))
-            else:
-                dv = target - out[0]["p"][axis]
-                edits, text = self.move_run(out[0], *((dv, 0) if axis == 0 else (0, dv)))
-                if not edits:
-                    continue
+            shifts = {}                             # id(element) -> {point index: shift}
+            for sg in out:                          # collinear runs share a point: shift it once
+                for idx in (sg["i"], sg["i"] + 1):
+                    shifts.setdefault(id(el), {})[idx] = target - sg["p"][axis]
+            for eid, idx, sg in riders:
+                shifts.setdefault(eid, {})[idx] = target - sg["p"][axis]
+            edits = []
+            for eid, moves in shifts.items():
+                oel = lines[eid][0]
+                if oel.tag.replace(NS, "") == "line":
+                    for idx, dv in moves.items():
+                        a = ("x1", "y1", "x2", "y2")[2 * idx + axis]
+                        edits.append(("attr", oel, a, fnum(num(oel.get(a)) + dv)))
+                else:
+                    pts = oel.get("points", "")
+                    for dv in sorted(set(moves.values())):
+                        idxs = {i for i, v in moves.items() if v == dv}
+                        pts = shift_points(pts, idxs, dv if axis == 0 else 0, dv if axis == 1 else 0)
+                    edits.append(("attr", oel, "points", pts))
+            dv0 = target - out[0]["p"][axis]
+            _, text = self.move_run(out[0], *((dv0, 0) if axis == 0 else (0, dv0)), tail=False)
             more = f" (and its {len(out) - 1} other run{'s' if len(out) > 2 else ''} past that side)" if len(out) > 1 else ""
+            ride = ""
+            if riders:
+                names = [name(eid, idx) for eid, idx, _ in riders]
+                ride = (f", with the end{'s' if len(names) > 1 else ''} of {', '.join(names)} that "
+                        f"sit{'' if len(names) > 1 else 's'} on it")
             v = target - out[0]["off"][axis]
-            cands.append((m, edits, f"{text}{more} ({'xy'[axis]}={fnum(v)}, {m}px inside the {side} "
+            cands.append((m, edits, f"{text}{more}{ride} ({'xy'[axis]}={fnum(v)}, {m}px inside the {side} "
                                     f"{'edge' if r is None else 'border'} of {what})"))
-        return cands, what
+        return cands, what, ""
 
-    def h_line_off_canvas(self, iss, s, run, side, d, r):
-        cands, what = self.bring_inside(iss, run, side, None)
+    def sdesc_pts(self, el, off, pts, idx):
+        """A line named by the piece at one of its ends (idx 0: its first, else its last)."""
+        tag = el.tag.replace(NS, "")
+        p, q = (pts[0], pts[1]) if idx == 0 else (pts[-2], pts[-1])
+        ox, oy = off
+        return (f"{tag}{self.el_id(el)} {'segment ' if tag == 'polyline' else ''}"
+                f"({fnum(p[0] - ox)},{fnum(p[1] - oy)})→({fnum(q[0] - ox)},{fnum(q[1] - oy)})")
+
+    def grow_text(self, side, d):
+        """The viewBox alternative for a line past the right or bottom canvas edge: not for an
+        engine draft (its spec sets the canvas), and with what it costs on a slide."""
+        if side not in ("right", "bottom"):
+            return ""
+        if self.engine:
+            return " — or, from the layout spec, let layout.py grow the room on that side (its try: line)"
         cw, ch = self.canvas
-        grow = (f" — or grow the viewBox {'width' if side == 'right' else 'height'} to "
-                f"{math.ceil((cw if side == 'right' else ch) + d + 16)} (and the white background rect)"
-                if side in ("right", "bottom") else "")
-        fallback = (f"route {self.sdesc(s)} inside {what}: give the edge a bend between its two ends instead of a "
-                    f"detour around the outside (in a layout spec: shape / bend_x / bend_y, or widen the gap "
-                    f"between the ends){grow}")
+        w, h = (math.ceil(cw + d + 16), ch) if side == "right" else (cw, math.ceil(ch + d + 16))
+        text = (f" — or grow the viewBox {'width' if side == 'right' else 'height'} to "
+                f"{fnum(w if side == 'right' else h)} (and the white background rect)")
+        if any(slide_fits(cw, ch, t) and not slide_fits(w, h, t) for t in (True, False)):
+            text += f"; on a 16:9 slide that takes 12px text under 10pt ({SLIDE_FIT}), so move the run instead"
+        return text
+
+    def h_line_off_canvas(self, iss, s, run, side, d, r, box_d=None):
+        cands, what, why = self.bring_inside(iss, run, side, r)
+        grow = "" if r is not None else self.grow_text(side, d)
+        where = f"inside {what}" + (", where its ends are," if r is not None else "")
+        fallback = (f"route {self.sdesc(s)} {where} with a bend between its two ends instead of a detour around "
+                    f"the outside{f' ({why})' if why else ''} (in a layout spec: shape / bend_x / bend_y, or widen "
+                    f"the gap between the ends){grow}")
         if not cands:
             return Hint(fallback)
         h = self.pick(iss.key, cands, fallback=fallback)
@@ -1406,10 +1557,10 @@ class Advisor:
         return h
 
     def h_line_leaves_box(self, iss, s, run, side, d, r):
-        cands, what = self.bring_inside(iss, run, side, r)
+        cands, what, why = self.bring_inside(iss, run, side, r)
         fallback = (f"route {self.sdesc(s)} inside {what}, where both of its ends are: a bend between them "
-                    "instead of a detour around the outside (in a layout spec: shape / bend_x / bend_y, or widen "
-                    "the gap between the ends)")
+                    f"instead of a detour around the outside{f' ({why})' if why else ''} (in a layout spec: "
+                    "shape / bend_x / bend_y, or widen the gap between the ends)")
         if not cands:
             return Hint(fallback)
         return self.pick(iss.key, cands, fallback=fallback)
@@ -1712,7 +1863,7 @@ def run_file(path, fix):
     out, fixed = [], []
     for n in range(6 if fix else 1):
         data = Path(path).read_bytes()
-        adv = Advisor(ET.fromstring(data))
+        adv = Advisor(ET.fromstring(data), engine=b"generated by layout.py" in data[:2000])
         hints, accepted = adv.plan() if adv.issues else ([], [])
         real = [(iss, h) for iss, h in accepted if h.note != "cleared by an earlier fix"]
         if not fix or not real or n == 5:
