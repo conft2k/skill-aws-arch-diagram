@@ -1098,6 +1098,11 @@ examples:
     rules: [R-flow, R-label, R-rt, R-fit, R-border]
     what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
     good: [R-flow, R-rt, R-label, R-fit, R-border]   # golden slide: RTs inside their brackets, 10.04pt titled; R-border as the document
+  - path: ../../docs/examples/specs/slides/nlb-mtls-reference-architecture.layout.yaml
+    modes: [slide, slide-no-title]
+    rules: [R-flow, R-label, R-twin, R-fit, R-border]
+    what: "NLB mTLS slide: client → IGW → NLB → same-AZ EC2, SG overlays, ACM and S3 → trust store; AZs folded into subnet headers, CIDRs omitted, three legend lines"
+    good: [R-flow, R-label, R-twin, R-fit, R-border]
   - path: ../../docs/examples/specs/slides/nlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "Slide: internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and a regional ACM / CloudWatch / S3 column"

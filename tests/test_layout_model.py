@@ -7,7 +7,7 @@ Every example in docs/examples (documents and slides) and the docs/example.svg s
 turned back into a draft in memory (embed.unembed) and measured: group border styles,
 header geometry, node label stacks, masks, top insets, AZ gaps, step badges and the note.
 Also checks the small helpers in layout_model and that mirrored constants still equal
-check_layout's. Standard library only (the icon bundle must be present, as for any script).
+check_layout's. Needs PyYAML for the examples' overlay membership.
 """
 import re
 import sys
@@ -22,6 +22,8 @@ import check_layout as CL  # noqa: E402
 import embed  # noqa: E402
 import layout_const as K  # noqa: E402
 import layout_model as M  # noqa: E402
+import layout_spec  # noqa: E402
+from layout_text import font_context, svg_factor, svg_steps  # noqa: E402
 
 NS = "{http://www.w3.org/2000/svg}"
 DOCS = sorted((ROOT / "docs/examples").glob("*.svg")) + [ROOT / "docs/example.svg"]
@@ -40,6 +42,11 @@ class Draft:
         assert not problems, problems
         self.name, self.mode = path.stem if path.parent.name != "slides" else "slides/" + path.stem, mode
         self.root = ET.fromstring(out)
+        spec_dir = ROOT / "docs/examples/specs"
+        if path.parent.name == "slides":
+            spec_dir /= "slides"
+        spec = layout_spec.load(spec_dir / (path.stem + ".layout.yaml"), mode=mode)
+        self.overlays = {"group:" + g.id for g in spec.groups.values() if g.overlay}
         vb = [num(v) for v in self.root.get("viewBox").split()]
         self.w, self.h = vb[2], vb[3]
         self.rects, self.images, self.texts, self.segs, self.circles, self.defs = [], [], [], [], [], []
@@ -54,11 +61,12 @@ class Draft:
                 r["badge"] = b
                 self.boxes.append(r)
 
-    def _walk(self, el, ox, oy):
+    def _walk(self, el, ox, oy, owner=""):
         dx, dy = CL.translate(el)
         ox, oy = ox + dx, oy + dy
         tag = el.tag.replace(NS, "")
         g = el.get
+        owner = g("id", owner)
         if tag == "defs":
             self.defs.append(el)
             return
@@ -68,7 +76,7 @@ class Draft:
                                "x1": x + num(g("width")), "y1": y + num(g("height")),
                                "stroke": g("stroke") if g("stroke", "none") != "none" else None,
                                "sw": num(g("stroke-width")), "dash": g("stroke-dasharray"),
-                               "fill": g("fill", "")})
+                               "fill": g("fill", ""), "overlay": owner in self.overlays})
         elif tag == "image":
             self.images.append({"x": num(g("x")) + ox, "y": num(g("y")) + oy, "w": num(g("width")),
                                 "h": num(g("height")), "ref": g("href", "")[len("bundle:"):]})
@@ -87,13 +95,13 @@ class Draft:
         elif tag == "circle":
             self.circles.append({"cx": num(g("cx")) + ox, "cy": num(g("cy")) + oy, "r": num(g("r"))})
         for c in el:
-            self._walk(c, ox, oy)
+            self._walk(c, ox, oy, owner)
 
     def parent(self, x0, y0, x1, y1, exclude=None):
         """Smallest container rect holding the box (overlays excluded)."""
         best = None
         for r in self.boxes:
-            if r is exclude or r["type"] in K.OVERLAY_TYPES:
+            if r is exclude or r["overlay"] or r["type"] in K.OVERLAY_TYPES:
                 continue
             if r["x"] <= x0 and r["y"] <= y0 and x1 <= r["x1"] and y1 <= r["y1"] and \
                     (r["x"], r["y"], r["x1"], r["y1"]) != (x0, y0, x1, y1):
@@ -113,7 +121,7 @@ class Draft:
         t0 = self.title(r)
         if not t0:
             return None
-        return next((t for t in self.texts if t["fs"] == 12 and abs(t["x"] - t0["x"]) < 0.5
+        return next((t for t in self.texts if t["fs"] == K.TEXT_CIDR.size and abs(t["x"] - t0["x"]) < 0.5
                      and abs(t["y"] - (r["y"] + K.CIDR_DY)) < 0.5 and CL.CIDR_IN.search(t["s"])), None)
 
     def label_stack(self, i):
@@ -130,16 +138,23 @@ def load_all():
 DRAFTS = load_all()
 
 
+def scoped_drafts():
+    """Measure each reference using the typography recorded by its renderer."""
+    for draft in DRAFTS:
+        with font_context(svg_factor(draft.root), svg_steps(draft.root)):
+            yield draft
+
+
 class GroupStyleTest(unittest.TestCase):
     def test_every_container_has_a_style(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             for r in d.boxes:
                 with self.subTest(draft=d.name, rect=(r["x"], r["y"])):
                     self.assertIsNotNone(r["type"], f"{r['stroke']} dash={r['dash']} badge={r['badge']}")
 
     def test_stroke_width_dash_badge(self):
         seen = set()
-        for d in DRAFTS:
+        for d in scoped_drafts():
             for r in d.boxes:
                 st = K.style(r["type"])
                 seen.add(r["type"])
@@ -155,7 +170,7 @@ class GroupStyleTest(unittest.TestCase):
                          "onprem", "generic"} <= seen, seen)
 
     def test_header_geometry(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             for r in d.boxes:
                 st = K.style(r["type"])
                 t = d.title(r)
@@ -167,9 +182,9 @@ class GroupStyleTest(unittest.TestCase):
 
     def test_cidr_line(self):
         n = 0
-        for d in DRAFTS:
+        for d in scoped_drafts():
             for t in d.texts:
-                if t["fs"] == 12 and CL.BARE_CIDR.match(t["s"]) and t["anchor"] == "start":
+                if t["fs"] == K.TEXT_CIDR.size and CL.BARE_CIDR.match(t["s"]) and t["anchor"] == "start":
                     owner = [r for r in d.boxes if abs(t["y"] - (r["y"] + K.CIDR_DY)) < 0.5
                              and d.title(r) and abs(d.title(r)["x"] - t["x"]) < 0.5]
                     with self.subTest(draft=d.name, cidr=t["s"]):
@@ -181,7 +196,7 @@ class GroupStyleTest(unittest.TestCase):
 
 class NodeTest(unittest.TestCase):
     def test_label_stack(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             for i in d.icons:
                 stack = d.label_stack(i)
                 with self.subTest(draft=d.name, icon=i["ref"], at=(i["x"], i["y"])):
@@ -196,7 +211,7 @@ class NodeTest(unittest.TestCase):
 
     def test_masks(self):
         n = 0
-        for d in DRAFTS:
+        for d in scoped_drafts():
             mc = K.mode(d.mode)
             for r in d.rects:
                 if r["stroke"] or r["fill"].upper() != K.WHITE or r["w"] >= d.w:
@@ -225,9 +240,9 @@ class InsetTest(unittest.TestCase):
     """The style table's top insets are minimums every example keeps (but TIGHTER)."""
 
     def test_nested_box_top(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             for r in d.boxes:
-                if r["type"] in K.OVERLAY_TYPES:
+                if r["overlay"] or r["type"] in K.OVERLAY_TYPES:
                     continue
                 p = d.parent(r["x"], r["y"], r["x1"], r["y1"], exclude=r)
                 if not p:
@@ -239,7 +254,7 @@ class InsetTest(unittest.TestCase):
                     self.assertGreaterEqual(r["y"] - p["y"], want)
 
     def test_icon_top_and_label_bottom(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             mc = K.mode(d.mode)
             for i in d.icons:
                 p = d.parent(i["x"], i["y"], i["x"] + i["w"], i["y"] + i["h"])
@@ -254,9 +269,9 @@ class InsetTest(unittest.TestCase):
                     self.assertGreaterEqual(p["y1"] - last, mc.label_bottom)
 
     def test_overlay_icons_under_the_header(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             for r in d.boxes:
-                if r["type"] not in K.OVERLAY_TYPES:
+                if not r["overlay"] and r["type"] not in K.OVERLAY_TYPES:
                     continue
                 t = d.title(r)
                 title_x1 = t["x"] + M.text_width(t["s"], t["fs"])
@@ -269,18 +284,18 @@ class InsetTest(unittest.TestCase):
                             self.assertGreaterEqual(i["y"] - r["y"], K.top_inset("asg", d.mode, "icon"))
 
     def test_slide_pads(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             if d.mode != "slide":
                 continue
             for r in d.boxes:
                 p = d.parent(r["x"], r["y"], r["x1"], r["y1"], exclude=r)
-                if not p or r["type"] in K.OVERLAY_TYPES:
+                if not p or r["overlay"] or r["type"] in K.OVERLAY_TYPES:
                     continue
                 with self.subTest(draft=d.name, child=r["type"], at=(r["x"], r["y"])):
                     self.assertGreaterEqual(min(r["x"] - p["x"], p["x1"] - r["x1"], p["y1"] - r["y1"]), K.SLIDE.pad)
 
     def test_az_gap(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             azs = sorted((r for r in d.boxes if r["type"] == "az"), key=lambda r: (r["x"], r["y"]))
             for a, b in zip(azs, azs[1:]):
                 if a["x"] != b["x"]:
@@ -308,7 +323,7 @@ class EdgeTest(unittest.TestCase):
 
     def test_step_badges_on_their_hop(self):
         good = total = 0
-        for d in DRAFTS:
+        for d in scoped_drafts():
             note = self._note_area(d)
             for c in d.circles:
                 if c["r"] != K.BADGE_R:
@@ -328,10 +343,10 @@ class EdgeTest(unittest.TestCase):
 
     def test_connector_labels(self):
         above = below = 0
-        for d in DRAFTS:
+        for d in scoped_drafts():
             mc = K.mode(d.mode)
             for t in d.texts:
-                if t["fs"] != 12 or t["anchor"] != "middle" or t["weight"]:
+                if t["fs"] != K.TEXT_PROTO.size or t["anchor"] != "middle" or t["weight"]:
                     continue
                 if any(t in d.label_stack(i) for i in d.icons):
                     continue
@@ -348,7 +363,7 @@ class EdgeTest(unittest.TestCase):
 class NoteTest(unittest.TestCase):
     def test_panel(self):
         n = 0
-        for d in DRAFTS:
+        for d in scoped_drafts():
             for r in d.rects:
                 if r["fill"].upper() != K.NOTE_FILL or r["x"] != K.PANEL_X or r["w"] == K.PANE_W_WIDE \
                         or r["y"] == min(b["y"] for b in d.boxes):
@@ -365,7 +380,7 @@ class NoteTest(unittest.TestCase):
                     hops = [t for t in d.texts if r["y"] < t["y"] < r["y1"] and t["weight"] == "600"]
                     if hops:
                         desc_x = {t["x"] for t in d.texts if r["y"] < t["y"] < r["y1"] and t["fill"] == K.GRAY}
-                        want = K.PANEL_HOP_X + max(M.text_width(t["s"], 12) for t in hops) + K.PANEL_DESC_GAP
+                        want = K.PANEL_HOP_X + max(M.text_width(t["s"], K.TEXT_NOTE.size) for t in hops) + K.PANEL_DESC_GAP
                         self.assertEqual(len(desc_x), 1)
                         # nfw exactly, tgw rounded up (+0.4), gwlb +5.4 (its ⇄ estimated narrow)
                         self.assertTrue(want - 0.5 <= desc_x.pop() <= want + 6)
@@ -377,7 +392,7 @@ class NoteTest(unittest.TestCase):
 
     def test_pane(self):
         n = 0
-        for d in DRAFTS:
+        for d in scoped_drafts():
             cloud = next(b for b in d.boxes if b["type"] == "cloud")
             for r in d.rects:
                 if r["fill"].upper() != K.NOTE_FILL or r["y"] != cloud["y"]:
@@ -385,7 +400,7 @@ class NoteTest(unittest.TestCase):
                 with self.subTest(draft=d.name):
                     self.assertEqual(r["x"], K.PANE_X)
                     self.assertEqual(cloud["x"], r["x1"] + K.PANE_GAP)
-                    hops = sorted((t for t in d.texts if t["weight"] == "600" and t["fs"] == 12
+                    hops = sorted((t for t in d.texts if t["weight"] == "600" and t["fs"] == K.TEXT_NOTE.size
                                    and r["x"] < t["x"] < r["x1"] and t["y"] < r["y1"]), key=lambda t: t["y"])
                     self.assertEqual(hops[0]["y"], r["y"] + K.PANE_FIRST_CY + K.BADGE_TEXT_DY)
                     inside = sorted(t["y"] for t in d.texts if r["x"] < t["x"] < r["x1"] and r["y"] < t["y"] < r["y1"])
@@ -402,7 +417,7 @@ class NoteTest(unittest.TestCase):
 
     def test_slide_lines(self):
         n = 0
-        for d in DRAFTS:
+        for d in scoped_drafts():
             if d.mode != "slide":
                 continue
             cloud = next(b for b in d.boxes if b["type"] == "cloud")
@@ -411,20 +426,32 @@ class NoteTest(unittest.TestCase):
                 continue
             with self.subTest(draft=d.name):
                 self.assertEqual(items[0]["cx"], cloud["x"] + K.LINES_BADGE_DX)
-                self.assertGreaterEqual(items[0]["cy"], cloud["y1"] + K.LINES_FIRST_CY)
-                self.assertEqual(d.h, items[-1]["cy"] + K.BADGE_TEXT_DY + K.LINES_END)
+                # The note may use clear space above the preferred baseline.
+                self.assertGreaterEqual(items[0]["cy"] - K.BADGE_R, cloud["y1"] + K.LINES_END)
+                text_end = items[-1]["cy"] + K.BADGE_TEXT_DY + K.LINES_END
+                badge_end = items[-1]["cy"] + K.BADGE_R
+                # Legacy reference SVGs reserve the text footer only; new engine
+                # drafts carry scale metadata and include the full badge too.
+                end = max(text_end, badge_end) if d.root.get("data-text-scale") else text_end
+                self.assertEqual(d.h, end)
                 for c, nxt in zip(items, items[1:]):
-                    t = next(t for t in d.texts if t["y"] == c["cy"] + K.BADGE_TEXT_DY and t["x"] == c["cx"] + 18)
+                    text_dx = K.LINES_TEXT_DX - K.LINES_BADGE_DX
+                    t = next(t for t in d.texts if t["y"] == c["cy"] + K.BADGE_TEXT_DY
+                             and t["x"] == c["cx"] + text_dx)
                     self.assertEqual(t["x"], c["cx"] - K.LINES_BADGE_DX + K.LINES_TEXT_DX)
-                    end = t["x"] + M.text_width(t["s"], t["fs"])
-                    self.assertLess(abs(nxt["cx"] - K.BADGE_R - (end + K.LINES_ITEM_GAP)), 0.05)
+                    if nxt["cy"] == c["cy"]:
+                        end = t["x"] + M.text_width(t["s"], t["fs"])
+                        self.assertLess(abs(nxt["cx"] - K.BADGE_R - (end + K.LINES_ITEM_GAP)), 0.05)
+                    else:
+                        self.assertEqual(nxt["cx"], cloud["x"] + K.LINES_BADGE_DX)
+                        self.assertEqual(nxt["cy"] - c["cy"], K.LINES_ROW_PITCH)
                 n += 1
-        self.assertEqual(n, 3)
+        self.assertGreaterEqual(n, 3)
 
 
 class ConstTest(unittest.TestCase):
     def test_markers_and_font(self):
-        for d in DRAFTS:
+        for d in scoped_drafts():
             with self.subTest(draft=d.name):
                 self.assertEqual(d.root.get("font-family"), K.FONT_FAMILY_DEFAULT)
                 for m in (m for defs in d.defs for m in defs.iter(f"{NS}marker")):

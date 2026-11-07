@@ -1,0 +1,40 @@
+# Titled slide: fold AZ borders into subnet headers and show security groups as overlays.
+# Omit CIDR annotations to save header height for >= 10pt text: VPC 10.0.0.0/16,
+# public 10.0.0.0/24 and 10.0.1.0/24, private 10.0.10.0/24 and 10.0.11.0/24.
+# This slide explains mTLS, not routing; services, connections, protocols and mTLS facts match the document spec.
+name: nlb-mtls-reference-architecture
+mode: slide
+text_scale: 1.042   # 13px secondary text fits above 10pt with a slide title
+cols: [client, igw, pub, app, svc]
+rows: [az1, main, az2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc,    type: vpc, label: VPC, in: region}
+  - {id: pubsn,  type: public, label: "AZ {n} · Public", in: vpc, per: [az1, az2], span: {cols: [pub, pub]}}   # empty public subnets cover the single NLB's column
+  - {id: appsn,  type: private, label: "AZ {n} · Private", in: vpc, per: [az1, az2]}
+  - {id: besg,   type: sg, label: SG, over: [ec2.*], header: right}   # one backend-sg shared by both AZs; its name is on each EC2 caption
+  - {id: nlbsg,  type: sg, label: SG, over: [nlb], header: right}     # nlb-sg is named on the NLB label
+
+nodes:
+  - {id: client, icon: resource/Client, label: 클라이언트, sub: "curl · openssl s_client", at: [client, main]}
+  - {id: acm,    icon: service/AWS-Certificate-Manager, label: ACM, sub: 서버 인증서, in: region, at: [svc, az1]}
+  - {id: ts,     icon: service/Elastic-Load-Balancing, label: ELB trust store, sub: "CA 번들 · CRL", in: region, at: [svc, main]}
+  - {id: s3,     icon: service/Amazon-Simple-Storage-Service, label: S3, sub: "ca-bundle.pem · crl.pem", in: region, at: [svc, az2]}
+  - {id: ec2,    icon: service/Amazon-EC2, label: EC2, sub: "backend-sg · HTTP :80", in: appsn, col: app}
+  - {id: nlb,    icon: resource/Elastic-Load-Balancing_Network-Load-Balancer, label: "NLB · nlb-sg", sub: [":443 TLS · mTLS verify", ":8443 TLS · 대조군"], in: vpc, at: [pub, main]}
+  - {id: igw,    icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
+
+edges:
+  - {e: "s3 ..> ts", step: 1}
+  - {e: "client -> igw", label: "HTTPS :443", step: 2}
+  - {e: "igw -> nlb"}
+  - {e: "nlb -> ec2.*", trunk: true, label: "TCP :80", step: 3}   # one stem forks to the same-AZ targets
+
+note:
+  place: lines
+  steps:
+    - [S3 → 신뢰 저장소, "CA 번들 · CRL로 생성 → :443 리스너에 연결"]
+    - [클라이언트 → NLB, "클라이언트 인증서: 신뢰 체인 → 만료 → CRL → ID 필터 · 실패 시 TLS alert"]
+    - [NLB → backend-tg, "통과한 연결만 같은 AZ EC2 · cross-zone off · AZ별 대상 필수 · 클라이언트 인증서 전달 안 함"]
