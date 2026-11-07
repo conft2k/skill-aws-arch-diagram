@@ -7,8 +7,8 @@ Specs come from docs/examples/specs/*.layout.yaml (layout_spec.load); the Geomet
 here straight from each example's draft (embed.unembed in memory): node icons, label lines
 and masks, group rects and headers, track centers — no solver involved. The router's
 lines, labels and badges are then checked against the coordinates the examples use
-(DESIGN 3: NFW badges 645 / 929 / 1059; current TGW badges 1049.9 / 1762.2 / 2313.7, nlb-mtls trunk 642,
-ALB "아웃바운드"), the shape table, candidate validation on synthetic obstacles, the plan's
+(DESIGN 3: NFW badges 645 / 929 / 1059; current TGW badges 988.3 / 1762.2 / 2250.7,
+nlb-mtls trunk 642, ALB "아웃바운드"), the shape table, candidate validation on synthetic obstacles, the plan's
 requirements on the example geometry, and check_layout.py on a minimal SVG of groups +
 nodes + routed edges.
 """
@@ -33,6 +33,7 @@ import layout_const as K  # noqa: E402
 import layout_model as M  # noqa: E402
 import layout_route as R  # noqa: E402
 import layout_spec  # noqa: E402
+from layout_text import font_context, scaled_spec, svg_factor, svg_steps  # noqa: E402
 
 NS = "{http://www.w3.org/2000/svg}"
 SPECS = ROOT / "docs/examples/specs"
@@ -88,6 +89,12 @@ class Draft:
 def geometry(spec, name):
     """The example's Geometry for this spec (ids matched by icon ref and track position)."""
     d = Draft(draft_path(name))
+    spec.font_factor, spec.font_steps = svg_factor(d.root), svg_steps(d.root)
+    with font_context(spec.font_factor, spec.font_steps):
+        return _geometry(spec, name, d)
+
+
+def _geometry(spec, name, d):
     icons = [i for i in d.images if not i["ref"].startswith("group/")]
     nodes = list(spec.nodes.values())
     by_ref = {}
@@ -178,7 +185,7 @@ def geometry(spec, name):
         title = next((t for t in d.texts if t.weight == "600" and abs(t.y - (rb.y0 + st.title_dy)) < 1
                       and abs(t.x - (rb.x0 + st.title_dx)) < 1), None)
         cidr = next((t for t in d.texts if title and abs(t.x - title.x) < 1 and abs(t.y - (rb.y0 + K.CIDR_DY)) < 1
-                     and t.size == 12), None)
+                     and t.size == K.TEXT_CIDR.size), None)
         ggeo[g.id] = M.GroupGeom(g.id, rb, badge, title, cidr)
         pick["gid"] = g.id
     groups = {gid: ggeo[gid] for gid in spec.groups}
@@ -195,11 +202,13 @@ def load(name):
     return spec, geom, d, boxes
 
 
+@scaled_spec
 def svg_of(spec, geom, d, boxes, elements):
     """A minimal SVG: the example's group rects (+ badges, headers), nodes (mask, icon,
     label lines) from the Geometry, then the routed elements."""
     out = [f'<svg viewBox="0 0 {M.fmt_num(geom.canvas_w)} {M.fmt_num(geom.canvas_h)}" xmlns="http://www.w3.org/2000/svg" '
-           f'font-family="{K.FONT_FAMILY_DEFAULT}">',
+           f'font-family="{K.FONT_FAMILY_DEFAULT}" data-text-scale="{spec.font_factor}" '
+           f'data-text-steps="{",".join(map(str, spec.font_steps))}">',
            f"<defs>{K.MARKER_ARROW}{K.MARKER_ARROW_START}</defs>",
            f'<rect width="{M.fmt_num(geom.canvas_w)}" height="{M.fmt_num(geom.canvas_h)}" fill="#FFFFFF"/>']
     els = []
@@ -261,12 +270,35 @@ CACHE = {}
 def routed(name):
     if name not in CACHE:
         spec, geom, d, boxes = load(name)
-        els, warns = R.draw(spec, geom)
+        with font_context(spec.font_factor, spec.font_steps):
+            els, warns = R.draw(spec, geom)
         CACHE[name] = (spec, geom, d, boxes, els, warns)
     return CACHE[name]
 
 
 # ---------------------------------------------------------------------------------------
+
+class Fixture(unittest.TestCase):
+    def test_scaled_examples_preserve_labels_and_headers(self):
+        for name, counts in (("nlb", (17, 10)), ("tgw", (26, 4))):
+            spec, geom, d, boxes = load(name)
+            with self.subTest(example=name):
+                self.assertEqual((sum(len(n.lines) for n in geom.nodes.values()),
+                                  sum(g.title is not None for g in geom.groups.values())), counts)
+                for nid, node in spec.nodes.items():
+                    self.assertEqual([t.text for t in geom.nodes[nid].lines], [node.label, *node.sub], nid)
+                for gid, group in spec.groups.items():
+                    self.assertEqual(geom.groups[gid].title.text, group.label, gid)
+                    if group.cidr:
+                        self.assertEqual(geom.groups[gid].cidr.text, group.cidr, gid)
+                # Text retained in Geometry must also reach the SVG used for collision checks.
+                root = ET.fromstring(svg_of(spec, geom, d, boxes, []))
+                actual = [t.text for t in root.iter(NS + "text")]
+                expected = [t.text for n in geom.nodes.values() for t in n.lines]
+                expected += [t.text for g in geom.groups.values() for t in (g.title, g.cidr) if t]
+                self.assertCountEqual(actual, expected)
+                self.assertEqual((svg_factor(root), svg_steps(root)), (svg_factor(d.root), svg_steps(d.root)))
+
 
 EXPECTED_SHAPES = {
     # one entry per expanded edge instance, in Edge.n order
@@ -392,22 +424,30 @@ class Reproduce(unittest.TestCase):
 
     def test_tgw_badges(self):
         spec, geom, d, boxes, els, warns = routed("tgw")
-        b = badges_of(els)
-        for n, x in ((3, 1762.2), (4, 2313.7)):
-            self.near(b[n][0], x, f"tgw badge {n} x")
-        self.near(b[4][1], 293.5, "tgw badge 4 cy")
-        tops = sorted(points(lines_of(els, n)[0])[0][0] for n in (3, 4))
-        self.assertEqual(tops, [1309.2, 1329.2])                 # ±10 on the TGW's top side
-        # badge 2 and its label side by side above the line (labels go above a horizontal line)
-        label = next(e for e in els if e.owner == "edge:2" and e.kind == "text" and e.z == K.Z_EDGE_LABEL)
-        self.assertEqual(label.attrs["y"], 404 - 9)
-        self.assertEqual(b[2][1], 404 - K.BADGE_DY)
-        self.assertLessEqual(b[2][0] + K.BADGE_R + 4, label.attrs["x"] - M.text_width(label.text, 12) / 2)
-        # and badge 1 beside 'IPsec' on the (widened) Internet → VPN piece
-        label = next(e for e in els if e.owner == "edge:1" and e.kind == "text" and e.z == K.Z_EDGE_LABEL)
-        self.assertEqual(label.attrs["y"], 404 - 9)
-        self.assertEqual(b[1][1], 404 - K.BADGE_DY)
-        self.assertLessEqual(b[1][0] + K.BADGE_R + 4, label.attrs["x"] - M.text_width(label.text, 12) / 2)
+        with font_context(spec.font_factor, spec.font_steps):
+            b = badges_of(els)
+            for n, x in ((3, 1762.2), (4, 2250.7)):
+                self.near(b[n][0], x, f"tgw badge {n} x")
+            self.near(b[4][1], 364, "tgw badge 4 cy")
+            golden = {}
+            for group in d.root:
+                if group.get("id", "").startswith("edge:") and group.get("id").endswith(":badge"):
+                    circle, digit = group.find(NS + "circle"), group.find(NS + "text")
+                    golden[int(digit.text)] = (float(circle.get("cx")), float(circle.get("cy")))
+            self.assertEqual(set(b), set(golden))
+            for n, (x, y) in golden.items():
+                self.assertAlmostEqual(b[n][0], x, places=9)
+                self.assertAlmostEqual(b[n][1], y, places=9)
+            tops = sorted(points(lines_of(els, n)[0])[0][0] for n in (3, 4))
+            self.assertEqual(tops, [1309.2, 1347.2])
+            # Each protocol label and badge stays side by side above the scaled line.
+            for n in (1, 2):
+                label = next(e for e in els if e.owner == f"edge:{n}" and e.kind == "text"
+                             and e.z == K.Z_EDGE_LABEL)
+                self.assertEqual(label.attrs["y"], 404 - spec.const.label_above)
+                self.assertEqual(b[n][1], 404 - K.BADGE_DY)
+                self.assertLessEqual(b[n][0] + K.BADGE_R + 4,
+                                     label.attrs["x"] - M.text_width(label.text, label.attrs["font-size"]) / 2)
 
     def test_nlb_mtls_trunk(self):
         spec, geom, d, boxes, els, warns = routed("nlb-mtls")
@@ -437,10 +477,21 @@ class Checker(unittest.TestCase):
     """Groups + nodes + routed edges pass check_layout.py with no problem."""
 
     def test_examples_layout_ok(self):
+        # These six shape fallbacks are already present in the scaled TGW golden.
+        expected_warnings = {
+            "tgw": [
+                "edges[3] tgwa -- svcs: drew VH instead of VHV (re-solve may be needed)",
+                "edges[4] tgwa -- prod: drew HVH instead of VHV (re-solve may be needed)",
+                "edges[5] tgwa -- dev: drew HVH instead of VHV (re-solve may be needed)",
+                "edges[6] tgwa -- test: drew HVH instead of VHV (re-solve may be needed)",
+                "edges[9] tgwb -- dr: drew UHVH instead of V (re-solve may be needed)",
+                "edges[10] tgwb -- ana: drew UHVH instead of V (re-solve may be needed)",
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmp:
             for name in NAMES:
                 spec, geom, d, boxes, els, warns = routed(name)
-                self.assertEqual(warns, [], name)
+                self.assertEqual(warns, expected_warnings.get(name, []), name)
                 path = Path(tmp) / f"{name}.draft.svg"
                 path.write_text(svg_of(spec, geom, d, boxes, els), encoding="utf-8")
                 res = subprocess.run([sys.executable, str(ROOT / "scripts/check_layout.py"), str(path)],
@@ -480,15 +531,17 @@ class Plan(unittest.TestCase):
     def test_hard_requirements_hold_on_examples(self):
         for name in NAMES:
             spec, geom, d, boxes = load(name)
-            for r in R.plan(spec):
-                if r.soft:
-                    continue
-                got = self.value(geom, r.b, r.axis) - self.value(geom, r.a, r.axis)
-                slack = 0.01
-                if r.why.startswith("label"):       # reserved at 0.6 em; the examples used 0.55 em
-                    text = re.search(r"'(.*)'", r.why).group(1)
-                    slack += M.layout_text_width(text, 12) - M.text_width(text, 12)
-                self.assertGreaterEqual(got + slack, r.d, f"{name}: {r}")
+            with font_context(spec.font_factor, spec.font_steps):
+                for r in R.plan(spec):
+                    if r.soft:
+                        continue
+                    got = self.value(geom, r.b, r.axis) - self.value(geom, r.a, r.axis)
+                    slack = 0.01
+                    if r.why.startswith("label"):       # reserved at 0.6 em; the examples used 0.55 em
+                        text = re.search(r"'(.*)'", r.why).group(1)
+                        size = K.TEXT_PROTO.size
+                        slack += M.layout_text_width(text, size) - M.text_width(text, size)
+                    self.assertGreaterEqual(got + slack, r.d, f"{name}: {r}")
 
     def test_nfw_trunk_corridor(self):
         reqs = R.plan(layout_spec.load(spec_path("nfw")))
