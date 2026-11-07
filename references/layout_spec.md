@@ -191,7 +191,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   one-to-many. Each pair is its own line, each labelled — unless `trunk: true`, which
   merges many-to-one into one stem (nfw `nat.* -> igw`) or forks one-to-many from one
   stem (gwlb `igw -> gwlbe.*`; into group boxes, nlb-mtls `nlb -> besg.*`), label and
-  badge drawn once.
+  badge drawn once. Whatever shape its lines take, a trunk's shared end leaves (enters)
+  one port: two VH from a source whose facing side is taken run down one stem
+  (serverless `sfn -> reserve.*`), with no `from_offset: 0`.
 - `label`: protocol and port, 12px squid ink (`"HTTPS :443"`). `verb`: a verb or
   attachment type, 12px grey (`DNS 조회`, `VPC attachment`). The loader rejects either one
   when it names a service with an official icon (SERVICE AS TEXT) — make it a node.

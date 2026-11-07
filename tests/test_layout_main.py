@@ -543,6 +543,35 @@ class OutAndBack(unittest.TestCase):
                     self.assertTrue(sn.y0 + K.HUG_CLEAR <= leg <= sn.y1 - K.HUG_CLEAR, (pts, sn))
 
 
+class TrunkFork(unittest.TestCase):
+    def test_fork_shares_one_port_whatever_its_shape(self):
+        """A `trunk: true` fork whose source's facing side is taken (rule 5: VH) leaves one
+        port as one stem, not two lines 10 px either side of the center (serverless sfn →
+        reserve.*, which no longer needs from_offset: 0); without trunk the ports split."""
+        def starts(trunk):
+            ic = "service/AWS-Lambda"
+            d = {"name": "fork", "cols": ["a", "b"], "rows": ["r1", "r2", "r3"],
+                 "nodes": [{"id": "s", "icon": ic, "label": "Src", "at": ["a", "r1"]},
+                           {"id": "t", "icon": ic, "label": "Side", "at": ["b", "r1"]},
+                           {"id": "w1", "icon": ic, "label": "W1", "at": ["b", "r2"]},
+                           {"id": "w2", "icon": ic, "label": "W2", "at": ["b", "r3"]}],
+                 "edges": [{"e": "s -> t"}, dict({"e": "s -> w1, w2"}, **({"trunk": True} if trunk else {}))]}
+            spec, b = built(d)
+            self.assertEqual([layout.layout_route.shapes(spec)[n] for n in (1, 2)], ["VH", "VH"])
+            self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg))], [])
+            out = []
+            for g in ET.fromstring(b.svg).iter(NS + "g"):
+                if g.get("id") in ("edge:1", "edge:2"):
+                    pl, = [c for c in g if c.tag == NS + "polyline"]
+                    out.append(pl.get("points").split()[0])
+            return b.geom.nodes["s"].cx, out
+        cx, pts = starts(True)
+        self.assertEqual(len(set(pts)), 1, pts)
+        self.assertEqual(float(pts[0].split(",")[0]), cx)
+        cx, pts = starts(False)
+        self.assertEqual(len(set(pts)), 2, pts)
+
+
 class LabelOnLine(unittest.TestCase):
     def test_no_room_above_or_below_puts_the_label_on_its_line(self):
         """No room above (a sub-caption) nor below (an icon): the label sits on its line over

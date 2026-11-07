@@ -34,6 +34,11 @@ Trunks: `trunk: true` instances of one spec line with one far end merge (first i
 draws the whole path and the arrowhead, the others stop at the junction); with one near end
 they fork (a shared port, one arrowhead per branch). Labels and the badge of a trunk are
 drawn once, on its first instance. Other `*` instances are separate lines, each labelled.
+A `trunk` line whose instances are no HVH / VHV trunk (VH / HV by rule 5) still shares
+the port at its common end, so its branches leave as one stem.
+Same side: a HVH (VHV) with from_side = to_side on a left / right (top / bottom) side is
+an out-and-back on that side; plan() reserves its leg between each end and the innermost
+common box's border there (or the canvas), nothing between the ends.
 
 Geometry: icon ends at cx ± (S/2 + 4), top at icon.y − 4, bottom at the last label baseline
 + 8; group ends 4 off the border, at the other end's center when it faces the side, else
@@ -1684,7 +1689,20 @@ def _where(e: Edge) -> str:
 def _assign_ports(ctx: _Ctx, xs: Dict[int, _Edge]) -> Dict[Tuple[int, str], float]:
     """Split several lines on one node side (DESIGN 4.5 ports)."""
     sides: Dict[Tuple[str, str], List[Tuple[float, int, str, bool, List[Tuple[int, str]]]]] = {}
-    seen_trunk = set()
+    # the instances of one `trunk` line leaving one node side (a fork) or entering one (a
+    # merge) share a port, whatever their shape: one stem that forks, not parallel lines
+    # (serverless sfn → reserve.*: two VH out of one bottom port)
+    ends: Dict[Tuple[int, str], set] = {}
+    for x in xs.values():
+        t, e = x.t, x.e
+        if (e.trunk or e.fork) and t.shape != P:
+            ends.setdefault((e.line, "a"), set()).add((e.a, e.a_kind, t.side_a))
+            ends.setdefault((e.line, "b"), set()).add((e.b, e.b_kind, t.side_b))
+    count: Dict[int, int] = {}
+    for x in xs.values():
+        if (x.e.trunk or x.e.fork) and x.t.shape != P:
+            count[x.e.line] = count.get(x.e.line, 0) + 1
+    first: Dict[Tuple[int, str], Tuple[int, str]] = {}
     for n, x in xs.items():
         t, e = x.t, x.e
         if t.shape == P:
@@ -1695,16 +1713,17 @@ def _assign_ports(ctx: _Ctx, xs: Dict[int, _Edge]) -> Dict[Tuple[int, str], floa
                 continue
             if (end == "a" and e.from_offset is not None) or (end == "b" and e.to_offset is not None):
                 continue
-            shared = (t.trunk == "fork" and end == "a") or (t.trunk == "merge" and end == "b")
+            shared = (t.trunk == "fork" and end == "a") or (t.trunk == "merge" and end == "b") or (
+                (e.trunk or e.fork) and count.get(e.line, 0) > 1 and len(ends[(e.line, end)]) == 1)
             key = (eid, side)
             if shared:
-                tk = (t.first, end)
-                if tk in seen_trunk:
+                tk = (e.line, end)
+                if tk in first:
                     for item in sides.get(key, []):
-                        if item[4][0] == (t.first, end):
+                        if item[4][0] == first[tk]:
                             item[4].append((n, end))
                     continue
-                seen_trunk.add(tk)
+                first[tk] = (n, end)
             coord = other.cy if side in HORIZ else other.cx
             sides.setdefault(key, []).append((coord, n, end, straight, [(n, end)]))
     out: Dict[Tuple[int, str], float] = {}
