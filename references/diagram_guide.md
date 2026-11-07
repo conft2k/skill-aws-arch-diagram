@@ -204,8 +204,49 @@ set. Draw every one of them as its icon — never as a text chip, pill or labele
 | Gateway Load Balancer endpoint | `resource/Amazon-VPC_Endpoints` (no dedicated icon) | one per AZ in its GWLBe subnet, labeled "GWLBe"; the GWLB itself is one node in the appliance VPC |
 | Virtual private gateway (VGW) / customer gateway | `resource/Amazon-VPC_VPN-Gateway` / `_Customer-Gateway` | on the VPC border / on-prem side |
 | VPC peering connection / TGW peering attachment | `resource/Amazon-VPC_Peering-Connection` (AWS uses it for both) | on the link between the two VPCs or the two TGWs, the line broken at the icon; across Regions or accounts, in the gap between their boxes (it belongs to neither); label "VPC peering" / "TGW peering" |
-| Route table (VPC subnet route table, TGW route table) | `resource/Amazon-Route-53_Route-Table` (the package's only route table icon; filed under Route 53 but used for every route table) | inside the VPC outside the subnets (TGW route table: next to the TGW), with the table name as label and the key route as a 12px sub-caption ("10.0.0.0/8 → TGW"); never a text chip |
+| Route table (VPC subnet route table, TGW route table) | `resource/Amazon-Route-53_Route-Table` (the package's only route table icon; filed under Route 53 but used for every route table) | beside what it is associated with (see below): a subnet route table inside the VPC, outside the subnets, right next to the subnet(s) it serves — or only its routes, as that subnet node's sub-caption; a TGW route table beside the attachment lines associated with it where they reach the TGW (a TGW's only table: next to the TGW). The table name as label and the key route as a 12px sub-caption ("10.0.0.0/8 → TGW"); never a text chip |
 | Router, NACL, ENI, Flow Logs | `resource/Amazon-VPC_Router`, `_Network-Access-Control-List`, `_Elastic-Network-Interface`, `_Flow-Logs` | as needed |
+
+#### A route table sits beside what it is attached to
+
+A route table means nothing until the reader knows which subnet or attachment uses it.
+Put every route table as close as the layout allows to the object it is associated
+with, so a reader sees at a glance which resource it belongs to without reading the
+legend. Its position is the association: no line ties a route-table node to anything
+(only a TGW table drawn as a table of routes keeps its dashed tie to the TGW, below).
+
+- **Subnet route table:** its routes as the 12px sub-caption of the node in that subnet
+  (EC2 "0.0.0.0/0 → TGW", TGW ENI "0.0.0.0/0 → 같은 AZ 방화벽" — what the examples do),
+  or, drawn as an icon, inside the VPC right next to that subnet's box (a table shared by
+  several subnets between them). The IGW edge route table goes inside the VPC beside the
+  IGW.
+- **TGW route table: beside its associated attachments, not just beside the TGW.** Put
+  it where the attachment lines associated with it reach the TGW, on their side of the
+  TGW, and keep it out of the reach of attachments it is not associated with. A table
+  above or below the TGW, between one table's attachment lines and another's, reads as
+  belonging to either — that is the mistake to avoid.
+  - **Hub and spoke with centralized inspection** (nfw): the spoke VPCs left of the TGW,
+    the inspection VPC right of it. The Spoke RT (associated with the spoke VPC
+    attachments, `0.0.0.0/0 → inspection attachment`) goes between the spoke VPCs and
+    the TGW, on the TGW's row, inside the bracket the two spoke lines draw into the TGW's
+    left side. The Firewall (inspection) RT (associated with the inspection VPC
+    attachment, spoke CIDRs propagated) goes between the TGW and the inspection VPC, on
+    the TGW's row, inside the bracket the inspection lines draw: they leave the TGW's top
+    and bottom (the bottom one below its label) and run across to the TGW ENI in each AZ,
+    so they pass around the table, never through it. Each table then sits between the
+    TGW and the VPCs whose attachments use it.
+  - **Several segments** (prod / dev / shared tables): each table beside its own
+    attachments, on the side of the TGW they come in from; group a segment's spokes on
+    one side so its table has one place to go.
+  - **One table for every attachment** (tgw): next to the TGW, above or below it, clear
+    of the attachment lines ("TGW A RT" under Transit Gateway A, inside the fork of its
+    lower spokes).
+- **Tight slide:** keep each table beside its attachments and win the room elsewhere, in
+  this order: move a table's route sub-caption into the step legend, which names the
+  table ("Spoke RT 0.0.0.0/0 → 검사 VPC"); put the attachment-type label on the piece
+  that has room (the inspection line instead of a spoke); drop boxes that add nothing on
+  a slide (a spoke VPC's one subnet box around one workload icon); then split the slide.
+  Never move a table back onto the TGW's column to save width.
 
 #### Internet gateway and VGW sit on the VPC border
 
@@ -510,16 +551,17 @@ draft path copies an example, or start from `docs/examples/specs/example.layout.
     connection icon's sub-caption ("peering attachment"): as a connector label
     check_layout.py reads it as the peering service written as text.
   - **Draw each TGW route table as a node** (`resource/Amazon-Route-53_Route-Table`,
-    "TGW A RT") next to its TGW, with no line (a route table is a property of the TGW),
-    its propagations and static routes as 12px sub-captions ("VPC·VPN 경로 전파",
-    "10.16.0.0/13 → peering").
+    "TGW A RT", "Spoke RT") beside the attachments associated with it (see "A route
+    table sits beside what it is attached to"; a TGW's only table next to the TGW), with
+    no line — its place says which attachments use it — and its propagations and static
+    routes as 12px sub-captions ("VPC·VPN 경로 전파", "10.16.0.0/13 → peering").
   - **A TGW route table drawn as a table of routes may overlap containers** — an
     exception to the nesting convention (and to "only the IGW and VGW straddle a
-    border"). Put it as close to its
-    TGW as the layout allows, even across a Region, AWS Cloud or VPC border, drawn last
+    border"). Put it as close to the attachments associated with it (a TGW's only
+    table: to the TGW) as the layout allows, even across a Region, AWS Cloud or VPC border, drawn last
     (on top) on a white background rectangle that hides the borders beneath it. It must
     still never cover an icon, a connector, a step badge or a label. Use this to keep
-    the table beside the TGW instead of stretching containers to make room for it.
+    the table beside its attachments instead of stretching containers to make room for it.
     Tie it to its TGW with a short purple dashed line (`#8C4FFF`, the TGW icon color,
     1.5px, `stroke-dasharray="4 3"`, no arrowhead), straight or with one bend, crossing
     nothing, so the reader sees at once which TGW the table belongs to.
@@ -787,8 +829,9 @@ check every hop and caption against how the services actually behave:
 - **Routes in both directions.** A route sub-caption must include every route the drawn
   flows need, return traffic included, or the reader builds a broken network. For a
   centralized inspection VPC behind a TGW (AWS Network Firewall or GWLB):
-  spoke subnets `0.0.0.0/0 → TGW`; spoke TGW route table `0.0.0.0/0 → inspection attachment`;
-  inspection (firewall) TGW route table: spoke CIDRs propagated; TGW subnet
+  spoke subnets `0.0.0.0/0 → TGW`; spoke TGW route table (associated with the spoke
+  attachments) `0.0.0.0/0 → inspection attachment`; inspection (firewall) TGW route
+  table (associated with the inspection attachment): spoke CIDRs propagated; TGW subnet
   `0.0.0.0/0 → firewall endpoint (same AZ)`; firewall subnet `0.0.0.0/0 → NAT`, `10.0.0.0/8 → TGW`;
   NAT (public) subnet `0.0.0.0/0 → IGW` **and** `10.0.0.0/8 → firewall endpoint (same AZ)`;
   appliance mode on the inspection VPC attachment. For distributed GWLB inspection of

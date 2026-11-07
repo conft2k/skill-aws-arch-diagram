@@ -255,8 +255,8 @@ The type fixes border color, width, dash, badge and header insets (quick referen
 
 ```yaml
 # from: nfw-reference-architecture.layout.yaml
-  - {e: "vpca <-> tgw", verb: VPC attachment, label_at: above, step: 1, step_at: end}
-  - {e: "tgw <-> eni.*", step: 2, step_at: start}
+  - {e: "vpca <-> tgw", verb: VPC attachment, step: 1}
+  - {e: "tgw <-> eni.*", shape: VH, step: 2, step_at: start}   # up / down around the Firewall RT
   - {e: "eni.* <-> fwe.*", step: 3}
   - {e: "fwe.* -> nat.*", step: 4}
   - {e: "nat.* -> igw", trunk: true, step: 5}
@@ -367,6 +367,12 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 - **Numbered flow** (gwlb, nfw, tgw): `step` on the edges + `note.steps`.
 - **Hub and topology** (tgw): `--` edges, `at: [b1..b2, main]` under two spokes, route
   tables as nodes with routes in `sub`, `step_at: gap` for a badge between Regions.
+- **TGW route tables beside their attachments** (nfw): a column for each table on the
+  TGW's row — `rtsp` between the spoke VPCs and the TGW, `rtfw` between the TGW and the
+  inspection VPC — `shape: VH` on `tgw <-> eni.*` so the inspection lines leave the TGW's
+  top and bottom around `rtfw`, and an empty column (`att`) between the spokes and `rtsp`
+  so the table and VPC B, diagonal neighbours, separate on x (beside it) rather than on y
+  (pushing VPC B down).
 - **Two VPCs** (gwlb): two `vpc` groups in one Region, each with its own `az` template.
 
 ```yaml

@@ -117,6 +117,17 @@ Only the IGW and VGW straddle the border. Gateway endpoints sit inside the VPC o
 the subnets; interface endpoints inside their subnet. A TGW route table drawn as a
 table of routes may overlap borders (see the guide).
 
+A route table sits beside what it is associated with ("A route table sits beside what
+it is attached to"), no line to it:
+
+| Route table | Place |
+|---|---|
+| Subnet route table | its routes as the sub-caption of the node in that subnet (the examples), or the icon inside the VPC right next to that subnet |
+| TGW table of the spoke VPC attachments (nfw Spoke RT) | between the spoke VPCs and the TGW, on the TGW's row, inside the bracket of the spoke lines into the TGW's left side |
+| TGW table of the inspection VPC attachment (nfw Firewall RT) | between the TGW and the inspection VPC, on the TGW's row; the inspection lines leave the TGW's top and bottom (`shape: VH`) and pass around it |
+| A TGW's only table (tgw) | next to the TGW, above or below it, clear of the attachment lines |
+| Tight slide | keep the places; move the table's routes into the legend, the attachment-type label to the piece with room, drop a spoke VPC's lone subnet box, then split — never back onto the TGW's column |
+
 ## Text ("Text size")
 
 | Text | Size | Weight | Color |
@@ -156,8 +167,8 @@ per label line. First root `font-family` is a Korean font installed on this mach
   `#FFFFFF` rect 2px larger than the text, both last in the file (top layer); below /
   left only after that.
 - TGW route table drawn as a table: tie it to its TGW with a `#8C4FFF` 1.5px line,
-  `stroke-dasharray="4 3"`, no arrowhead. The TGW example draws its route tables as
-  nodes instead, so no example has this line.
+  `stroke-dasharray="4 3"`, no arrowhead. The TGW and NFW examples draw their route
+  tables as nodes instead, so no example has this line.
 
 ## Step badges and legend ("Step legend")
 
