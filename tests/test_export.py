@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -28,8 +29,10 @@ def draft(path, color):
 
 
 def export(*args, cwd=None):
+    # UTF-8 both ways: the Korean (NFC / NFD) file names below are printed in the report
     return subprocess.run([sys.executable, str(EXPORT), *map(str, args)],
-                          capture_output=True, text=True, cwd=cwd)
+                          capture_output=True, text=True, encoding="utf-8", cwd=cwd,
+                          env={**os.environ, "PYTHONUTF8": "1"})
 
 
 class OutputClash(unittest.TestCase):
@@ -133,6 +136,26 @@ class OutputClash(unittest.TestCase):
         r = export(a, b, "--svg", "--out-dir", self.out)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    # APFS also treats the NFC (precomposed) and NFD (decomposed jamo) spellings of a name as
+    # one file; Korean names typed on a Mac or copied from Finder can come in either form.
+    def test_stems_differing_only_in_unicode_normalisation(self):
+        nfc, nfd = (unicodedata.normalize(f, "아키텍처") for f in ("NFC", "NFD"))
+        self.assertNotEqual(nfc, nfd)
+        a = draft(self.work / "docs" / f"{nfc}.draft.svg", "#FF0000")
+        b = draft(self.work / "slides" / f"{nfd}.draft.svg", "#0000FF")
+        r = export(a, b, "--svg", "--out-dir", self.out)
+        self.assert_refused(r, a, b, self.out / f"{nfc}.svg", self.out / f"{nfd}.svg")
+        self.assertEqual(self.written(), [])
+
+    def test_same_file_under_nfc_and_nfd_names(self):
+        # one file under both spellings, as on macOS (a hard link stands in for it here)
+        nfc, nfd = (unicodedata.normalize(f, "아키텍처") for f in ("NFC", "NFD"))
+        a = draft(self.work / f"{nfc}.draft.svg", "#FF0000")
+        b = self.work / f"{nfd}.draft.svg"
+        os.link(a, b)
+        r = export(a, b, "--svg", "--out-dir", self.out)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
     def test_same_draft_as_relative_and_absolute_path(self):
         a = draft(self.work / "src" / "arch.draft.svg", "#FF0000")
         r = export("src/arch.draft.svg", a, "--svg", "--png", "--out-dir", "out", cwd=self.work)
@@ -212,6 +235,23 @@ class DraftProblems(unittest.TestCase):
             self.assertIn(f"{other}:", r.stdout)
             self.assertIn("<path> is not supported", r.stdout)
             self.assertFalse(out.exists())
+
+
+class PathKey(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(EXPORT.parent))
+        import export as module
+        self.key = module.path_key
+
+    def test_nfc_and_nfd_share_a_key(self):
+        nfc, nfd = (unicodedata.normalize(f, "아키텍처.svg") for f in ("NFC", "NFD"))
+        self.assertEqual(self.key(Path(nfc)), self.key(Path(nfd)))
+
+    def test_key_is_nfc_after_casefold(self):
+        # casefold() decomposes U+01F0 (j with caron); the key is normalised again after it
+        key = self.key(Path("\u01f0.svg"))
+        self.assertTrue(unicodedata.is_normalized("NFC", key), ascii(key))
+        self.assertEqual(key, self.key(Path("J\u030c.svg")))
 
 
 class IconsLoadedLazily(unittest.TestCase):

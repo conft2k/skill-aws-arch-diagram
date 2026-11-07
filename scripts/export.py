@@ -16,17 +16,19 @@ architecture). Every output path is worked out first: if two different drafts wo
 the same file (docs/arch.draft.svg and slides/arch.draft.svg, or arch.draft.svg and
 arch.svg, all -> <out-dir>/arch.svg), a slide preview would land on a draft's PNG, or an
 output would overwrite one of the drafts, the script names the clash, writes nothing and
-exits with status 1. Names that differ only in case (Arch.svg, arch.svg) count as the same
-file, as they are on macOS and Windows; the same draft given twice, by any path or link,
-is not a clash. This check needs no icons: the official icon bundle is loaded (and
-downloaded on first use) only when the drafts are checked. Every draft is checked next —
-icon refs (embed.py) and the shared draft subset (svg2pptx.py) — whatever formats are
-asked for, so one draft always works for all of them. If any draft fails, nothing is
+exits with status 1. Names that differ only in case (Arch.svg, arch.svg) or in Unicode
+normalisation (NFC or NFD Korean) count as the same file, as they are on macOS (and, for
+case, on Windows); the same draft given twice, by any path or link, is not a clash. This
+check needs no icons: the official icon bundle is loaded (and downloaded on first use)
+only when the drafts are checked. Every draft is checked next — icon refs (embed.py) and
+the shared draft subset (svg2pptx.py) — whatever formats are asked for, so one draft
+always works for all of them. If any draft fails, nothing is
 written and the script exits with status 1.
 """
 import argparse
 import os
 import sys
+import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -47,9 +49,13 @@ def stem(path: Path) -> str:
 
 
 def path_key(path: Path) -> str:
-    """Where `path` lands, case-folded: on a case-insensitive file system (macOS APFS,
-    Windows) Arch.svg and arch.svg are one file, so they are compared as one everywhere."""
-    return os.path.normcase(str(path.resolve())).casefold()
+    """Where `path` lands, case-folded and Unicode-normalised: macOS APFS (and Windows) is
+    case-insensitive, so Arch.svg and arch.svg are one file, and APFS also treats the NFC and
+    NFD spellings of a name (a precomposed 아 or its decomposed jamo) as one file, so they are
+    compared as one everywhere. NFC is applied before and after casefold(), which can
+    leave a string unnormalised."""
+    s = unicodedata.normalize("NFC", os.path.normcase(str(path.resolve())))
+    return unicodedata.normalize("NFC", s.casefold())
 
 
 def file_id(path: Path):
@@ -85,8 +91,8 @@ def planned_outputs(drafts, svg, png, out_dir, pptx, preview):
 
 def clashes(drafts, plan):
     """Error lines for every output written from two different sources or landing on a draft.
-    Output paths are compared case-folded (see path_key); the same draft given twice writes
-    identical bytes, so that alone is not a clash."""
+    Output paths are compared case-folded and NFC-normalised (see path_key); the same draft
+    given twice writes identical bytes, so that alone is not a clash."""
     by_path = {}
     for out, source, label in plan:
         first, sources = by_path.setdefault(path_key(out), (out, {}))
