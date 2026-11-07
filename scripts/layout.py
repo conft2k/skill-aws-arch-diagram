@@ -94,8 +94,9 @@ class Build:
     """One candidate, including its decisions and available neighbours.
 
     diag_pairs includes open pairs from the solves both before and after placing the note.
-    routing_alternatives maps edge instance numbers to later clean routes and their skip
-    values. Spec placements are excluded from these routing moves.
+    With collect_alternatives=True, routing_alternatives maps edge instance numbers to
+    later clean routes and their skip values. Spec placements are excluded from these moves.
+    Default builds leave it empty and do not evaluate routes just to collect neighbours.
     """
 
     def __init__(self, spec: Spec, geom: Geometry, nb: NoteBlock, elements: List[Element],
@@ -156,14 +157,17 @@ def value(var: str, geom: Geometry, axis: str) -> float:
 
 
 def build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
-          source: str, avoid_headers=None, decisions=None) -> Build:
+          source: str, avoid_headers=None, decisions=None, collect_alternatives=False) -> Build:
     with layout_text.font_context(spec.font_factor, spec.font_steps):
-        return build_at_size(spec, extra, skip, place, source, avoid_headers, decisions)
+        return build_at_size(spec, extra, skip, place, source, avoid_headers, decisions,
+                             collect_alternatives)
 
 
 def build_at_size(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
-                  source: str, avoid_headers=None, decisions=None) -> Build:
+                  source: str, avoid_headers=None, decisions=None, collect_alternatives=False) -> Build:
     route_kw = {"avoid_headers": avoid_headers} if avoid_headers else {}
+    if collect_alternatives:
+        route_kw["collect_alternatives"] = True
     decisions = decisions or layout_solve.Decisions()
     b = _build(spec, extra, skip, place, source, decisions=decisions, **route_kw)
     if decisions.diag is None and b.geom.diag_y and slide_problem(spec, b.feedback_svg):
@@ -182,7 +186,7 @@ def build_at_size(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int]
 
 
 def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place: Optional[str],
-           source: str, decisions=None, avoid_headers=None) -> Build:
+           source: str, decisions=None, avoid_headers=None, collect_alternatives=False) -> Build:
     decisions = decisions or layout_solve.Decisions()
     chosen_skip = dict(skip)
     for n, k in decisions.skip:
@@ -209,7 +213,7 @@ def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place
         if got < r.d - 0.5:
             warns.append(f"note: requirement {r.why!r} short by {M.fmt_num(r.d - got)}px on the final geometry")
     route_kw = {"avoid_headers": avoid_headers} if avoid_headers else {}
-    alternatives = {}
+    alternatives = {} if collect_alternatives else None
     edges, route_warns = layout_route.draw(spec, geom, chosen_skip, alternatives=alternatives, **route_kw)
     raws, raw_warns = raw_elements(spec, geom)
     drawing = layout_solve.draw(spec, geom) + edges

@@ -134,7 +134,7 @@ class LayoutDecisions(unittest.TestCase):
     def test_default_decisions_keep_the_draft_and_expose_open_pairs(self):
         spec, original = built("nfw-reference-architecture")
         candidate = layout._build(spec, [], {}, None, "x.layout.yaml",
-                                  decisions=layout_solve.Decisions())
+                                  decisions=layout_solve.Decisions(), collect_alternatives=True)
         self.assertEqual(original.svg, candidate.svg)
         self.assertTrue(candidate.geom.diag_pairs)
         for pair in candidate.geom.diag_pairs:
@@ -170,13 +170,42 @@ class LayoutDecisions(unittest.TestCase):
         self.assertGreater(on_y.geom.canvas_h, on_x.geom.canvas_h)
 
     def test_exposed_routing_move_changes_the_connector(self):
-        spec, original = built("nfw-reference-architecture")
+        spec, original = built("nfw-reference-architecture", collect_alternatives=True)
         move = original.routing_alternatives[0][0]
         candidate = layout._build(spec, [], {}, None, "x.layout.yaml",
                                   decisions=layout_solve.Decisions(skip=((0, move.skip),)))
         def connector(draft):
             return ET.fromstring(draft).find(f"{NS}g[@id='edge:0']").find(f"{NS}polyline").get("points")
         self.assertNotEqual(connector(original.svg), connector(candidate.svg))
+
+    def test_default_build_does_not_evaluate_extra_routing_candidates(self):
+        spec = layout_spec.load(copy.deepcopy(spec_dict("nfw-reference-architecture")))
+        with mock.patch.object(R, "_candidates", wraps=R._candidates) as candidates:
+            default = layout._build(spec, [], {}, None, "x.layout.yaml")
+            build_calls = candidates.call_count
+        with mock.patch.object(R, "_candidates", wraps=R._candidates) as candidates:
+            R.draw(spec, default.geom)
+            route_calls = candidates.call_count
+        self.assertEqual(build_calls, route_calls)
+        self.assertFalse(default.routing_alternatives)
+
+    def test_requested_alternatives_exclude_current_and_duplicate_lines(self):
+        spec, candidate = built("nfw-reference-architecture", collect_alternatives=True)
+        self.assertTrue(candidate.routing_alternatives)
+        lines = {}
+        for el in candidate.elements:
+            if el.kind == "polyline":
+                points = tuple(tuple(map(float, p.split(","))) for p in el.attrs["points"].split())
+            elif el.kind == "line":
+                points = tuple((el.attrs[f"x{i}"], el.attrs[f"y{i}"]) for i in (1, 2))
+            else:
+                continue
+            lines[int(el.owner.split(":")[1])] = points
+        for n, alternatives in candidate.routing_alternatives.items():
+            points = [tuple((float(M.fmt_num(x)), float(M.fmt_num(y))) for x, y in a.points)
+                      for a in alternatives]
+            self.assertNotIn(lines[n], points)
+            self.assertEqual(len(points), len(set(points)))
 
     def test_an_overlay_without_a_parent_can_put_its_header_beside_members(self):
         spec = layout_spec.load({
@@ -220,7 +249,8 @@ class LayoutDecisions(unittest.TestCase):
         spec = layout_spec.load(data)
         original = layout._build(spec, [], {}, None, "x.layout.yaml")
         candidate = layout._build(spec, [], {}, None, "x.layout.yaml",
-                                  decisions=layout_solve.Decisions(skip=((0, 1),), place="pane"))
+                                  decisions=layout_solve.Decisions(skip=((0, 1),), place="pane"),
+                                  collect_alternatives=True)
         self.assertEqual(original.svg, candidate.svg)
         self.assertNotIn(0, candidate.routing_alternatives)
 

@@ -2,6 +2,8 @@
 
 브랜치: `t02-decisions`. Baseline: `main-36c7ea3.json` 및 `main-36c7ea3-drafts`.
 
+아래 초기 검증은 `0cf2ab0` 시점이다. 최신 API와 재검증은 끝의 리뷰 차단 수정에 기록한다.
+
 완료 조건:
 
 - [x] Corpus 760 runs의 **744 Draft 전부 byte-identical, 0 changed**. 별도로 실행한 examples도 **21 Draft, 0 changed**. 누락·추가 Draft 및 결과 필드 변경 모두 0 (`comparison.json`, `examples-comparison.json`).
@@ -70,3 +72,37 @@ uv run --offline --no-project --with pyyaml --with cairosvg python3 -c 'import m
 
 Worktree의 기본 index와 `COMMIT_EDITMSG`가 read-only여서 별도 index 및
 `commit-tree`로 커밋하고 `t02-decisions`의 ref만 갱신한다. **index 동기화 필요**.
+
+## 리뷰 차단 수정
+
+`scripts/layout.py:159`의 `collect_alternatives=False`가 기본값이다. 기본 build,
+Feedback round, Text scale은 경로 대안을 위한 추가 후보 평가를 하지 않는다.
+이웃을 만들 때 `collect_alternatives=True`로 요청하면 목록을 제공한다.
+`scripts/layout_route.py:2683`에서 현재 선과 좌표가 같은 대안과 중복 대안을 제거한다.
+Draft와 같은 2자리 좌표를 비교하며, 각 대안의 원래 skip index는 유지한다.
+
+테스트를 먼저 고쳐 4 FAIL을 확인했다(red). 기본 build의 후보 생성은 15회였고
+직접 routing은 11회였다. 수정 후 추가 평가 없이 둘 다 11회이며 관련 10개 테스트가
+통과했다(green). NFW의 대안 목록은 요청 시 **7 connectors, 53 alternatives**이며,
+기본값에서는 빈 목록이다. 수집을 켜고 끈 Draft는 byte-identical이다.
+
+동일 uv 환경, `-j 1`, main `d99e074`와 수정 브랜치를 워밍업 각 1회 후
+교차 3회 실행한 중앙값이다. 시간 측정 중 다른 검증을 병행하지 않았다.
+
+| Case · Mode | main | 수정 브랜치 | 비율 |
+|---|---:|---:|---:|
+| trunk/merge-v3az · slide | 1.064 s | 1.147 s | 1.078× |
+| rt/ce-three · slide | 2.490 s | 2.684 s | 1.078× |
+| flowcol/r2-float-two-wide · slide | 0.747 s | 0.790 s | 1.058× |
+
+세 Case 모두 **1.1× 이내**다. 시간 측정의 main·브랜치 Draft **12쌍 모두 동일**하다.
+전체 재검증은 **689 tests + 2539 subtests PASS (92.24 s)**, examples **21 all PASS**다.
+Corpus **760 runs, 744/744 Draft byte-identical**, 별도 examples **21/21 Draft
+byte-identical**이다. Check problems **389 → 389**, tier-0 Violations **201 → 201**,
+tag 불일치 **0 → 0**, 비교한 결과 필드 변경은 0이다. 전체 Corpus wall은
+**126.04 → 312.65 s (2.481×)**, summed runtime은 **624.12 s**다. Diagram별
+Baseline 대비 최대 **1.348×**, 최대 시간 **10.707 s**로 기존 3×·30 s 제한도 충족한다.
+
+리뷰 수정 결과: `~/.cache/skill-design/t02-decisions/review-fix/`의
+`timing.json`, `alternatives.json`, `corpus.json`, `comparison.json`,
+`examples-comparison.json`, `examples.log`, `pytest.log`.

@@ -2680,4 +2680,19 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         labels += [el for el in e_els if el.z == K.Z_EDGE_LABEL]
         badges += [el for el in e_els if el.z == K.Z_BADGE]
         on_line += [el for el in e_els if el.z == K.Z_LABEL_TOP]
+    if alternatives is not None:
+        def coordinates(points):
+            return tuple((M.fmt_num(x), M.fmt_num(y)) for x, y in points)
+        for n, moves in list(alternatives.items()):
+            seen = {coordinates(routes[n].pts)}
+            unique = []
+            for move in moves:
+                points = coordinates(move.points)
+                if points not in seen:
+                    seen.add(points)
+                    unique.append(move)
+            if unique:
+                alternatives[n] = tuple(unique)
+            else:
+                del alternatives[n]
     return els + labels + badges + on_line, warns
