@@ -342,6 +342,25 @@ class LineOnLine(unittest.TestCase):
                    POLY.format(pts="232,154 300,154 300,204 376,204"))
         self.assertEqual(kinds(root, "LINE ON LINE"), [])
 
+    def test_stem_of_two_flows_out_of_one_port(self):
+        """Review x-fork-b: tgw -> enib.1 and tgw -> seni.2 both fell back to a VH out of the
+        TGW's bottom port and shared its stem, so VPC B's ENI and the Security VPC's read as
+        one straight line the TGW taps into. Drafts mark each connector's spec line
+        (data-flow): different values are two flows even from one point; one value (the
+        instances of a `trunk: true` line) or none (hand-drawn) is still one net."""
+        stem = '<polyline points="{pts}" fill="none" stroke="#232F3E" stroke-width="1.5" ' \
+               'marker-end="url(#arrow)"{flow}/>'
+        for fa, fb, n in (("3", "5", 1), ("3", "3", 0), (None, "5", 0), (None, None, 0)):
+            with self.subTest(flows=(fa, fb)):
+                root = svg(*CLOUD, ICON.format(x=380, y=80), ICON.format(x=380, y=180),
+                           stem.format(pts="232,154 300,154 300,104 376,104",
+                                       flow=f' data-flow="{fa}"' if fa else ""),
+                           stem.format(pts="232,154 300,154 300,204 376,204",
+                                       flow=f' data-flow="{fb}"' if fb else ""))
+                iss = kinds(root, "LINE ON LINE")
+                self.assertEqual([(CL.fmt(i.ctx["s"]), i.ctx["d"]) for i in iss],
+                                 [("(232,154)→(300,154)", 68)] * n, [i.msg for i in iss])
+
     def test_arrow_in_where_the_next_flow_leaves(self):
         """Y → T arrives at T's port and T → X leaves from it, sharing (320,144)→(376,144):
         two flows (it reads as Y forking to T and X), flagged solid or dashed, although an

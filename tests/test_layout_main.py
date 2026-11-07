@@ -1056,6 +1056,54 @@ class TrunkFork(unittest.TestCase):
         self.assertEqual(len(set(pts)), 2, pts)
 
 
+class FallbackPorts(unittest.TestCase):
+    """Two edges that both fall back to a shape out of a side neither planned leave from
+    ports of their own (review x-fork-b: centralized-egress with `tgw -> enib.*` and the TGW
+    labelled "TGW": tgw -> enib.1 and tgw -> seni.2 both drew VH out of the TGW's bottom
+    port (658,615) and shared its stem, one straight line from VPC B's ENI to the Security
+    VPC's that the TGW taps into, Layout OK)."""
+
+    def spec(self):
+        d = spec_dict("centralized-egress")
+        for n in d["nodes"]:
+            if n["id"] == "tgw":
+                n["label"] = "TGW"
+        for e in d["edges"]:
+            if e["e"] == "enib.* -> tgw":
+                e["e"] = "tgw -> enib.*"
+        return d
+
+    def starts(self, spec, b):
+        out = {}
+        for g in ET.fromstring(b.svg).iter(NS + "g"):
+            for e in spec.edges:
+                if g.get("id") == f"edge:{e.n}" and e.a == "tgw" and e.b in ("enib.1", "seni.2"):
+                    pl, = [c for c in g if c.tag == NS + "polyline"]
+                    out[e.b] = (pl.get("points").split()[:2], pl.get("data-flow"))
+        return out
+
+    def test_two_fallbacks_take_two_ports(self):
+        spec, b = built(self.spec())
+        for nid in ("enib.1", "seni.2"):        # the case: both fell back to VH
+            self.assertTrue(any(f"tgw -> {nid}: drew VH instead of HVH" in w for w in b.warnings), b.warnings)
+        got = self.starts(spec, b)
+        (a, fa), (c, fc) = got["enib.1"], got["seni.2"]
+        self.assertNotEqual(fa, fc)                     # two spec lines, two data-flow values
+        self.assertNotEqual(a[0], c[0], got)            # not one port ...
+        self.assertNotEqual(a, c, got)                  # ... nor one stem
+        self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg)) if i.kind == "LINE ON LINE"], [])
+
+    def test_checker_flags_the_shared_stem(self):
+        """Without the drawn-port bookkeeping the two share the stem: LINE ON LINE says so
+        (data-flow), so the feedback round re-routes them."""
+        with mock.patch.object(layout.layout_route, "_note_drawn", lambda *a: None):
+            spec, b = built(self.spec())
+        got = self.starts(spec, b)
+        self.assertEqual(got["enib.1"][0], got["seni.2"][0], got)
+        iss = [i for i in CL.run_checks(ET.fromstring(b.svg)) if i.kind == "LINE ON LINE"]
+        self.assertEqual(len(iss), 1, [i.msg for i in iss])
+
+
 class LabelOnLine(unittest.TestCase):
     def test_no_room_above_or_below_puts_the_label_on_its_line(self):
         """No room above (a sub-caption) nor below (an icon): the label sits on its line over

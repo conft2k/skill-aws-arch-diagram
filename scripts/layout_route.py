@@ -957,6 +957,10 @@ class _Ctx:
         # {(node id, side): [(edge n, end, port offset, spec line, trunk)]}: the ports the
         # edges' chosen shapes take (draw() fills it after _assign_ports)
         self.side_use: Dict[Tuple[str, str], List[Tuple[int, str, float, int, bool]]] = {}
+        # the same for the ends of routes already drawn on a side their chosen shape does
+        # not use (a fallback shape, a detour): draw() adds each route as it commits it, so
+        # the next fallback onto that side takes a port of its own (_note_drawn)
+        self.drawn_use: Dict[Tuple[str, str], List[Tuple[int, str, float, int, bool]]] = {}
 
 
 @dataclass
@@ -1386,15 +1390,45 @@ def _side_use(xs: Dict[int, "_Edge"], ports: Dict[Tuple[int, str], float]):
 
 
 def _side_taken(ctx: _Ctx, x: "_Edge", end: str, side: str) -> List[float]:
-    """Port offsets other edges' chosen shapes take on `side` of x's end node (the instances
-    of x's own trunk line share its stem and don't count)."""
+    """Port offsets other edges take on `side` of x's end node: their chosen shapes' and
+    those of routes already drawn there in another shape (ctx.drawn_use); the instances of
+    x's own trunk line share its stem and don't count."""
     e = x.e
     eid, kind = (e.a, e.a_kind) if end == "a" else (e.b, e.b_kind)
     if kind != "node":
         return []
     mine = bool(e.trunk or e.fork)
-    return [o for n, _, o, line, trunk in ctx.side_use.get((eid, side), [])
-            if n != e.n and not (mine and trunk and line == e.line)]
+    use = ctx.side_use.get((eid, side), []) + ctx.drawn_use.get((eid, side), [])
+    return [o for n, _, o, line, trunk in use if n != e.n and not (mine and trunk and line == e.line)]
+
+
+def _note_drawn(ctx: _Ctx, x: "_Edge", r: "_Route") -> None:
+    """Record where route r of edge x meets its end nodes on a side its chosen shape does
+    not use (ctx.drawn_use): two edges that both fall back to, say, a VH out of one node's
+    bottom must not leave from one port and share a stem — read as one line, the two flows
+    join into one that forks (x-fork-b: tgw -> enib.1 and tgw -> seni.2, a straight line
+    from VPC B's ENI to the Security VPC's through the TGW's port). A trunk follower's end
+    on its lead's line is no port and is left out."""
+    if x.t.shape == P or len(r.pts) < 2:
+        return
+    planned = x.sides(x.t.shape)
+    trunk = bool(x.e.trunk or x.e.fork)
+    for k, (end, g, kind, p) in enumerate((("a", x.A, x.e.a_kind, r.pts[0]), ("b", x.B, x.e.b_kind, r.pts[-1]))):
+        if kind != "node":
+            continue
+        b = g.box
+        if b.x0 - 0.5 <= p[0] <= b.x1 + 0.5:
+            side = "top" if p[1] < b.y0 else "bottom" if p[1] > b.y1 else None
+        elif b.y0 - 0.5 <= p[1] <= b.y1 + 0.5:
+            side = "left" if p[0] < b.x0 else "right"
+        else:
+            side = None
+        if side is None or side == planned[k]:
+            continue
+        off = p[0] - g.cx if side in VERT else p[1] - g.cy
+        if _len(p, _port(g, side, 0.0, off)) > 0.5:
+            continue                    # not on the node's port line (a follower's junction)
+        ctx.drawn_use.setdefault((g.id, side), []).append((x.e.n, end, off, x.e.line, trunk))
 
 
 def _end_off(ctx: _Ctx, x: "_Edge", end: str, side: str, ports: Dict[Tuple[int, str], float]) -> float:
@@ -2295,12 +2329,14 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
             for n, r in (chosen or {}).items():
                 routes[n] = r
                 done_lines.extend(zip(r.pts, r.pts[1:]))
+                _note_drawn(ctx, xs[n], r)
         for x in members:
             if x.e.n in routes:
                 continue
             r = points_route(x) if x.t.shape == P else individual(x, skip.get(x.e.n, 0))
             routes[x.e.n] = r
             done_lines.extend(zip(r.pts, r.pts[1:]))
+            _note_drawn(ctx, x, r)
     def refused(x: _Edge, r: _Route) -> str:
         """Why the spec's own shape (`shape`, or the one from_side / to_side imply) was not
         drawn, and the change that would let it."""
@@ -2350,6 +2386,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
         if lead is None or t.shape == P or _ends_on(r, lead, t.trunk == "merge"):
             continue
         routes[n] = rejoin(x, lead)
+        _note_drawn(ctx, x, routes[n])
     # trunks whose followers could not share the first instance's bend: report
     for n, r in sorted(routes.items()):
         x = xs[n]
@@ -2366,7 +2403,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None) -> T
     for n in sorted(routes):
         r, x = routes[n], xs[n]
         els.append(M.el_path(r.pts, dash=K.DASH_DASHED if x.e.dashed else None, start=r.hs, end=r.he,
-                             z=K.Z_EDGE, owner=M.edge_eid(n)))
+                             z=K.Z_EDGE, owner=M.edge_eid(n), flow=x.e.line))
     pl = _Placer(ctx, all_lines)
     labels: List[Element] = []
     badges: List[Element] = []

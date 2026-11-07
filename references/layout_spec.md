@@ -246,9 +246,12 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   `UVHV` back into a node, or an alternative) never lands on the port another line uses on
   that side: it takes its own, 12px past theirs toward its other end (alb → ec2.2 coming
   back into EC2's right side, where `ec2.2 ..> cw` leaves), and a detour onto such a side
-  is drawn only when no other shape is clean. Two different lines on one run are a
+  is drawn only when no other shape is clean; nor does it land on a port another fallback
+  already drawn there took (two lines that both fall back to a VH out of one node's bottom
+  leave 12px apart, not as one stem). Two different lines on one run are a
   `LINE ON LINE` problem — an arrow into a node's port and the next flow out of that same
-  port included; write `trunk: true` when they are meant to merge.
+  port included, and two edges out of (or into) one port that share its stem; write
+  `trunk: true` when they are meant to merge.
 - `label`: protocol and port, 12px squid ink (`"HTTPS :443"`). `verb`: a verb or
   attachment type, 12px grey (`DNS 조회`, `VPC attachment`). The loader rejects either one
   when it names a service with an official icon (SERVICE AS TEXT) — make it a node.
