@@ -2,11 +2,15 @@
 name: serverless-order-pipeline
 mode: document
 # Lanes are rows, each read left → right; the columns are shared slots:
-#   top row (web):        S3 static web, Cognito, then CloudWatch · X-Ray · Secrets Manager
+#   top row (web):        S3 static web, Cognito, CloudWatch, X-Ray, Secrets Manager (x0 → x4, no slot empty between them)
 #   request lane (sync):  api, create, ddb, stream, pipe, bus
 #   analytics lane (ana): rule, sqs, ingest, fh, lake
-#   fulfillment (ful):    -, sfn, sns, mail, ses (pay above it, the VPC below)
+#   fulfillment (ful):    -, sfn, sns (pay above it), mail, ses; the VPC below the lane
 # The VPC rows (az1, vmain, az2) set the pitch of x2 → x4 for every lane: keep their labels short.
+# The Aurora cluster has no overlay box: one spanning both AZs keeps its left edge right of each
+# DB subnet's header (an empty strip in both subnets, x3 → x4 wider for every lane); the node labels say Aurora.
+# WAF has a row of its own because it sits in the global strip under CloudFront, where [edge, web] is
+# CloudFront → S3's corridor, and the row adds no height (it lies within the request → analytics wrap).
 cols: [users, edge, x0, x1, x2, x3, x4, x5]
 rows: [web, sync, waf, ana, pay, ful, az1, vmain, az2]
 
@@ -16,16 +20,15 @@ groups:
   - {id: vpc,    type: vpc, label: VPC, in: region}
   - {id: az,     type: az, in: vpc, per: [az1, az2]}
   - {id: appsn,  type: private, label: Private subnet, in: az}
-  - {id: dbsn,   type: private, label: DB subnet, in: az}
-  - {id: aurora, type: generic, label: Aurora PostgreSQL, dash: "6,4", over: [writer.*, reader.*]}
+  - {id: dbsn,   type: private, label: DB subnet, in: az, span: {cols: [x4, x5]}}
 
 nodes:
   - {id: users,  icon: resource/Users, label: Users, at: [users, sync]}
   - {id: cf,     icon: service/Amazon-CloudFront, label: CloudFront, in: cloud, at: [edge, sync]}
   - {id: waf,    icon: service/AWS-WAF, label: AWS WAF, sub: CloudFront Web ACL, in: cloud, at: [edge, waf]}
-  - {id: cw,     icon: service/Amazon-CloudWatch, label: CloudWatch, sub: 로그 · 지표 · 경보, in: region, at: [x3, web]}
-  - {id: xray,   icon: service/AWS-X-Ray, label: AWS X-Ray, sub: 요청 · 워크플로 추적, in: region, at: [x4, web]}
-  - {id: sm,     icon: service/AWS-Secrets-Manager, label: Secrets Manager, sub: DB 자격 증명, in: region, at: [x5, web]}
+  - {id: cw,     icon: service/Amazon-CloudWatch, label: CloudWatch, sub: 로그 · 지표 · 경보, in: region, at: [x2, web]}
+  - {id: xray,   icon: service/AWS-X-Ray, label: AWS X-Ray, sub: 요청 · 워크플로 추적, in: region, at: [x3, web]}
+  - {id: sm,     icon: service/AWS-Secrets-Manager, label: Secrets Manager, sub: DB 자격 증명, in: region, at: [x4, web]}
   - {id: web,    icon: service/Amazon-Simple-Storage-Service, label: S3 static web, sub: 버킷 정책 · OAC만 허용, in: region, at: [x0, web]}
   - {id: api,    icon: service/Amazon-API-Gateway, label: API Gateway, sub: REST · /orders, in: region, at: [x0, sync]}
   - {id: cog,    icon: service/Amazon-Cognito, label: Cognito, sub: user pool, in: region, at: [x1, web]}
@@ -47,8 +50,8 @@ nodes:
   - {id: reserve, icon: service/AWS-Lambda, label: Reserve stock, in: appsn, col: x2}
   - {id: proxy,  icon: resource/Amazon-RDS-Proxy-Instance, label: RDS Proxy, in: vpc, at: [x3, vmain]}
   - {id: vpce,   icon: resource/Amazon-VPC_Endpoints, label: secretsmanager, sub: 인터페이스 엔드포인트, in: appsn, col: x3}
-  - {id: writer, icon: resource/Amazon-Aurora-PostgreSQL-Instance, label: Writer, in: dbsn, col: x4, only: [1]}
-  - {id: reader, icon: resource/Amazon-Aurora-PostgreSQL-Instance, label: Reader, in: dbsn, col: x5}
+  - {id: writer, icon: resource/Amazon-Aurora-PostgreSQL-Instance, label: Aurora writer, sub: PostgreSQL 클러스터, in: dbsn, col: x4, only: [1]}
+  - {id: reader, icon: resource/Amazon-Aurora-PostgreSQL-Instance, label: Aurora reader, sub: 같은 클러스터, in: dbsn, col: x5}
 
 edges:
   - {e: "users -> cf", label: "HTTPS :443", step: 1}
@@ -71,8 +74,8 @@ edges:
   - {e: "sfn -> sns", verb: Publish, step: 8}
   - {e: "sns -> mail", step: 9}
   - {e: "mail -> ses", verb: SendEmail}
-  - {e: "reserve.* -> proxy", trunk: true, verb: IAM 인증}   # the port is on proxy -> aurora; a second "PostgreSQL :5432" here would widen x2 → x3 for every lane
-  - {e: "proxy -> aurora", label: "PostgreSQL :5432"}
+  - {e: "reserve.* -> proxy", trunk: true, verb: IAM 인증}   # the port is on proxy -> writer.1; a second "PostgreSQL :5432" here would widen x2 → x3 for every lane
+  - {e: "proxy -> writer.1", label: "PostgreSQL :5432", shape: HV}   # HV, up into the writer: a HVH reserves the label's run before its bend, widening x3 → x4
   - {e: "proxy ..> vpce.*", verb: 자격 증명}
 
 note:
@@ -82,7 +85,7 @@ note:
     - ["Create order → DynamoDB", "주문을 Orders 테이블에 PENDING으로 쓰고 바로 응답합니다. 여기까지가 동기 구간입니다."]
     - ["DynamoDB Streams → EventBridge Pipes", "Pipes가 스트림의 INSERT만 걸러 OrderCreated 이벤트로 orders 버스에 넣습니다."]
     - ["EventBridge rule → Step Functions", "OrderCreated 규칙이 Fulfillment 워크플로를 시작합니다. 같은 규칙의 두 번째 대상이 analytics 큐입니다."]
-    - ["Step Functions → Charge payment", "Fulfillment 워크플로의 첫 상태가 Charge payment Lambda로 결제를 처리합니다. 결제가 실패하면 재고 예약과 알림으로 넘어가지 않습니다."]
+    - ["Step Functions → Charge payment", "Fulfillment 워크플로의 첫 상태가 Charge payment Lambda로 결제를 처리합니다. 결제가 실패하면 재고 예약 없이 실패 상태를 order-status에 게시합니다."]
     - ["Step Functions → Reserve stock", "결제 뒤 Reserve stock이 IAM 인증으로(비밀 없이) RDS Proxy → Aurora writer에 재고를 예약합니다. DB 자격 증명은 프록시만 엔드포인트로 읽습니다(NAT 없음)."]
-    - ["Step Functions → SNS", "결과를 order-status 토픽에 게시합니다. SNS는 SES를 직접 호출하지 못해 구독 Lambda를 둡니다."]
+    - ["Step Functions → SNS", "주문 결과(확정 또는 결제 실패)를 order-status 토픽에 게시합니다. SNS는 SES를 직접 호출하지 못해 구독 Lambda를 둡니다."]
     - ["SNS → Send email", "구독 Lambda가 SES SendEmail로 주문 확인 메일을 보냅니다."]

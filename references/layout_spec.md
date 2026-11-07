@@ -309,11 +309,18 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   top`; the router finds the bend and reserves the corridor — give `bend_y` as the gap
   between the previous lane's main row and the next one's only when you must pin it). Put
   side nodes in empty slots of an existing row rather than in a row of their own, so no
-  row is left mostly empty. The shared columns take the widest pitch any lane needs, and
-  a VPC lane's rows (labels before a trunk bend, subnet headers beside an overlay) usually
-  set it: keep the labels in the VPC short and put a long one on the hop with room. A
-  per-AZ fork is `trunk: true` (one stem from one port, forking to each AZ). layout.py warns
-  past 1800 px wide.
+  row is left mostly empty, and fill a row's slots from the left with none empty between
+  (the top row's regional services). A row of its own is fine when it adds no height: AWS
+  WAF sits under CloudFront in the global strip, on a `waf` row inside the request →
+  analytics wrap, because CloudFront → S3 leaves upward through `[edge, web]`. The shared
+  columns take the widest pitch any lane needs, and a VPC lane's rows usually set it: keep
+  the labels in the VPC short and put a long one on the hop with room. A HVH reserves its
+  label's run before the bend (`proxy -> writer.1` is `shape: HV`, so "PostgreSQL :5432"
+  sits on the proxy's own row), and an overlay over both AZs keeps its left edge right of
+  each crossed subnet's header — an empty strip in every one of them — so the Aurora
+  cluster has none: an `Aurora writer` in AZ 1 and an `Aurora reader` per AZ, the DB
+  subnet `span`ning both DB columns so the two AZs match. A per-AZ fork is `trunk: true`
+  (one stem from one port, forking to each AZ). layout.py warns past 1800 px wide.
 
 - **AZ template** (nlb): `az` with `per`, subnets `in: az`, nodes `col:` only, an ASG
   overlay over both EC2 columns and one arrow into it; the LB (`in: vpc, at: [pub, main]`)

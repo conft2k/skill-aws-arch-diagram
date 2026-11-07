@@ -192,7 +192,7 @@ Decide in this order; exactly one place, always outside the AWS Cloud box:
 
 | Format | Limit |
 |---|---|
-| Document SVG/PNG | as large as the content needs (examples 1020 × 850 to 1514 × 1072; the lane-folded pipeline 1369 × 1505) |
+| Document SVG/PNG | as large as the content needs (examples 1020 × 850 to 1514 × 1072; the lane-folded pipeline 1328 × 1489) |
 | Slide with a title | ≤ 1108 × 540 for text ≥ 10pt (examples 1020–1108 × 524–544; the GWLB slide at 544 comes out 9.9pt) |
 | Slide without a title | ≤ 1108 × 600 |
 | Slide, only when unavoidable | down to 8pt: ≈ 1380 × 675 titled, 1380 × 755 untitled; tell the user |
