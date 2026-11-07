@@ -76,6 +76,9 @@ a box whose columns cover it (a template node on that column inside the VPC), a 
 stack nodes — is kept off the stack on y: above it when the middle of its rows lies in
 the upper part of the parent's rows (above the middle; an odd middle row counts below),
 else below; with `align: top` everything goes below the stack, with `bottom` above it.
+A flow row in the same parent has no column, so once x is solved each of its nodes that
+comes within the sibling gap of the stack's x is kept off it the same way, as a node pinned
+on that row (a services row on the region's last row goes above a bottom-aligned stack).
 A box holding only flow-column nodes (a `Monitoring` group of them) takes its height from
 them and is aligned in its parent like its first column.
 `flow: true` takes the mode's pitch (160). A flow-column node takes no `dy` (the stack

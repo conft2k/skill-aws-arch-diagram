@@ -443,6 +443,29 @@ class FlowColumnFixes(unittest.TestCase):
         tip = layout.spec_fix(spec, g, layout.Problem(iss, ["node:cw", "node:s3"], [txt, ico]))
         self.assertIn(f"cols: {{id: svc, flow: {M.fmt_num(s3.cy - cw.cy + layout.WIDEN)}, align: bottom}}", tip)
 
+    def test_flow_row_keeps_off_the_stack(self):
+        """A flow row and a flow column in one parent: the row has no column, so whether it
+        meets the stack is known only once x is solved; a row node that does is kept off the
+        stack on y like a node pinned on that row (align bottom: above the stack; center:
+        below it), so the two never overlap whatever the align."""
+        for align in ("bottom", "center", "top"):
+            d = flow_column_spec()
+            d["mode"] = "document"
+            d["cols"][-1]["align"] = align
+            d["rows"].append({"id": "svcrow", "flow": 100})
+            for i, ic in (("k1", "AWS-Key-Management-Service"), ("k2", "AWS-Lambda"), ("k3", "Amazon-DynamoDB"),
+                          ("k4", "Amazon-Simple-Queue-Service"), ("k5", "Amazon-Simple-Notification-Service")):
+                d["nodes"].append(svc(i, f"service/{ic}", i.upper(), row="svcrow", **{"in": "region"}))
+            rc, out, _ = run_main(d)
+            self.assertEqual((rc, out.strip().splitlines()[-1]), (0, "Layout OK"), f"{align}\n{out}")
+            spec, b = built(d)
+            g = b.geom
+            for a in ("acm", "cw", "s3"):
+                for k in ("k1", "k2", "k3", "k4", "k5"):
+                    self.assertApart(g, a, k)
+            if align == "bottom":           # the row (the region's last) sits above the stack
+                self.assertGreater(g.nodes["acm"].footprint().y0, g.nodes["k5"].footprint().y1)
+
 
 class ShortOverlayTitle(unittest.TestCase):
     def test_member_below_a_non_member_or_in_no_box(self):

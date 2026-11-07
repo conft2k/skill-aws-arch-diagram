@@ -17,7 +17,8 @@ constants come from layout_const. Outline (DESIGN 4.2-4.3):
                7 colspan (reserved from its center for the span a first solve found), 8 flow rows
                (own x variables, pitch, centered in the parent afterwards) and flow columns
                (own y variables, pitch or label stack + stack gap, kept off same-parent
-               siblings sharing the column by slot, then top / centered / bottom in the
+               siblings sharing the column by slot — a flow-row node once solved x shows
+               it meets the stack —, then top / centered / bottom in the
                parent's height, with tied xy nodes and member-only overlays; no row
                tracks; a box of stack nodes only likewise), 9 overlays (ASG:
                members, header right/below, inside each member subnet, a short title beside the
@@ -897,10 +898,41 @@ class _Model:
         sg = self.spec.groups[gid]
         return max(K.top_inset(sg.type, self.mc.name, "icon", bool(sg.cidr)), sg.pad_top or 0)
 
+    def _float_flow_rows(self, xv: Dict[str, float], nodes_x: Dict[str, float]):
+        """A flow row and a stack block of one parent (8): a flow-row node has no column, so
+        _float_siblings cannot tell from the tracks whether it shares the stack's x. Once x
+        is solved, each flow-row node whose footprint comes within sibling_gap of the block's
+        x extent (its nodes' footprints; a box of stacks: its edges) is kept off it on y like
+        a node pinned on that row: above when its row lies above the block's slot, else
+        below."""
+        g = self.mc.sibling_gap
+        for parent, ids in self.flow_rows:
+            units = self._float_units(parent)
+            if not units:
+                continue
+            owner = f"group:{parent}" if parent else "canvas"
+            for xr, top, bot, slot in units:
+                if top.gid:
+                    x0, x1 = xv[f"group:{top.gid}.L"], xv[f"group:{top.gid}.R"]
+                else:
+                    mem = self.stacks[(parent, self.spec.nodes[top.nid].col)]
+                    x0 = min(nodes_x[i] - self.foot[i].h for i in mem)
+                    x1 = max(nodes_x[i] + self.foot[i].h for i in mem)
+                for nid in ids:
+                    o = self.item_node(nid)
+                    h = self.foot[nid].h
+                    if o.yr is None or nodes_x[nid] + h + g <= x0 or nodes_x[nid] - h - g >= x1:
+                        continue
+                    if slot is not None and o.yr[0] < slot:
+                        self._sep("y", o, top, owner)
+                    else:
+                        self._sep("y", bot, o, owner)
+
     def y_after_x(self, xv: Dict[str, float], nodes_x: Dict[str, float]):
-        """The y rules that depend on solved x: overlay top (9, decision f) and group badge
-        ↔ icon clearance (QR 73)."""
+        """The y rules that depend on solved x: a flow row kept off a stack it meets on x
+        (8), overlay top (9, decision f) and group badge ↔ icon clearance (QR 73)."""
         mc, S = self.mc, self.S
+        self._float_flow_rows(xv, nodes_x)
         for g in self.overlays:
             st, gid = K.style(g.type), g.id
             own = f"group:{gid}"

@@ -291,8 +291,10 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     rows above and below the middle, an odd middle row below): the router's row range for
     the node (never a grid row, so no rule-1 H to a grid node), and the side a same-parent
     sibling sharing the column's x goes to (above when the middle of its rows is before the
-    slot, else below). A box with no row that holds flow-column nodes (Spec.float_align)
-    is such a block too: its slot is its first column's in its own parent; overlays over
+    slot, else below; a flow-row node of the parent likewise as on its row, once solved x
+    shows its footprint within sibling_gap of the stack's). A box with no row that holds
+    flow-column nodes (Spec.float_align) is such a block too: its slot is its first
+    column's in its own parent; overlays over
     stack members take only a top-aligned stack's first node as a first-row member;
     Edge.src = "edges[i]"; template instances are Group.instance / Node.instance plus the
     ".n" id suffix.
