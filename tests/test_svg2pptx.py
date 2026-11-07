@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Tests of scripts/svg2pptx.py: which full-canvas background rect collect() leaves to the slide,
 how opacity / fill-opacity / stroke-opacity reach the PPTX as color alpha, which root <svg>
-attributes are reported, and how render_pptx.py previews that alpha.
+attributes are reported, how render_pptx.py previews that alpha, which <tspan>s are reported,
+how hidden and degenerate shapes are left out, and that what collect() accepts converts.
 
     python3 tests/test_svg2pptx.py
 """
@@ -277,6 +278,255 @@ class RootAttributes(unittest.TestCase):
     def test_layout_root_attributes_accepted(self):
         # what layout.py writes on the root: viewBox and font-family (the deck's font is --font)
         self.assertEqual(self.root_problems('width="200" height="100" font-family="Arial"'), [])
+
+
+def converts(test, body):
+    """collect() reports nothing for `body`; build() turns it into a deck without a traceback.
+    Returns the shapes inside the diagram group."""
+    test.assertEqual(problems(body), [])
+    return deck_shapes(body)
+
+
+class TextRun(unittest.TestCase):
+    """A <text> becomes one run in one format: a <tspan> that would change part of it is
+    reported before anything is written; a plain one only joins its characters."""
+
+    def test_formatting_tspan_reported(self):
+        for attrs in ('fill="#FF0000"', 'font-weight="bold"', 'font-size="20"', 'fill-opacity="0.5"',
+                      'font-style="italic"', 'text-decoration="underline"', 'display="none"',
+                      'visibility="hidden"', 'baseline-shift="super"'):
+            with self.subTest(attrs=attrs):
+                found = problems(f'<text x="20" y="50" font-size="14" fill="#000000">A<tspan {attrs}>B</tspan>C</text>')
+                name = attrs.partition("=")[0]
+                self.assertTrue(any(p.startswith("<tspan> 'B' sets") and name in p for p in found), found)
+
+    def test_review_repro_reported(self):
+        found = problems('<text x="20" y="50" font-size="14" fill="#000000">A<tspan fill="#FF0000" '
+                         'font-weight="bold">B</tspan>C</text>')
+        self.assertTrue(any("fill, font-weight" in p for p in found), found)
+        with tempfile.TemporaryDirectory() as d:
+            draft, deck = Path(d) / "t.draft.svg", Path(d) / "t.pptx"
+            draft.write_text(svg('<text x="20" y="50" font-size="14">A<tspan fill="#FF0000">B</tspan>C</text>'),
+                             encoding="utf-8")
+            with redirect_stdout(StringIO()):
+                self.assertFalse(svg2pptx.build([draft], [], deck))
+            self.assertFalse(deck.exists())
+
+    def test_style_and_class_on_tspan_reported(self):
+        for attrs in ('style="fill:#FF0000"', 'class="hot"'):
+            with self.subTest(attrs=attrs):
+                found = problems(f'<text x="20" y="50" font-size="14">A<tspan {attrs}>B</tspan>C</text>')
+                self.assertTrue(any(p.startswith("<tspan> uses style=/class=") for p in found), found)
+
+    def test_nested_tspan_checked(self):
+        found = problems('<text x="20" y="50" font-size="14">A<tspan>B<tspan font-weight="bold">C</tspan></tspan></text>')
+        self.assertTrue(any(p.startswith("<tspan> 'C' sets font-weight") for p in found), found)
+
+    def test_positioning_tspan_still_reported(self):
+        found = problems('<text x="20" y="50" font-size="14">A<tspan x="20" dy="16">B</tspan></text>')
+        self.assertTrue(any(p.startswith("<tspan> positions text") for p in found), found)
+
+    def test_other_child_reported(self):
+        found = problems('<text x="20" y="50" font-size="14">A<a href="#x">B</a></text>')
+        self.assertTrue(any(p.startswith("<a> inside <text>") for p in found), found)
+
+    def test_plain_tspan_joins_text(self):
+        text, = collect('<text x="20" y="50" font-size="14" fill="#232F3E">A<tspan>B</tspan>'
+                        '<tspan id="c">C</tspan>D</text>')
+        self.assertEqual(text["s"], "ABCD")
+        box, = converts(self, '<text x="20" y="50" font-size="14">A<tspan>B</tspan>C</text>')
+        self.assertEqual(box.text_frame.text, "ABC")
+
+    def test_title_inside_text_not_drawn(self):
+        text, = collect('<text x="20" y="50" font-size="14">Hi<title>tooltip</title></text>')
+        self.assertEqual(text["s"], "Hi")
+
+
+class Hidden(unittest.TestCase):
+    """What SVG does not draw (display="none", visibility="hidden" / "collapse") is not on the slide."""
+
+    IMG = '<image href="bundle:service/AWS-Lambda" x="0" y="0" width="48" height="48"/>'
+
+    def test_display_none_left_out(self):
+        for el in (SHAPE, TEXT, self.IMG, '<line x1="0" y1="0" x2="50" y2="0" stroke="#000"/>',
+                   '<circle cx="20" cy="20" r="5" fill="#000"/>'):
+            with self.subTest(el=el):
+                hidden = el.replace("/>", ' display="none"/>', 1) if el.endswith("/>") else \
+                    el.replace("<text ", '<text display="none" ', 1)
+                self.assertEqual(collect(hidden + SHAPE), collect(SHAPE))
+                self.assertEqual(len(converts(self, hidden + SHAPE)), 1)
+
+    def test_display_none_review_repro(self):
+        body = '<rect x="10" y="10" width="20" height="20" fill="#FF0000" display="none"/>'
+        self.assertEqual(collect(body), [])
+        self.assertEqual(converts(self, body), [])
+
+    def test_display_none_group_hides_children(self):
+        self.assertEqual(collect(f'<g id="a" display="none">{SHAPE}{TEXT}<g>{self.IMG}</g></g>'), [])
+        self.assertEqual(collect(f'<g display="none"><rect width="9" height="9" display="inline"/></g>'), [])
+        # other display values draw it
+        self.assertEqual(len(collect(SHAPE.replace("/>", ' display="inline"/>'))), 1)
+        self.assertEqual(len(collect(f'<g display="block">{SHAPE}</g>')), 1)
+
+    def test_visibility_hidden_left_out(self):
+        for v in ("hidden", "collapse", " Hidden "):
+            for el in (SHAPE, self.IMG):
+                with self.subTest(v=v, el=el):
+                    self.assertEqual(collect(el.replace("/>", f' visibility="{v}"/>')), [])
+            with self.subTest(v=v, el="text"):
+                self.assertEqual(collect(TEXT.replace("<text ", f'<text visibility="{v}" ')), [])
+        self.assertEqual(len(collect(SHAPE.replace("/>", ' visibility="visible"/>'))), 1)
+
+    def test_visibility_inherited(self):
+        # inherited from the group; a child can set it back to visible
+        items = collect(f'<g visibility="hidden">{SHAPE}<rect x="0" y="0" width="5" height="5" fill="#000" '
+                        f'visibility="visible"/><g visibility="inherit">{TEXT}</g></g>')
+        self.assertEqual([(it["k"], it["box"]) for it in items], [("rect", (0, 0, 5, 5))])
+        root = ET.fromstring(svg(SHAPE + TEXT).replace("<svg ", '<svg visibility="hidden" ', 1))
+        self.assertEqual(svg2pptx.collect(root)[1:], ([], []))
+
+    def test_hidden_first_rect_is_not_the_backdrop(self):
+        # only a painted rect can be the slide's background
+        self.assertEqual(kinds('<rect width="200" height="100" fill="#FFFFFF" display="none"/>'
+                               '<rect width="200" height="100" fill="#FFFFFF"/>' + TEXT), [("text", None)])
+        self.assertEqual(kinds(SHAPE.replace("/>", ' visibility="hidden"/>') +
+                               '<rect width="200" height="100" fill="#FFFFFF"/>' + TEXT), [("text", None)])
+
+    def test_hidden_badge_is_not_a_container(self):
+        body = ('<rect x="10" y="10" width="100" height="60" rx="6" fill="none" stroke="#8C4FFF"/>'
+                '<image href="bundle:group/VPC_32" x="10" y="10" width="32" height="32" display="none"/>')
+        self.assertEqual(problems(body), [])
+        self.assertTrue(problems(body.replace(' display="none"', "")))
+
+    def test_bad_visibility_reported(self):
+        found = problems(SHAPE.replace("/>", ' visibility="maybe"/>'))
+        self.assertTrue(any("visibility='maybe'" in p for p in found), found)
+
+
+class Degenerate(unittest.TestCase):
+    """Shapes SVG draws nothing of are left out, and everything collect() accepts converts."""
+
+    def test_zero_width_stroke_is_no_line(self):
+        for dash in ("", ' stroke-dasharray="4,4"'):
+            with self.subTest(dash=dash):
+                rect, = converts(self, '<rect x="10" y="10" width="20" height="20" fill="#FF0000" '
+                                       f'stroke="#000000" stroke-width="0"{dash}/>')
+                ln = rect._element.spPr.find(qn("a:ln"))
+                self.assertIsNotNone(ln.find(qn("a:noFill")))
+                self.assertIsNone(ln.find(qn("a:custDash")))
+                self.assertEqual(clr(rect._element.spPr), ("FF0000", None))
+                line, poly, oval = converts(
+                    self, f'<line x1="10" y1="60" x2="100" y2="60" stroke="#000" stroke-width="0"{dash} '
+                          'marker-end="url(#a)"/>'
+                          f'<polyline points="10,70 50,70 50,90" fill="none" stroke="#000" stroke-width="0.0"{dash}/>'
+                          f'<circle cx="150" cy="50" r="10" fill="#FF9900" stroke="#000" stroke-width="0"{dash}/>')
+                for shape in (line, poly, oval):
+                    ln = shape._element.spPr.find(qn("a:ln"))
+                    self.assertIsNotNone(ln.find(qn("a:noFill")))
+                    self.assertIsNone(ln.find(qn("a:tailEnd")))
+
+    def test_zero_width_stroke_rect_can_be_the_backdrop(self):
+        self.assertEqual(kinds('<rect width="200" height="100" fill="#FFFFFF" stroke="#000" stroke-width="0"/>'
+                               + TEXT), [("text", None)])
+
+    def test_zero_width_text_stroke_is_no_halo(self):
+        self.assertEqual(problems('<text x="20" y="50" font-size="14" stroke="#FFF" stroke-width="0">Hi</text>'), [])
+
+    def test_dash_patterns(self):
+        self.assertEqual(svg2pptx.dashes("4,4"), [4, 4])
+        self.assertEqual(svg2pptx.dashes(" 5 3 1 "), [5, 3, 1, 5, 3, 1])
+        for v in ("", None, "none", "0", "0,0"):  # SVG draws these solid
+            with self.subTest(v=v):
+                self.assertEqual(svg2pptx.dashes(v), [])
+        rect, = converts(self, SHAPE.replace("/>", ' stroke="#000" stroke-dasharray="0 0"/>'))
+        self.assertEqual(rect._element.spPr.find(qn("a:ln")).find(qn("a:prstDash")).get("val"), "solid")
+        for v in ("-4,4", "nan", "inf", "4px", "a"):
+            with self.subTest(v=v):
+                found = problems(f'<line x1="0" y1="0" x2="50" y2="0" stroke="#000" stroke-dasharray="{v}"/>')
+                self.assertTrue(any(p.startswith("<line>: stroke-dasharray") for p in found), found)
+
+    def test_negative_stroke_width_reported(self):
+        found = problems(SHAPE.replace("/>", ' stroke="#000" stroke-width="-1"/>'))
+        self.assertTrue(any("stroke-width='-1' is negative" in p for p in found), found)
+
+    def test_short_polylines_left_out(self):
+        for pts in ("", " ", "5,5", "5 5 6"):
+            with self.subTest(points=pts):
+                body = f'<polyline points="{pts}" fill="none" stroke="#000000"/>'
+                self.assertEqual(collect(body), [])
+                self.assertEqual(converts(self, body), [])
+        self.assertEqual(converts(self, '<polyline fill="none" stroke="#000"/>'), [])
+
+    def test_normal_polylines_convert(self):
+        two, three = converts(self, '<polyline points="10,10 50,10" fill="none" stroke="#000"/>'
+                                    '<polyline points="10,20 50,20 50,60" fill="none" stroke="#000"/>')
+        self.assertEqual(two.shape_type.name, "LINE")
+        self.assertEqual(three.shape_type.name, "FREEFORM")
+        self.assertEqual(len(collect('<polyline points="1,1 2,2 3" fill="none" stroke="#000"/>')[0]["pts"]), 2)
+
+    def test_bad_points_reported(self):
+        for pts in ("1,1 2,nan", "1,1 2,x", "1,1 inf,2"):
+            with self.subTest(points=pts):
+                found = problems(f'<polyline points="{pts}" fill="none" stroke="#000"/>')
+                self.assertTrue(any(p.startswith("<polyline>: points=") for p in found), found)
+
+    def test_zero_size_shapes_left_out(self):
+        for el in ('<rect x="10" y="10" width="0" height="20" rx="4" fill="#FF0000"/>',
+                   '<rect x="10" y="10" width="20" height="0" fill="#FF0000" stroke="#000"/>',
+                   '<rect x="10" y="10" fill="#FF0000"/>',
+                   '<circle cx="10" cy="10" r="0" fill="#000"/>',
+                   '<image href="bundle:service/AWS-Lambda" x="0" y="0" width="0" height="48"/>',
+                   '<text x="20" y="50" font-size="0">Hi</text>'):
+            with self.subTest(el=el):
+                self.assertEqual(collect(el), [])
+                self.assertEqual(converts(self, el), [])
+
+    def test_negative_sizes_reported(self):
+        for el, attr in (('<rect x="0" y="0" width="-5" height="5"/>', "width"),
+                         ('<rect x="0" y="0" width="5" height="5" rx="-2"/>', "rx"),
+                         ('<circle cx="5" cy="5" r="-1"/>', "r"),
+                         ('<image href="bundle:service/AWS-Lambda" x="0" y="0" width="48" height="-1"/>', "height")):
+            with self.subTest(el=el):
+                found = problems(el)
+                self.assertTrue(any(f"{attr}=" in p and "negative" in p for p in found), found)
+
+    def test_image_without_size_reported(self):
+        found = problems('<image href="bundle:service/AWS-Lambda" x="0" y="0"/>')
+        self.assertTrue(any("needs width= and height=" in p for p in found), found)
+
+    def test_non_finite_numbers_reported(self):
+        for el in ('<rect x="nan" y="0" width="5" height="5"/>', '<rect x="0" y="0" width="inf" height="5"/>',
+                   '<line x1="0" y1="0" x2="1e999" y2="0" stroke="#000"/>', '<circle cx="5" cy="5" r="nan"/>',
+                   '<text x="nan" y="50" font-size="14">Hi</text>', '<rect x="0" y="0" width="5" height="5" '
+                   'stroke="#000" stroke-width="nan"/>', '<rect x="10px" y="0" width="5" height="5"/>'):
+            with self.subTest(el=el):
+                self.assertTrue(problems(el))
+
+    def test_bad_viewbox_reported(self):
+        for view in ("0 0 nan 100", "0 0 inf 100", "nan 0 200 100"):
+            with self.subTest(view=view):
+                found = svg2pptx.collect(ET.fromstring(svg(SHAPE, view)))[2]
+                self.assertTrue(any("viewBox" in p for p in found), found)
+
+    def test_bad_translate_reported(self):
+        found = problems(f'<g transform="translate(1.2.3, 4)">{SHAPE}</g>')
+        self.assertTrue(any(p.startswith("<g>: translate x=") for p in found), found)
+        self.assertEqual(kinds(f'<g transform="translate(5)">{SHAPE}</g>'), [("rect", (25, 20, 40, 30))])
+
+    def test_font_size_out_of_powerpoint_range(self):
+        # PowerPoint runs are 1-4000pt: a label that scales outside it converts at the limit
+        for view, fs, want in (("0 0 1 1", "14", 400000), ("0 0 20000 10000", "0.5", 100)):
+            with self.subTest(view=view, fs=fs):
+                body = f'<text x="0.5" y="0.5" font-size="{fs}">Hi</text>'
+                root = ET.fromstring(svg(body, view))
+                self.assertEqual(svg2pptx.collect(root)[2], [])
+                with tempfile.TemporaryDirectory() as d:
+                    draft, deck = Path(d) / "t.draft.svg", Path(d) / "t.pptx"
+                    draft.write_text(svg(body, view), encoding="utf-8")
+                    with redirect_stdout(StringIO()):
+                        self.assertTrue(svg2pptx.build([draft], [], deck))
+                    box, = Presentation(deck).slides[0].shapes[0].shapes
+                    self.assertEqual(int(rpr(box).get("sz")), want)
 
 
 class Preview(unittest.TestCase):

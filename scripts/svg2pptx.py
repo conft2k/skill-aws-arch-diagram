@@ -19,7 +19,12 @@ title, if one is given) and placed as one group, so it moves and resizes as a un
 
 opacity, fill-opacity and stroke-opacity (numbers or percentages) become the alpha of the
 fill and line colors: fill alpha = opacity x fill-opacity, line alpha = opacity x
-stroke-opacity, and 0 means no fill / no line.
+stroke-opacity, and 0 means no fill / no line. What SVG draws nothing of is left off the
+slide the same way: display="none" (with its children), visibility="hidden" / "collapse"
+(inherited), a zero-size rect / circle / image, a polyline of fewer than two points,
+font-size 0, and a zero-width stroke (no line). A <text> is one run in one format, so a
+<tspan> that positions or formats part of it is refused like the cases below; so is a
+coordinate, size, stroke width or dash length that is not a finite bare number.
 
 Icons are referenced exactly as in the SVG workflow: `bundle:set/name` hrefs (looked
 up in assets/icons.json) or data: URIs. Nothing is written, and the script exits with
@@ -32,6 +37,7 @@ root <svg> that SVG would pass down to the children, included).
 import argparse
 import base64
 import io
+import math
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -96,6 +102,43 @@ def num(v, default=0.0):
         return default
 
 
+def finite(v, what):
+    """A bare number string -> float, or raise ValueError naming `what`."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        raise ValueError(f"{what}={v!r} is not a number (a bare number of px, no unit)") from None
+    if not math.isfinite(f):
+        raise ValueError(f"{what}={v!r} is not a finite number")
+    return f
+
+
+def number(el, name, default=0.0, negative=True):
+    """el's attribute `name` as a finite float (missing or blank -> default), or raise
+    ValueError; negative=False also refuses a value below 0 (an SVG error for sizes)."""
+    v = el.get(name)
+    if v is None or not v.strip():
+        return default
+    f = finite(v, name)
+    if f < 0 and not negative:
+        raise ValueError(f"{name}={v!r} is negative")
+    return f
+
+
+def dashes(v):
+    """stroke-dasharray -> [dash, gap, ...] of an even length, [] for a solid line ('none',
+    missing, or all zeros, which SVG draws solid); raise ValueError on a bad or negative value."""
+    v = (v or "").strip()
+    if not v or v == "none":
+        return []
+    parts = [finite(t, "stroke-dasharray") for t in re.split(r"[ ,]+", v) if t]
+    if any(d < 0 for d in parts):
+        raise ValueError(f"stroke-dasharray={v!r} has a negative length")
+    if not sum(parts):
+        return []
+    return parts * 2 if len(parts) % 2 else parts
+
+
 def alpha(v):
     """SVG opacity value ('0.5', '.5', '50%'; missing -> 1) -> float clamped to 0..1."""
     v = (v or "").strip()
@@ -149,12 +192,58 @@ def translate(el):
     m = re.fullmatch(r"translate\(\s*([-\d.]+)(?:[ ,]+([-\d.]+))?\s*\)", t)
     if not m:
         raise ValueError(f"unsupported transform {t!r} (only translate(x,y))")
-    return num(m.group(1)), num(m.group(2))
+    return finite(m.group(1), "translate x"), finite(m.group(2) or "0", "translate y")
 
 
 def points(s):
-    vals = [num(v) for v in re.split(r"[ ,]+", (s or "").strip()) if v]
+    """polyline points -> [(x, y), ...]; an odd last coordinate is dropped, as SVG draws up to it."""
+    vals = [finite(v, "points") for v in re.split(r"[ ,]+", (s or "").strip()) if v]
     return [(vals[i], vals[i + 1]) for i in range(0, len(vals) - 1, 2)]
+
+
+def stroke_of(el, default):
+    """(RGBColor or None, alpha, width) of el's stroke. A zero stroke-width draws nothing in
+    SVG, so it is no line here too; the dash pattern is checked (see dashes) either way."""
+    rgb, a = paint(el, "stroke", default)
+    sw = number(el, "stroke-width", 1.0, negative=False)
+    dashes(el.get("stroke-dasharray"))
+    return (None, 1.0, sw) if sw == 0 else (rgb, a, sw)
+
+
+# Attributes a plain <tspan> may carry: it only joins its characters into the <text>'s one run.
+TSPAN_PLAIN = {"id"}
+TSPAN_POSITION = ("x", "y", "dx", "dy")
+
+
+def text_run(el, problems, top=None):
+    """The characters <text> `el` draws, as the one run the slide text box holds. Each child
+    that would change them is reported: a <tspan> that positions or formats its part, style /
+    class, or a child other than <tspan> (<title> / <desc> are not drawn and are left out)."""
+    top = el if top is None else top
+    parts = [el.text or ""]
+    for ch in el:
+        tag = ch.tag.replace(NS, "") if isinstance(ch.tag, str) else None
+        if tag in ("title", "desc") or tag is None:  # not drawn (None: a comment)
+            parts.append(ch.tail or "")
+            continue
+        if tag != "tspan":
+            problems.append(f"<{tag}> inside <text> is not supported (one <text> per label)")
+            parts.append(ch.tail or "")
+            continue
+        inner = text_run(ch, problems, top)
+        label = " ".join("".join(top.itertext()).split())
+        if any(ch.get(a) for a in TSPAN_POSITION):
+            problems.append(f"<tspan> positions text ({label!r}) — one <text> per line instead")
+        if ch.get("style") or ch.get("class"):
+            problems.append("<tspan> uses style=/class= — write presentation attributes "
+                            "(fill=, stroke=, font-size=, ...) instead")
+        fmt = sorted(k for k in ch.keys() if k not in TSPAN_PLAIN and k not in TSPAN_POSITION
+                     and k not in ("style", "class"))
+        if fmt:
+            problems.append(f"<tspan> {inner.strip()!r} sets {', '.join(fmt)} in {label!r} — a label is one "
+                            "run in one format on the slide; put that part in a <text> of its own")
+        parts += [inner, ch.tail or ""]
+    return "".join(parts)
 
 
 def has_marker(el, which):
@@ -198,22 +287,30 @@ def blank_backdrop(it, vw, vh):
 
 def collect(svg_root, drop_backdrop=True):
     """Flatten the SVG into drawing items in document order, plus every problem found.
-    drop_backdrop=False keeps a blank full-canvas background rect (see blank_backdrop)."""
+    drop_backdrop=False keeps a blank full-canvas background rect (see blank_backdrop).
+    What SVG does not draw is left out the same way: display="none" (with everything inside
+    it), visibility="hidden" / "collapse" (inherited; a child can set it back to visible), a
+    rect / circle / image of zero size, a polyline of fewer than two points and a zero-width
+    stroke. Every item returned converts in Deck.add_slide; an input it could not convert,
+    or would convert differently from SVG, is a problem instead."""
     items, problems = [], []
     vb = [num(v) for v in svg_root.get("viewBox", "").replace(",", " ").split()]
     if len(vb) != 4:
         vb = [0, 0, num(svg_root.get("width")), num(svg_root.get("height"))]
     vx, vy, vw, vh = vb
-    if vw <= 0 or vh <= 0:
+    if not all(math.isfinite(v) for v in vb) or vw <= 0 or vh <= 0:
         problems.append("the root <svg> needs a viewBox (or width and height)")
         return (vx, vy, vw, vh), items, problems
     badges = set()
     backdrop = []  # [True] once the first painted item proves a blank full-canvas rect
 
-    def walk(el, ox, oy):
+    def walk(el, ox, oy, shown=True):
         tag = el.tag.replace(NS, "")
         if tag in SKIPPED:
             return
+        g = el.get
+        if (g("display") or "").strip().lower() == "none":
+            return  # SVG draws neither it nor anything inside it
         if tag not in DRAWN:
             problems.append(f"<{tag}> is not supported (draw it with rect/line/polyline/circle/text/image)")
             return
@@ -223,7 +320,20 @@ def collect(svg_root, drop_backdrop=True):
             problems.append(f"<{tag}>: {e}")
             return
         ox, oy = ox + dx, oy + dy
-        g = el.get
+        vis = (g("visibility") or "").strip().lower()
+        if vis in ("hidden", "collapse"):
+            shown = False
+        elif vis == "visible":
+            shown = True
+        elif vis not in ("", "inherit"):
+            problems.append(f"<{tag}> visibility={g('visibility')!r} is not supported (visible, hidden or collapse)")
+
+        def add(it):
+            if shown:
+                items.append(it)
+                if drop_backdrop and len(items) == 1 and it["k"] == "rect" and blank_backdrop(it, vw, vh):
+                    backdrop.append(True)
+
         if g("style") or g("class"):
             problems.append(f"<{tag}> uses style=/class= — write presentation attributes "
                             "(fill=, stroke=, font-size=, ...) instead")
@@ -239,74 +349,76 @@ def collect(svg_root, drop_backdrop=True):
                 problems.append(f"<svg> carries {', '.join(inherited)} — inherited attributes are not "
                                 "applied; put fill/font-size/stroke on each element")
         if tag == "g":
-            extra = sorted(k for k in el.keys() if k not in ("transform", "id"))
+            # display / visibility are applied exactly (above), so they may sit on a group
+            extra = sorted(k for k in el.keys() if k not in ("transform", "id", "display", "visibility"))
             if extra:
                 problems.append(f"<g> carries {', '.join(extra)} — inherited attributes are not applied; "
                                 "put fill/font-size/stroke on each element")
         if tag == "text":
-            for sp in el.iter(f"{NS}tspan"):
-                if any(sp.get(a) for a in ("x", "y", "dx", "dy")):
-                    problems.append(f"<tspan> positions text ({''.join(el.itertext()).strip()!r}) — "
-                                    "one <text> per line instead")
-                    break
             fsz = g("font-size", "")
             if fsz and not re.fullmatch(r"[0-9.]+", fsz):
                 problems.append(f"<text> font-size={fsz!r} — a bare number of px, no unit")
         try:
             if tag == "rect":
-                x, y, w, h = num(g("x")) + ox, num(g("y")) + oy, num(g("width")), num(g("height"))
-                (fill, fa), (stroke, sa) = paint(el, "fill", "#000"), paint(el, "stroke", "none")
-                items.append({"k": "rect", "box": (x, y, w, h), "fill": fill, "fa": fa,
-                              "stroke": stroke, "sa": sa, "sw": num(g("stroke-width"), 1),
-                              "dash": g("stroke-dasharray"), "r": num(g("rx") or g("ry"))})
-                if drop_backdrop and len(items) == 1 and blank_backdrop(items[0], vw, vh):
-                    backdrop.append(True)
+                x, y = number(el, "x") + ox, number(el, "y") + oy
+                w, h = number(el, "width", negative=False), number(el, "height", negative=False)
+                r = number(el, "rx" if g("rx") else "ry", negative=False)
+                (fill, fa), (stroke, sa, sw) = paint(el, "fill", "#000"), stroke_of(el, "none")
+                if w > 0 and h > 0:  # SVG draws no rect of zero width or height
+                    add({"k": "rect", "box": (x, y, w, h), "fill": fill, "fa": fa,
+                         "stroke": stroke, "sa": sa, "sw": sw, "dash": g("stroke-dasharray"), "r": r})
             elif tag == "image":
                 href = g("href") or g(XLINK) or ""
-                x, y = num(g("x")) + ox, num(g("y")) + oy
-                if href.startswith("bundle:group/"):
-                    badges.add((round(x, 2), round(y, 2)))
+                x, y = number(el, "x") + ox, number(el, "y") + oy
+                if g("width") is None or g("height") is None:
+                    problems.append(f"<image> {href[:60]!r} needs width= and height=")
+                w, h = number(el, "width", negative=False), number(el, "height", negative=False)
                 if alpha(g("opacity")) < 1:
                     problems.append(f"<image> {href[:60]!r} has opacity={g('opacity')!r} — icons are "
                                     "converted fully opaque; drop the opacity")
                 key, svg, png = resolve_icon(href)
-                items.append({"k": "image", "box": (x, y, num(g("width")), num(g("height"))),
-                              "key": key, "svg": svg, "png": png,
-                              "name": key.partition("/")[2]})
+                if w > 0 and h > 0:
+                    if shown and href.startswith("bundle:group/"):
+                        badges.add((round(x, 2), round(y, 2)))
+                    add({"k": "image", "box": (x, y, w, h), "key": key, "svg": svg, "png": png,
+                         "name": key.partition("/")[2]})
             elif tag == "text":
-                s = "".join(el.itertext()).strip()
+                s = text_run(el, problems).strip()
                 fill, fa = paint(el, "fill", "#000")
-                if paint(el, "stroke", "none")[0] is not None:
+                x, y = number(el, "x") + ox, number(el, "y") + oy
+                fs = number(el, "font-size", 16) if not fsz or re.fullmatch(r"[0-9.]+", fsz) else 16
+                if stroke_of(el, "none")[0] is not None:
                     problems.append(f"<text> {s!r} has a stroke (text halo) — PowerPoint text has no "
                                     "stroke; put a white mask rect behind the label instead")
-                elif s:
-                    items.append({"k": "text", "s": s, "x": num(g("x")) + ox, "y": num(g("y")) + oy,
-                                  "fs": num(g("font-size"), 16), "fill": fill, "fa": fa,
-                                  "bold": g("font-weight", "normal") in ("bold", "bolder", "600", "700", "800", "900"),
-                                  "anchor": g("text-anchor", "start")})
-                return  # tspans are part of the text run
+                elif s and fs > 0:  # font-size 0 draws nothing
+                    add({"k": "text", "s": s, "x": x, "y": y, "fs": fs, "fill": fill, "fa": fa,
+                         "bold": g("font-weight", "normal") in ("bold", "bolder", "600", "700", "800", "900"),
+                         "anchor": g("text-anchor", "start")})
+                return  # the children are the text run, checked by text_run
             elif tag in ("line", "polyline"):
                 if tag == "line":
-                    pts = [(num(g("x1")), num(g("y1"))), (num(g("x2")), num(g("y2")))]
+                    pts = [(number(el, "x1"), number(el, "y1")), (number(el, "x2"), number(el, "y2"))]
                 else:
                     pts = points(g("points"))
                     if paint(el, "fill", "none")[0] is not None:
                         problems.append("<polyline> with a fill is not supported (use fill=\"none\")")
-                stroke, sa = paint(el, "stroke", "#000")
-                items.append({"k": "path", "pts": [(px + ox, py + oy) for px, py in pts],
-                              "stroke": stroke, "sa": sa, "sw": num(g("stroke-width"), 1),
-                              "dash": g("stroke-dasharray"),
-                              "head": has_marker(el, "marker-start"), "tail": has_marker(el, "marker-end")})
+                stroke, sa, sw = stroke_of(el, "#000")
+                if len(pts) >= 2:  # SVG draws no polyline of fewer than two points
+                    add({"k": "path", "pts": [(px + ox, py + oy) for px, py in pts],
+                         "stroke": stroke, "sa": sa, "sw": sw, "dash": g("stroke-dasharray"),
+                         "head": has_marker(el, "marker-start"), "tail": has_marker(el, "marker-end")})
             elif tag == "circle":
-                cx, cy, r = num(g("cx")) + ox, num(g("cy")) + oy, num(g("r"))
-                (fill, fa), (stroke, sa) = paint(el, "fill", "#000"), paint(el, "stroke", "none")
-                items.append({"k": "oval", "box": (cx - r, cy - r, 2 * r, 2 * r), "fill": fill, "fa": fa,
-                              "stroke": stroke, "sa": sa, "sw": num(g("stroke-width"), 1), "dash": None})
+                cx, cy = number(el, "cx") + ox, number(el, "cy") + oy
+                r = number(el, "r", negative=False)
+                (fill, fa), (stroke, sa, sw) = paint(el, "fill", "#000"), stroke_of(el, "none")
+                if r > 0:
+                    add({"k": "oval", "box": (cx - r, cy - r, 2 * r, 2 * r), "fill": fill, "fa": fa,
+                         "stroke": stroke, "sa": sa, "sw": sw, "dash": g("stroke-dasharray")})
         except ValueError as e:
             problems.append(f"<{tag}>: {e}")
             return
         for child in el:
-            walk(child, ox, oy)
+            walk(child, ox, oy, shown)
 
     walk(svg_root, -vx, -vy)
     for it in items:
@@ -378,17 +490,15 @@ class Deck:
         for old in sp_pr.findall(qn("a:ln")):
             sp_pr.remove(old)
         ln = etree.SubElement(sp_pr, qn("a:ln"))
-        if stroke is None:
+        if stroke is None or sw <= 0:  # SVG draws no stroke of zero width
             etree.SubElement(ln, qn("a:noFill"))
             return
         ln.set("w", str(int(round(self.pt(sw) * 12700))))
         fill = etree.SubElement(ln, qn("a:solidFill"))
         etree.SubElement(fill, qn("a:srgbClr")).set("val", str(stroke))
         self._alpha(fill, a)
-        parts = [num(v) for v in re.split(r"[ ,]+", (dash or "").strip()) if v and v != "none"]
+        parts = dashes(dash)
         if parts:
-            if len(parts) % 2:
-                parts *= 2
             cust = etree.SubElement(ln, qn("a:custDash"))
             for d, s in zip(parts[::2], parts[1::2]):
                 ds = etree.SubElement(cust, qn("a:ds"))
@@ -467,7 +577,8 @@ class Deck:
         p.line_spacing = 1.0
         run = p.add_run()
         run.text = s
-        self._font(run, Pt(self.pt(fs)), it["bold"], it["fill"], it["fa"])
+        # a run's size is 1-4000pt in PowerPoint; build() warns about text under FLOOR_PT
+        self._font(run, Pt(min(4000.0, max(1.0, self.pt(fs)))), it["bold"], it["fill"], it["fa"])
 
     def _font(self, run, size, bold, rgb, a=1.0):
         f = run.font
