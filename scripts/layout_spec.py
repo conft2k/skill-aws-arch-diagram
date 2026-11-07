@@ -22,6 +22,7 @@ from __future__ import annotations
 import difflib
 import functools
 import json
+import math
 import re
 import subprocess
 import sys
@@ -91,10 +92,14 @@ def parse_expr(s: Union[str, int, float], spec: Optional[Spec] = None) -> Expr:
     if isinstance(s, bool):
         raise SpecError([f"expression {s!r}: expected a number or an expression string"])
     if isinstance(s, (int, float)):
+        if not _finite(s):
+            raise SpecError([f"expression {s!r}: expected a finite number"])
         return Expr("num", offset=float(s))
     if not isinstance(s, str):
         raise SpecError([f"expression {s!r}: expected a number or an expression string"])
     if NUM_RE.match(s):
+        if not _finite(float(s)):         # a digit string too long for a float reads as inf
+            raise SpecError([f"expression {s!r}: the number is too large to be a coordinate"])
         return Expr("num", offset=float(s))
 
     def off(m) -> float:
@@ -120,6 +125,8 @@ def parse_expr(s: Union[str, int, float], spec: Optional[Spec] = None) -> Expr:
         else:
             raise SpecError([f"expression {s!r}: expected <number>, <id>.(x0|x1|cx|y0|y1|cy)[±n], "
                              f"<node>.label.<attr>[±n], col.<track>[±n], row.<track>[±n] or gap(<a>,<b>)[±n]"])
+    if not _finite(e.offset):
+        raise SpecError([f"expression {s!r}: the offset is too large to be a coordinate"])
     if spec is not None:
         e = _resolve_expr(e, s, spec)
     return e
@@ -236,15 +243,34 @@ def _pick(v, n: Optional[int]):
     return v[n] if isinstance(v, _PerInst) else v
 
 
-def _num(v) -> bool:
+def _is_number(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _finite(v) -> bool:
+    """A number a float can hold: not NaN, not ±inf (YAML .nan / .inf / -.inf), not an int too big."""
+    try:
+        return math.isfinite(v)
+    except OverflowError:
+        return False
+
+
+def _num(v) -> bool:
+    """A finite number (int or float, not bool): every size, gap, coordinate, offset and width."""
+    return _is_number(v) and _finite(v)
+
+
+def _nf(v) -> str:
+    """The hint added to a rejected number's message when it (or an item of a list) is not finite."""
+    items = v if isinstance(v, (list, tuple)) else [v]
+    return " (not a finite number)" if any(_is_number(x) and not _finite(x) for x in items) else ""
 
 
 def _text(v) -> Optional[str]:
     """A text field: str, or a number written bare in YAML (label: 443)."""
     if isinstance(v, str):
         return v
-    if _num(v):
+    if _is_number(v):
         return str(v)
     return None
 
@@ -344,7 +370,7 @@ class _Loader:
             sp.title = title
         S = d.get("S", K.S_DEFAULT)
         if not _num(S) or S <= 0:
-            self.err("spec", f"S: expected a positive number (icon size, default {K.S_DEFAULT}), got {S!r}")
+            self.err("spec", f"S: expected a positive number (icon size, default {K.S_DEFAULT}), got {S!r}{_nf(S)}")
         else:
             sp.S = float(S) if not float(S).is_integer() else int(S)
         if "font" in d:
@@ -384,7 +410,7 @@ class _Loader:
                 for k in ("min_gap_before", "min_w"):
                     if k in it:
                         if not _num(it[k]) or it[k] < 0:
-                            self.err(loc, f"{k}: expected a number ≥ 0 (px), got {it[k]!r}")
+                            self.err(loc, f"{k}: expected a number ≥ 0 (px), got {it[k]!r}{_nf(it[k])}")
                         else:
                             setattr(t, k, float(it[k]))
                 if "flow" in it:
@@ -394,7 +420,7 @@ class _Loader:
                     elif _num(fl) and fl > 0:
                         t.flow = float(fl)
                     elif fl not in (False, None):
-                        self.err(loc, f"flow: expected a pitch in px (e.g. 160) or true, got {fl!r}")
+                        self.err(loc, f"flow: expected a pitch in px (e.g. 160) or true, got {fl!r}{_nf(fl)}")
                 if "align" in it:
                     al = it["align"]
                     if axis == "row":
@@ -678,13 +704,13 @@ class _Loader:
     @staticmethod
     def c_num(v):
         if not _num(v):
-            raise _Conv(f"expected a number (px), got {v!r}")
+            raise _Conv(f"expected a number (px), got {v!r}{_nf(v)}")
         return float(v)
 
     @staticmethod
     def c_pos(v):
         if not _num(v) or v < 0:
-            raise _Conv(f"expected a number ≥ 0 (px), got {v!r}")
+            raise _Conv(f"expected a number ≥ 0 (px), got {v!r}{_nf(v)}")
         return float(v)
 
     @staticmethod
@@ -802,7 +828,7 @@ class _Loader:
                 if not (isinstance(v, list) and len(v) == 2
                         and all(_num(x) or (isinstance(x, str) and not isinstance(x, bool)) for x in v)):
                     self.err(loc, f"xy: expected [cx, cy], each a number or an expression "
-                                  f"(col.<track>, row.<track>, <id>.<attr>, ±n), got {v!r}")
+                                  f"(col.<track>, row.<track>, <id>.<attr>, ±n), got {v!r}{_nf(v)}")
                 else:
                     # numbers stay absolute; an expression is parsed now and tied to the
                     # solve (layout_solve) once exprs() has checked its reference
@@ -1329,7 +1355,7 @@ class _Loader:
         for k in ("from_offset", "to_offset"):
             if d.get(k) is not None:
                 if not _num(d[k]):
-                    self.err(loc, f"{k}: expected a number (px along the side), got {d[k]!r}")
+                    self.err(loc, f"{k}: expected a number (px along the side), got {d[k]!r}{_nf(d[k])}")
                 else:
                     o[k] = float(d[k])
         if d.get("points") is not None:
@@ -1425,7 +1451,7 @@ class _Loader:
         w = d.get("width")
         if w not in (None, "auto"):
             if not _num(w) or w <= 0:
-                self.err(loc, f"width: expected a pane width in px or auto, got {w!r}")
+                self.err(loc, f"width: expected a pane width in px or auto, got {w!r}{_nf(w)}")
             else:
                 ns.width = float(w)
                 if ns.place not in ("pane", "auto"):
