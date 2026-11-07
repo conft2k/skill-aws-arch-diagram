@@ -45,7 +45,7 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            container border closer than HUG_CLEAR for more than HUG_OVERLAP (read as the
            border): check_layout.line_hugs, the predicate of its LINE HUGS BORDER. B2 a piece
            passes through a group's header band (header_bands: from the box's left edge to
-           the end of its title, top border to the bottom of its badge, title and CIDR line),
+           the end of what its <g> draws — badge, title, CIDR line — top border to their bottom),
            most often between the badge and the title, where check_layout's LINE OVER ICON,
            LINE OVER TEXT and LINE NEAR TEXT do not reach (flowcol/t7-xyref slide: ALB →
            AZ2 EC2 at x=308 between the App subnet's badge and its title). B2 is judged here
@@ -781,28 +781,25 @@ def label_rules(spec, d: Drawn) -> List[Violation]:
 
 def header_bands(d: Drawn) -> List[Tuple[str, BoxT, List[Tuple[str, BoxT]]]]:
     """Each group's header band: [(group id, band, [(what, box)] of its badge, title and
-    CIDR line)]. The band runs from the box's left edge to the right end of those (the badge
-    at the box's top-left corner, the title on its header row — check_layout title_at — and
-    a bare CIDR line under the title), from its top border to their bottom. A group with
-    neither badge nor title has none."""
+    CIDR line)]. The header is what the group's own <g id="group:…"> draws besides its
+    border: the badge image, the bold title and the regular CIDR line (any address family,
+    with or without a title). The band runs from the box's left edge to the right end of
+    those, from its top border to their bottom. A group drawing none has no band."""
     out = []
     for r in d.rects:
-        kind, ref, part = _split(d.owner.get(id(r[4]), ""))
+        gid = d.owner.get(id(r[4]), "")
+        kind, ref, part = _split(gid)
         if kind != "group" or part:
             continue
-        x0, y0 = r[0], r[1]
-        badge = next((i["box"] for i in d.icons if i["badge"] and not i.get("dot")
-                      and i["box"][2] - i["box"][0] > CL.GROUP_BADGE_MIN
-                      and abs(i["box"][0] - x0) <= 1 and abs(i["box"][1] - y0) <= 1), None)
-        title = next((t for t in d.texts if CL.title_at(t, r)), None)
-        marks = ([("badge", badge)] if badge else []) + ([("title", title["box"])] if title else [])
-        if title:
-            marks += [("CIDR line", t["box"]) for t in d.texts if CL.BARE_CIDR.match(t["s"])
-                      and abs(t["box"][0] - title["box"][0]) <= 1 and CL.cidr_below(t["y"] - title["y"])][:1]
+        marks = [("badge", i["box"]) for i in d.icons
+                 if i["badge"] and not i.get("dot") and d.owner.get(id(i["el"])) == gid][:1]
+        texts = [t for t in d.texts if d.owner.get(id(t["el"])) == gid]
+        marks += [("title", t["box"]) for t in texts if t["header"]][:1]
+        marks += [("CIDR line", t["box"]) for t in texts if not t["header"]][:1]
         if not marks:
             continue
-        band = (x0, y0, max(b[2] for _, b in marks), max(b[3] for _, b in marks))
-        out.append((f"group:{ref}", band, marks))
+        band = (r[0], r[1], max(b[2] for _, b in marks), max(b[3] for _, b in marks))
+        out.append((gid, band, marks))
     return out
 
 

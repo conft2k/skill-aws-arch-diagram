@@ -377,6 +377,35 @@ class BorderRules(unittest.TestCase):
         # a box with neither badge nor title has no band
         self.assertEqual(rules.header_bands(rules.Drawn.parse(svg(group("g", 100, 100, 200, 200)))), [])
 
+    def test_b2_cidr_line_any_family_with_or_without_title(self):
+        # the group's own CIDR line (what its <g> draws, not a pattern) is in the band: IPv4,
+        # IPv6, and under no title (a plain box: CIDR at x + 12, baseline y + 34)
+        def vpc(cidr, title=True):
+            t = '<text x="132" y="118" font-size="14" fill="#8C4FFF" font-weight="600">VPC</text>' if title else ""
+            return (f'<g id="group:v"><rect x="100" y="100" width="300" height="200" fill="none" stroke="#8C4FFF" '
+                    f'stroke-width="2"/>{t}<text x="{132 if title else 112}" y="134" font-size="12" '
+                    f'fill="#232F3E">{cidr}</text></g>')
+        for cidr, title in (("10.0.0.0/24", True), ("2001:db8:1::/64", True), ("2001:db8:1::/64", False)):
+            with self.subTest(cidr=cidr, title=title):
+                (_, band, marks), = rules.header_bands(rules.Drawn.parse(svg(vpc(cidr, title))))
+                self.assertIn("CIDR line", dict(marks))
+                self.assertEqual(band[3], 137)              # the CIDR glyph bottom: 134 + 0.25 · 12
+                got = codes(self.run_border(vpc(cidr, title), edge(0, [(90, 136), (420, 136)])), "B2")
+                self.assertEqual([v.owners for v in got], [("edge:0", "group:v")])
+                self.assertEqual(codes(self.run_border(vpc(cidr, title), edge(0, [(90, 138), (420, 138)])), "B2"), [])
+
+    def test_b2_ipv6_cidr_as_the_engine_draws_it(self):
+        # Codex review repro: a line pinned across the VPC's CIDR row (y0 + 32)
+        for cidr in ("2001:db8:1::/64", "10.0.0.0/24"):
+            with self.subTest(cidr=cidr):
+                sp, b = build({"name": "cidr-header", "cols": ["c"], "rows": ["r1", "r2"],
+                               "groups": [{"id": "v", "type": "vpc", "label": "Workload network", "cidr": cidr}],
+                               "nodes": [{"id": "a", "icon": ICON, "label": "EC2", "in": "v", "at": ["c", "r1"]},
+                                         {"id": "b", "icon": ICON, "label": "EC2", "in": "v", "at": ["c", "r2"]}],
+                               "edges": [{"e": "a -- b", "points": [["v.x0+26", "v.y0+32"], ["v.x0+170", "v.y0+32"]]}]})
+                got = [v for v in rules.check(sp, b.geom, b.svg) if v.code == "B2"]
+                self.assertEqual([v.owners for v in got], [("edge:0", "group:v")])
+
 
 def build(path_or_dict, mode=None):
     sp = layout_spec.load(path_or_dict, mode=mode)
