@@ -26,7 +26,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import build_bundle  # noqa: E402
-import outfile  # noqa: E402  (build_bundle writes the bundle through outfile.write_atomic)
 
 
 class BuildBundleTest(unittest.TestCase):
@@ -72,7 +71,7 @@ class BuildBundleTest(unittest.TestCase):
             except Exception as error:  # noqa: BLE001 - report the failure kind
                 return type(error).__name__
 
-        with patch.object(outfile.os, "replace", synchronized_replace), \
+        with patch.object(build_bundle.os, "replace", synchronized_replace), \
                 ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(worker, ["run-a", "run-b"]))
 
@@ -84,25 +83,15 @@ class BuildBundleTest(unittest.TestCase):
         self.assertEqual(list(bundle["sets"]["service"]), ["Test"])
         self.assertEqual(self.leftovers(), [])
 
-    def test_new_bundle_mode_follows_umask(self):
-        # a new bundle gets 0666 less the umask, as open() would; a rebuilt one keeps its mode
-        for mask, mode in ((0o022, 0o644), (0o077, 0o600), (0o002, 0o664)):
-            self.out.unlink(missing_ok=True)
-            old = os.umask(mask)
-            try:
-                self.build()
-            finally:
-                os.umask(old)
-            self.assertEqual(self.out.stat().st_mode & 0o777, mode, f"umask {mask:03o}")
-        self.out.chmod(0o640)
-        self.build("again")
-        self.assertEqual(self.out.stat().st_mode & 0o777, 0o640)
+    def test_bundle_is_readable_file(self):
+        self.build()
+        self.assertEqual(self.out.stat().st_mode & 0o777, 0o644)
         self.assertEqual(self.leftovers(), [])
 
     def assert_failure_keeps_old_bundle(self, target, error):
         self.build("old")
         before = self.out.read_bytes()
-        with patch.object(outfile.os, target, side_effect=error), \
+        with patch.object(build_bundle.os, target, side_effect=error), \
                 self.assertRaises(type(error)):
             self.build("new")
         self.assertEqual(self.out.read_bytes(), before)

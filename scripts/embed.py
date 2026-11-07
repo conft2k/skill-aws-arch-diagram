@@ -22,8 +22,10 @@ only when every icon resolves: refs that don't resolve, image hrefs that point a
 external files or URLs, and refs to the logo-less AWS Cloud outline (the badge
 must carry the AWS logo) are reported instead,
 nothing is written, and the script exits with status 1. A file already at the output
-path is left as it was then, and is replaced only by a complete new file; an output that
-is the input itself (by any path or link) is refused.
+path is left as it was then: the result is built in memory and written only once it is
+complete. An output that is the input itself (by any path or link), or one open() could
+not write (a read-only file, or a new file in a folder that may not be written), is
+refused the same way.
 """
 import base64
 import re
@@ -33,7 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_icons import load_sets  # noqa: E402
-from outfile import same_file, unwritable, write_atomic  # noqa: E402
+from outfile import blocked, same_file, write  # noqa: E402
 
 
 @cache
@@ -156,22 +158,22 @@ def main():
     src, dst = Path(args[0]), Path(args[1])
     if same_file(src, dst):
         sys.exit(f"Nothing written: the output {dst} is the input {src}; name a different output.")
-    if unwritable([dst]):
-        sys.exit(f"Nothing written: the output {dst} exists and is not writable; "
+    for path, why in blocked([dst]):
+        sys.exit(f"Nothing written: the output {path} {why}; "
                  "make it writable or name a different output.")
     if reverse:
         out, n, report = unembed(src.read_text(encoding="utf-8"))
         if report:
             print("\n".join(report))
             sys.exit(f"Nothing written to {dst}.")
-        write_atomic(dst, out)
+        write(dst, out)
         print(f"Restored {n} bundle: ref(s) -> {dst}")
         return
     out, embedded, report = embed(src.read_text(encoding="utf-8"))
     if report:
         print("\n".join(report))
         sys.exit(f"Nothing written to {dst}; fix the refs above and re-run.")
-    write_atomic(dst, out)  # a file already at dst stays as it was until the new one is complete
+    write(dst, out)
     print(f"Embedded {embedded} icon(s) -> {dst}")
 
 

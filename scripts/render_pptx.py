@@ -10,8 +10,13 @@ PowerPoint: text is drawn with the first installed Korean font (Noto Sans CJK KR
 Pretendard) at the box position PowerPoint uses for a single line, so expect small
 differences in text width against the real typeface. Use it to catch conversion
 problems; open the deck in PowerPoint or Keynote for the final look.
+
+Every slide is rendered in memory and every PNG path checked before the first is written:
+a path open() could not write (a read-only file, a new file in a folder that may not be
+written) is named, nothing is written and the script exits with status 1.
 """
 import base64
+import io
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +25,7 @@ from xml.sax.saxutils import escape
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import macos_cairo  # noqa: E402,F401  (before cairosvg: finds Homebrew cairo on Apple Silicon)
 import cairosvg  # noqa: E402
+from outfile import blocked, write  # noqa: E402
 from pptx import Presentation
 from pptx.oxml.ns import qn
 
@@ -205,27 +211,37 @@ class Renderer:
                 f'<rect width="{sw}" height="{sh}" fill="#FFFFFF"/>{"".join(self.out)}</svg>')
 
 
-def render(deck, stem):
-    """Render every slide of `deck` to <stem>-1.png, <stem>-2.png, ...; return the paths."""
-    prs = Presentation(str(deck))
-    stem = Path(stem)
+def pngs(deck):
+    """Each slide of `deck` (a .pptx path, or its bytes) rendered to PNG bytes, in order."""
+    prs = Presentation(io.BytesIO(deck) if isinstance(deck, bytes) else str(deck))
     font = preview_font()
     sw, sh = prs.slide_width, prs.slide_height
-    outs = []
-    for i, slide in enumerate(prs.slides, 1):
+    images = []
+    for slide in prs.slides:
         r = Renderer(slide, font)
         r.walk(slide.shapes, lambda x, y, w, h: (x, y, w, h))
-        out = stem.with_name(f"{stem.name}-{i}.png")
-        cairosvg.svg2png(bytestring=r.svg(sw, sh).encode("utf-8"), write_to=str(out), output_width=2000)
-        outs.append(out)
-    return outs
+        images.append(cairosvg.svg2png(bytestring=r.svg(sw, sh).encode("utf-8"), output_width=2000))
+    return images
+
+
+def preview_paths(stem, n):
+    """<stem>-1.png, <stem>-2.png, ... <stem>-<n>.png."""
+    stem = Path(stem)
+    return [stem.with_name(f"{stem.name}-{i}.png") for i in range(1, n + 1)]
 
 
 def main():
     if len(sys.argv) != 3:
         print(__doc__)
         sys.exit(1)
-    for out in render(sys.argv[1], sys.argv[2]):
+    images = pngs(sys.argv[1])
+    outs = preview_paths(sys.argv[2], len(images))
+    refused = blocked(outs)
+    if refused:
+        print("\n".join(f"{path} {why}" for path, why in refused))
+        sys.exit("Nothing written; make the file(s) writable or name a different stem.")
+    for out, image in zip(outs, images):
+        write(out, image)
         print(out)
 
 

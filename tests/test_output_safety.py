@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Tests that the converters run on their own (embed.py, svg2pptx.py) never lose a file:
-a failed run leaves a file already at the output path as it was, an output that is the input
-itself (by path, symlink or hard link) is refused, a result replaces the old file only once
-complete, and the output's directory is created once the input has passed.
+"""Tests that the converters run on their own (embed.py, svg2pptx.py, render_pptx.py) never
+lose a file: a failed run leaves a file already at the output path as it was, an output that
+is the input itself (by path, symlink or hard link) is refused, a result is written only once
+complete, the output's directory is created once the input has passed, and the write is a
+plain open(): umask, mode, read-only folders and long names behave as open() does.
 
     uv run --no-project --with python-pptx --with cairosvg python3 tests/test_output_safety.py
 """
@@ -160,6 +161,32 @@ class EmbedKeepsFiles(Work):
         self.assertEqual(self.leftovers(), [])
 
 
+    @unittest.skipIf(IS_ROOT, "root may write in a read-only folder")
+    def test_writable_output_in_a_read_only_folder(self):
+        # the review's repro: main rewrote it in place, a temp file beside it was refused
+        src = self.file("draft.svg", GOOD)
+        dst = self.file("locked/final.svg", "old")
+        dst.chmod(0o640)
+        dst.parent.chmod(0o555)
+        self.addCleanup(dst.parent.chmod, 0o755)
+        r = run("embed.py", src, dst)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(dst.read_text(encoding="utf-8"), GOOD)
+        self.assertEqual(dst.stat().st_mode & 0o777, 0o640)
+        r = run("embed.py", src, dst.parent / "new.svg")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("not writable", r.stderr)
+        self.assertEqual(sorted(p.name for p in dst.parent.iterdir()), ["final.svg"])
+
+    def test_long_output_name(self):
+        # the review's repro: ENAMETOOLONG from the temp file's longer name
+        src = self.file("draft.svg", GOOD)
+        dst = self.work / ("b" * 245 + ".svg")
+        r = run("embed.py", src, dst)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(dst.read_text(encoding="utf-8"), GOOD)
+
+
 @unittest.skipUnless(HAS_PPTX, "needs python-pptx and cairosvg")
 class DeckKeepsFiles(Work):
     def build(self, svgs, out):
@@ -235,6 +262,48 @@ class DeckKeepsFiles(Work):
         self.assertTrue(link.is_symlink())
         self.assertEqual(self.leftovers(deck.parent), [])
 
+    @unittest.skipIf(IS_ROOT, "root may write in a read-only folder")
+    def test_cli_writable_deck_in_a_read_only_folder(self):
+        # the review's repro: main rewrote it in place, a temp file beside it was refused
+        src = self.file("draft.svg", GOOD)
+        deck = self.file("locked/deck.pptx", "previous deck")
+        deck.chmod(0o640)
+        deck.parent.chmod(0o555)
+        self.addCleanup(deck.parent.chmod, 0o755)
+        r = run("svg2pptx.py", src, "-o", deck)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(deck.read_bytes().startswith(b"PK"))
+        self.assertEqual(deck.stat().st_mode & 0o777, 0o640)
+        ok, log = self.build([src], deck.parent / "new.pptx")
+        self.assertFalse(ok)
+        self.assertIn("not writable", log)
+        self.assertEqual(sorted(p.name for p in deck.parent.iterdir()), ["deck.pptx"])
+
+    def test_cli_long_deck_name(self):
+        src = self.file("draft.svg", GOOD)
+        deck = self.work / ("b" * 245 + ".pptx")
+        r = run("svg2pptx.py", src, "-o", deck)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(deck.read_bytes().startswith(b"PK"))
+
+    @unittest.skipIf(IS_ROOT, "root may write a read-only file")
+    def test_preview_writes_nothing_when_one_slide_is_refused(self):
+        src = self.file("draft.svg", GOOD)
+        deck = self.work / "deck.pptx"
+        self.assertTrue(self.build([src, src], deck)[0])
+        locked = self.file("preview-2.png", "old")
+        locked.chmod(0o444)
+        r = run("render_pptx.py", deck, self.work / "preview")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("not writable", r.stdout)
+        self.assertFalse((self.work / "preview-1.png").exists())
+        self.assertEqual(locked.read_text(encoding="utf-8"), "old")
+        locked.chmod(0o644)
+        r = run("render_pptx.py", deck, self.work / "new" / "preview")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sorted(p.name for p in (self.work / "new").iterdir()),
+                         ["preview-1.png", "preview-2.png"])
+
     def test_cli_failure_makes_no_folder(self):
         src = self.file("draft.svg", BAD_SHAPE)
         r = run("svg2pptx.py", src, "-o", self.work / "new" / "deck.pptx")
@@ -250,20 +319,12 @@ class DeckKeepsFiles(Work):
         self.assertEqual(self.leftovers(), [])
 
 
-class WriteAtomic(Work):
-    def test_failed_write_keeps_the_old_file(self):
-        out = self.file("out.svg", "old")
-        with patch.object(outfile.os, "fsync", side_effect=OSError(28, "No space left on device")), \
-                self.assertRaises(OSError):
-            outfile.write_atomic(out, "new")
-        self.assertEqual(out.read_text(encoding="utf-8"), "old")
-        self.assertEqual(self.leftovers(), [])
-
-    def test_symlinked_output_replaces_its_target(self):
+class Outfile(Work):
+    def test_symlinked_output_writes_its_target(self):
         target = self.file("real/out.svg", "old")
         link = self.work / "out.svg"
         link.symlink_to(target)
-        outfile.write_atomic(link, b"new")
+        outfile.write(link, b"new")
         self.assertTrue(link.is_symlink())
         self.assertEqual(target.read_text(encoding="utf-8"), "new")
 
@@ -271,37 +332,86 @@ class WriteAtomic(Work):
         out = self.file("out.svg", "old")
         out.chmod(0o640)
         with umask_set(0o077):
-            outfile.write_atomic(out, "new")
-        self.assertEqual(out.stat().st_mode & 0o777, 0o640)  # a replaced file keeps its mode
+            outfile.write(out, "new")
+        self.assertEqual(out.stat().st_mode & 0o777, 0o640)  # a rewritten file keeps its mode
         for mask, mode in ((0o022, 0o644), (0o077, 0o600), (0o002, 0o664)):
             fresh = self.work / f"fresh-{mask:03o}.svg"
             with umask_set(mask):
-                outfile.write_atomic(fresh, "new")
+                outfile.write(fresh, "new")
             self.assertEqual(fresh.stat().st_mode & 0o777, mode, f"umask {mask:03o}")
 
-    def test_current_umask_leaves_the_umask_as_it_was(self):
-        for mask in (0o077, 0o002):
-            with umask_set(mask):
-                self.assertEqual(outfile.current_umask(), mask)
-                # without /proc (macOS, BSD) the umask is read by setting and restoring it
-                with patch.object(outfile, "open", side_effect=OSError, create=True):
-                    self.assertEqual(outfile.current_umask(), mask)
-                self.assertEqual(os.umask(mask), mask)
+    def test_hard_linked_output_is_written_in_place(self):
+        # as open() does: both names keep naming one file, now holding the new bytes
+        out = self.file("out.svg", "old")
+        os.link(out, self.work / "other.svg")
+        outfile.write(out, "new")
+        self.assertTrue(outfile.same_file(out, self.work / "other.svg"))
+        self.assertEqual((self.work / "other.svg").read_text(encoding="utf-8"), "new")
+
+    def test_umask_is_never_changed(self):
+        # the review's repro: without /proc the umask was read by setting it to 077 and back,
+        # so a file another thread created in that instant came out 0600 instead of 0664
+        with patch.object(os, "umask", side_effect=AssertionError("umask changed")), \
+                patch("builtins.open", wraps=open) as opened:
+            outfile.write(self.work / "new.svg", "new")
+            outfile.write(self.work / "new.svg", "again")
+            outfile.blocked([self.work / "new.svg", self.work / "missing" / "x.svg"])
+        self.assertNotIn("/proc/self/status", [str(c.args[0]) for c in opened.call_args_list])
+        self.assertEqual((self.work / "new.svg").read_text(encoding="utf-8"), "again")
+
+    def test_long_name(self):
+        # the review's repro: a 249-byte name failed as its temp file's name was too long
+        out = self.work / ("b" * 245 + ".svg")
+        self.assertEqual(outfile.blocked([out]), [])
+        outfile.write(out, "new")
+        self.assertEqual(out.read_text(encoding="utf-8"), "new")
+        self.assertEqual(sorted(p.name for p in self.work.iterdir()), [out.name])
+
+    def test_new_folders_are_made(self):
+        out = self.work / "a" / "b" / "out.svg"
+        self.assertEqual(outfile.blocked([out]), [])
+        outfile.write(out, b"new")
+        self.assertEqual(out.read_bytes(), b"new")
+
+    def test_blocked_names_what_open_could_not_write(self):
+        flat = self.file("flat", "a file, not a folder")
+        (self.work / "dir.svg").mkdir()
+        found = dict(outfile.blocked([self.work / "ok.svg", self.work / "dir.svg",
+                                      flat / "x.svg", flat / "deeper" / "x.svg"]))
+        self.assertEqual(set(found), {self.work / "dir.svg", flat / "x.svg",
+                                      flat / "deeper" / "x.svg"})
+        self.assertIn("is a folder", found[self.work / "dir.svg"])
+        self.assertIn("is not a folder", found[flat / "x.svg"])
 
     @unittest.skipIf(IS_ROOT, "root may write a read-only file")
-    def test_read_only_output_is_refused_before_a_temp_file(self):
+    def test_read_only_output_is_blocked(self):
         out = self.file("out.svg", "old")
         out.chmod(0o444)
         link = self.work / "link.svg"
         link.symlink_to(out)
-        for path in (out, link):
-            with patch.object(outfile.tempfile, "mkstemp") as mkstemp, \
-                    self.assertRaises(PermissionError):
-                outfile.write_atomic(path, "new")
-            mkstemp.assert_not_called()
-            self.assertEqual(out.read_text(encoding="utf-8"), "old")
-        self.assertTrue(link.is_symlink())
-        self.assertEqual(outfile.unwritable([out, link, self.work / "missing.svg"]), [out, link])
+        found = outfile.blocked([out, link, self.work / "missing.svg"])
+        self.assertEqual([p for p, _ in found], [out, link])
+        self.assertTrue(all("not writable" in why for _, why in found))
+
+    @unittest.skipIf(IS_ROOT, "root may write in a read-only folder")
+    def test_read_only_folder(self):
+        # the review's repro: a writable file in a 0555 folder is writable to open(), and
+        # must stay so; only a new file there is refused
+        folder = self.work / "locked"
+        old = self.file("locked/out.svg", "old")
+        old.chmod(0o640)
+        folder.chmod(0o555)
+        self.addCleanup(folder.chmod, 0o755)
+        new = folder / "new.svg"
+        dangling = self.work / "dangling.svg"
+        dangling.symlink_to(folder / "target.svg")
+        found = dict(outfile.blocked([old, new, folder / "sub" / "x.svg", dangling]))
+        self.assertEqual(set(found), {new, folder / "sub" / "x.svg", dangling})
+        self.assertTrue(all("not writable" in why for why in found.values()))
+        outfile.write(old, "new")
+        self.assertEqual(old.read_text(encoding="utf-8"), "new")
+        self.assertEqual(old.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["out.svg"])
 
     def test_same_file(self):
         a = self.file("a.svg", "x")

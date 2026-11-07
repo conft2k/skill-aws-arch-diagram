@@ -53,7 +53,7 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
 from embed import icon_sets  # noqa: E402,F401  (one cached load shared with embed.py)
-from outfile import same_file, unwritable, write_atomic  # noqa: E402
+from outfile import blocked, same_file, write  # noqa: E402
 
 
 @cache
@@ -523,23 +523,12 @@ class Deck:
         self._font(run, Pt(24), True, RGBColor(0x23, 0x2F, 0x3E))
 
 
-def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
-    """Convert layout SVGs into a deck at `out`; return False (writing nothing) on a bad SVG.
-    A file already at `out` is left as it was on failure and replaced only by the complete
-    deck; `out` naming one of the SVGs (by any path or link), or an existing `out` that may
-    not be written, is refused. `out`'s directory
-    is created once every SVG has passed."""
+def convert(svgs, titles, font="Arial", ea_font="Malgun Gothic"):
+    """(.pptx bytes, summary) for the deck made from layout SVGs, built in memory with
+    nothing written; None (the problems printed) on a bad SVG."""
     if len(titles) > len(svgs):
         print("more --title values than SVGs")
-        return False
-    inputs = [path for path in svgs if same_file(path, out)]
-    if inputs:
-        print(f"Nothing written: the deck {out} is the input {inputs[0]}; name a different output.")
-        return False
-    if unwritable([out]):
-        print(f"Nothing written: the deck {out} exists and is not writable; "
-              "make it writable or name a different output.")
-        return False
+        return None
     parsed, failed = [], False
     for path in svgs:
         view, items, problems = collect(ET.parse(path).getroot())
@@ -550,8 +539,7 @@ def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
                 print(f"  {p}")
         parsed.append((view, items))
     if failed:
-        print(f"Nothing written to {out}; fix the SVG(s) above and re-run.")
-        return False
+        return None
 
     deck = Deck(font, ea_font)
     deck.prs.core_properties.title = titles[0] if titles else ""
@@ -566,9 +554,31 @@ def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
                   f"tighten or split it; keep {FLOOR_PT}-{MIN_PT}pt only if unavoidable and tell the user")
     buf = io.BytesIO()
     deck.prs.save(buf)
-    write_atomic(out, buf.getvalue())  # a deck already at `out` stays until this one is complete
     icons = sum(1 for _, items in parsed for it in items if it["k"] == "image")
-    print(f"Wrote {len(parsed)} slide(s), {icons} icon(s) ({len(deck.svg_parts)} distinct SVGs) -> {out}")
+    return buf.getvalue(), f"{len(parsed)} slide(s), {icons} icon(s) ({len(deck.svg_parts)} distinct SVGs)"
+
+
+def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
+    """Convert layout SVGs into a deck at `out`; return False (writing nothing) on a bad SVG.
+    The deck is built in memory and written only once complete, so a file already at `out`
+    is left as it was on failure. `out` naming one of the SVGs (by any path or link), or a
+    path open() could not write (a read-only file, a new file in a folder that may not be
+    written), is refused. `out`'s directory is created once every SVG has passed."""
+    inputs = [path for path in svgs if same_file(path, out)]
+    if inputs:
+        print(f"Nothing written: the deck {out} is the input {inputs[0]}; name a different output.")
+        return False
+    for path, why in blocked([out]):
+        print(f"Nothing written: the deck {path} {why}; "
+              "make it writable or name a different output.")
+        return False
+    deck = convert(svgs, titles, font, ea_font)
+    if deck is None:
+        print(f"Nothing written to {out}; fix the SVG(s) above and re-run.")
+        return False
+    data, summary = deck
+    write(out, data)
+    print(f"Wrote {summary} -> {out}")
     return True
 
 

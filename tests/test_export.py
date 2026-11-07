@@ -4,6 +4,7 @@
     uv run --no-project --with python-pptx --with cairosvg python3 tests/test_export.py
 """
 import importlib.util
+import io
 import os
 import subprocess
 import sys
@@ -11,7 +12,9 @@ import tempfile
 import unicodedata
 import unittest
 import xml.etree.ElementTree as ET
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPORT = ROOT / "scripts" / "export.py"
@@ -332,6 +335,9 @@ class OutputPermissions(unittest.TestCase):
         self.work = Path(self._tmp.name)
         self.out = self.work / "out"
 
+    def written(self):
+        return sorted(p.name for p in self.out.iterdir()) if self.out.exists() else []
+
     def test_new_outputs_follow_umask(self):
         # the review's repro: under umask 077 every output came out 0644, not 0600
         a = draft(self.work / "a.draft.svg", "#FF0000")
@@ -376,6 +382,75 @@ class OutputPermissions(unittest.TestCase):
         self.assertTrue(link.is_symlink())
         self.assertFalse(self.out.exists())
         self.assertEqual(sorted(p.name for p in target.parent.iterdir()), ["deck.pptx"])
+
+
+    @unittest.skipIf(IS_ROOT, "root may write in a read-only folder")
+    def test_writable_outputs_in_read_only_folders(self):
+        # the review's repro: main wrote every output; the temp file + rename wrote the SVG
+        # and PNG, then failed on the deck's temp file in its 0555 folder
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        locked = self.work / "locked"
+        locked.mkdir()
+        deck = locked / "deck.pptx"
+        deck.write_bytes(b"previous deck")
+        deck.chmod(0o640)
+        self.out.mkdir()
+        for name in ("a.svg", "a.png", "deck-1.png"):
+            (self.out / name).write_bytes(b"old")
+        os.replace(self.out / "deck-1.png", locked / "deck-1.png")
+        for folder in (locked, self.out):
+            folder.chmod(0o555)
+            self.addCleanup(folder.chmod, 0o755)
+        r = export(a, "--svg", "--png", "--out-dir", self.out, "--pptx", deck, "--preview")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(ET.parse(self.out / "a.svg").getroot()[0].get("fill"), "#FF0000")
+        self.assertTrue((self.out / "a.png").read_bytes().startswith(b"\x89PNG"))
+        self.assertTrue((locked / "deck-1.png").read_bytes().startswith(b"\x89PNG"))
+        self.assertTrue(deck.read_bytes().startswith(b"PK"))
+        self.assertEqual(deck.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(sorted(p.name for p in locked.iterdir()), ["deck-1.png", "deck.pptx"])
+
+    @unittest.skipIf(IS_ROOT, "root may write in a read-only folder")
+    def test_new_output_in_a_read_only_folder_stops_every_write(self):
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        locked = self.work / "locked"
+        locked.mkdir()
+        locked.chmod(0o555)
+        self.addCleanup(locked.chmod, 0o755)
+        r = export(a, "--svg", "--png", "--out-dir", self.out, "--pptx", locked / "deck.pptx")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("not writable", r.stdout)
+        self.assertIn(str(locked / "deck.pptx"), r.stdout)
+        self.assertFalse(self.out.exists())
+        self.assertEqual(list(locked.iterdir()), [])
+
+    def test_long_names(self):
+        # the review's repro: names open() accepts failed with ENAMETOOLONG on the temp file
+        a = draft(self.work / ("a" * 240 + ".draft.svg"), "#FF0000")
+        deck = self.out / ("b" * 245 + ".pptx")
+        r = export(a, "--svg", "--png", "--out-dir", self.out, "--pptx", deck, "--preview")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.written(), sorted(["a" * 240 + ".png", "a" * 240 + ".svg",
+                                                 "b" * 245 + "-1.png", deck.name]))
+        self.assertTrue(all(p.stat().st_size > 0 for p in self.out.iterdir()))
+
+    def test_failed_conversion_writes_nothing(self):
+        # every result is built before the first write: a deck or preview that fails to
+        # convert leaves no SVG or PNG behind, and the existing files as they were
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import export as export_module
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        self.out.mkdir()
+        (self.out / "a.svg").write_bytes(b"old")
+        argv = ["export.py", str(a), "--svg", "--png", "--out-dir", str(self.out),
+                "--pptx", str(self.out / "deck.pptx"), "--preview"]
+        for target in ("svg2pptx.convert", "render_pptx.pngs"):
+            with self.subTest(target), patch.object(sys, "argv", argv), \
+                    patch(f"export.{target}", side_effect=RuntimeError("conversion failed")), \
+                    redirect_stdout(io.StringIO()), self.assertRaises(RuntimeError):
+                export_module.main()
+            self.assertEqual(self.written(), ["a.svg"])
+            self.assertEqual((self.out / "a.svg").read_bytes(), b"old")
 
 
 class DraftProblems(unittest.TestCase):

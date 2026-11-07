@@ -176,8 +176,8 @@ scripts/check_layout.py      flag lines over labels/icons, label overlap and spa
 scripts/fetch_icons.py       download the pinned AWS icon package and build icons.json
 scripts/build_bundle.py      pack an extracted icon package into icons.json
 scripts/macos_cairo.py       let cairosvg find Homebrew's cairo on Apple Silicon
-scripts/outfile.py           write outputs through a temp file renamed in when complete;
-                             refuse an output that is the input or a read-only file
+scripts/outfile.py           write outputs with a plain open() once every result is built;
+                             refuse an output that is the input or one open() could not write
 ```
 
 ### Drawing a new diagram with the layout engine

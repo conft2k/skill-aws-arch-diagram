@@ -18,17 +18,18 @@ arch.svg, all -> <out-dir>/arch.svg), a slide preview would land on a draft's PN
 output would overwrite one of the drafts, the script names the clash, writes nothing and
 exits with status 1. Names that differ only in case (Arch.svg, arch.svg) or in Unicode
 normalisation (NFC or NFD Korean) count as the same file, as they are on macOS (and, for
-case, on Windows); the same draft given twice, by any path or link, is not a clash. An
-output that already exists but may not be written (chmod 444, or a link to such a file)
-is named the same way and nothing is written. These
-checks need no icons: the official icon bundle is loaded (and downloaded on first use)
-only when the drafts are checked. Every draft is checked next — icon refs (embed.py) and
-the shared draft subset (svg2pptx.py) — whatever formats are asked for, so one draft
-always works for all of them. If any draft fails, nothing is
-written and the script exits with status 1. Two outputs that already exist as one file
-under two names (hard links) are one output too. --out-dir and the deck's directory are
-created only once every check has passed, and each output replaces a file already there
-only when it is complete.
+case, on Windows); the same draft given twice, by any path or link, is not a clash. Two
+outputs that already exist as one file under two names (hard links) are one output too.
+An output open() could not write — an existing file that may not be written (chmod 444,
+or a link to one), or a new file whose folder may not be written — is named the same way
+and nothing is written; an existing file that may be written is fine even in a read-only
+folder. These checks need no icons: the official icon bundle is loaded (and downloaded on
+first use) only when the drafts are checked. Every draft is checked next — icon refs
+(embed.py) and the shared draft subset (svg2pptx.py) — whatever formats are asked for, so
+one draft always works for all of them. If any draft fails, nothing is written and the
+script exits with status 1. Every result (SVG text, PNG, the deck, its previews) is then
+built in memory, and only once all of them are complete is any file written, each with
+a plain open(); --out-dir and the deck's directory are created at that point.
 """
 import argparse
 import os
@@ -43,7 +44,7 @@ import cairosvg  # noqa: E402
 import embed  # noqa: E402
 import render_pptx  # noqa: E402
 import svg2pptx  # noqa: E402
-from outfile import unwritable, write_atomic  # noqa: E402
+from outfile import blocked, write  # noqa: E402
 
 
 def stem(path: Path) -> str:
@@ -90,9 +91,8 @@ def planned_outputs(drafts, svg, png, out_dir, pptx, preview):
     if pptx:
         plan.append((pptx, "deck", "--pptx"))
         if preview:
-            base = pptx.with_suffix("")
-            plan += [(base.with_name(f"{base.name}-{i}.png"), f"slide {i}", f"--preview slide {i}")
-                     for i in range(1, len(drafts) + 1)]
+            plan += [(out, f"slide {i}", f"--preview slide {i}") for i, out in
+                     enumerate(render_pptx.preview_paths(pptx.with_suffix(""), len(drafts)), 1)]
     return plan
 
 
@@ -165,10 +165,10 @@ def main():
         print("Output name clash:")
         print("\n".join(f"  {p}" for p in problems))
         sys.exit("Nothing written; rename a draft or the deck, or use a separate --out-dir.")
-    locked = unwritable(dict.fromkeys(out for out, _, _ in plan))
-    if locked:
-        print("Output not writable (it exists and may not be written):")
-        print("\n".join(f"  {p}" for p in locked))
+    refused = blocked(dict.fromkeys(out for out, _, _ in plan))
+    if refused:
+        print("Output not writable:")
+        print("\n".join(f"  {path} {why}" for path, why in refused))
         sys.exit("Nothing written; make the file(s) writable or write somewhere else.")
 
     embedded, failed = {}, False
@@ -184,24 +184,31 @@ def main():
     if failed:
         sys.exit("Nothing written; fix the draft(s) above and re-run.")
 
-    # every write creates its file's directory (--out-dir, the deck's) and replaces a file
-    # already there only with the complete new one
+    # build every result in memory, so a conversion that fails writes nothing at all
+    results = []  # [(path, bytes or str, line printed once written)] in writing order
     for d in a.drafts:
-        svg_text = embedded[d]
         if a.svg:
             out = a.out_dir / f"{stem(d)}.svg"
-            write_atomic(out, svg_text)
-            print(out)
+            results.append((out, embedded[d], out))
         if a.png:
             out = a.out_dir / f"{stem(d)}.png"
-            write_atomic(out, cairosvg.svg2png(bytestring=svg_text.encode("utf-8"), output_width=a.png_width))
-            print(out)
+            png = cairosvg.svg2png(bytestring=embedded[d].encode("utf-8"), output_width=a.png_width)
+            results.append((out, png, out))
     if a.pptx:
-        if not svg2pptx.build(a.drafts, a.title, a.pptx, a.font, a.ea_font):
-            sys.exit(1)
+        deck = svg2pptx.convert(a.drafts, a.title, a.font, a.ea_font)
+        if deck is None:
+            sys.exit("Nothing written; fix the draft(s) above and re-run.")
+        data, summary = deck
+        results.append((a.pptx, data, f"Wrote {summary} -> {a.pptx}"))
         if a.preview:
-            for out in render_pptx.render(a.pptx, a.pptx.with_suffix("")):
-                print(out)
+            images = render_pptx.pngs(data)
+            outs = render_pptx.preview_paths(a.pptx.with_suffix(""), len(images))
+            results += [(out, image, out) for out, image in zip(outs, images)]
+
+    # each write creates its file's directory (--out-dir, the deck's)
+    for out, data, line in results:
+        write(out, data)
+        print(line)
 
 
 if __name__ == "__main__":
