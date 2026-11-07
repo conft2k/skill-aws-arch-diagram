@@ -20,10 +20,18 @@ full JSON report to --out (default <system temp dir>/corpus-report.json).
 With --baseline and --baseline-drafts, also print and save `comparison`: each matching
 case and mode's verdict (better / same / worse), byte-changed drafts, check problem code
 and per-rule violation deltas (current minus baseline), and wall / summed runtime ratios.
-Verdicts reuse scripts/rules.py's score order. Added runs and checker failures are
-explicitly un-compared. Filters compare only the selected runs; the summed ratio uses
+Verdicts reuse scripts/rules.py's score order, with effective text shortfall recomputed
+from both drafts without rounding. Tier-0 costs in old reports retain their recorded
+precision (the standard hook rounded them to 0.01); `comparison.precision` states this
+limit. A new drawn run records `rule_checked`, distinguishing an empty verdict from a
+checker that never ran. In legacy reports, any recorded violation proves the old runner
+used a checker on all drawn runs; an entirely empty legacy report is unjudged.
+Missing or failed checker results are unjudged, with no rule deltas. Expected load /
+reject / refuse behaviour is compared before drawing scores. Added runs are explicitly
+un-compared. Filters compare only the selected runs; the summed ratio uses
 matching runs, and the wall ratio is unavailable when the run sets differ. No baseline
-leaves the existing report and exit status unchanged.
+keeps the existing summary and exit status; drawn records additionally identify whether
+a rule checker ran.
 
 An entry's `expect` (one value, or a map mode → value) says what each run must end in:
 `load` — the spec loads and a draft is drawn; `reject` — layout_spec refuses the spec at load;
@@ -349,6 +357,7 @@ def _run_one(entry: Dict[str, Any], mode: str, out_dir: str, rec: Dict[str, Any]
             rec["rounds"] = int(l.split()[1])
     if RULE_CHECKERS:
         rec["violations"] = rule_violations(spec, b, draft.read_bytes(), copy.deepcopy(rec))
+    rec["rule_checked"] = bool(RULE_CHECKERS)
     return rec
 
 
@@ -429,28 +438,36 @@ def _run_index(report: Dict[str, Any]) -> Dict[tuple, Dict[str, Any]]:
     return out
 
 
-def _verdict(run: Dict[str, Any]) -> Optional[list]:
-    """Reuse the checker's ordering, including for reports written before comparison."""
+def _rules_judged(run: Dict[str, Any], legacy_checked: bool) -> bool:
+    return bool(run.get("rule_checked", legacy_checked)) and not any(
+        v["rule"] == "checker-error" for v in run["violations"])
+
+
+def _verdict(run: Dict[str, Any], draft: Optional[bytes], judged: bool) -> Optional[list]:
+    """Reuse the ordering; recover precise fit from the draft, including old baselines."""
     import rules
-    if run["result"] != "drawn" or any(v["rule"] == "checker-error" for v in run["violations"]):
+    if run["result"] != "drawn" or not judged:
         return None
     viol = [
         rules.Violation(v["rule"], (), v.get("msg", ""), v.get("cost", 1),
                         v.get("tier", rules.TIER_FIT if v["rule"] == "R-fit" else rules.TIER_HARD))
-        for v in run["violations"]
+        for v in run["violations"] if v["rule"] != "R-fit"
     ]
-    # A run without a rule hook still records effective text size. With a hook, keep
-    # the recorded R-fit cost so rounding matches the historical baseline.
-    text = run.get("text") or {}
-    if not any(v.rule == "R-fit" for v in viol) and text.get("actual") is not None:
-        short = max(0, text["target"] - text["actual"])
-        viol.append(rules.Violation("R-fit", (), "", short, rules.TIER_FIT))
-    w, h = run["canvas"]
+    spec = SimpleNamespace(mode="document" if run["mode"] == "document" else "slide",
+                           title=run.get("title", run["mode"] != "slide-no-title"))
+    (actual, _, target, _), smallest, canvas = layout.drawn_text(spec, draft)
+    short = max(0, target - actual) if smallest else 0
+    viol.append(rules.Violation("R-fit", (), "", short, rules.TIER_FIT))
+    w, h = canvas if smallest else run["canvas"]
     geom = SimpleNamespace(canvas_w=w, canvas_h=h)
     misses = run.get("shape_misses")
     if misses is None:
         misses = layout.shape_misses(SimpleNamespace(warnings=run["warnings"]))
-    return list(rules.score(viol, run["codes"], geom, None, misses))
+    score = list(rules.score(viol, run["codes"], geom, None, misses))
+    # score() rounds fit to three decimals for engine selection. Corpus comparison
+    # retains the draft's full precision so even smaller shortfalls precede area.
+    score[3] = short
+    return score
 
 
 def _deltas(current: Counter, baseline: Counter) -> dict:
@@ -474,23 +491,43 @@ def compare_reports(current: Dict[str, Any], baseline: Dict[str, Any],
     """Compare saved results and drafts without drawing again; inputs stay unchanged."""
     now, before = _run_index(current), _run_index(baseline)
     matched = now.keys() & before.keys()
-    counts = dict.fromkeys(("better", "same", "worse", "uncompared"), 0)
+    counts = dict.fromkeys(("better", "same", "worse", "uncompared", "unjudged"), 0)
+    # Old run records lack rule_checked. Their runner used the same hook for every
+    # drawn run, so a nonempty result anywhere proves that the hook was enabled.
+    legacy_now = any(r["violations"] for r in now.values() if r["result"] == "drawn")
+    legacy_before = any(r["violations"] for r in before.values() if r["result"] == "drawn")
     rows, changed, added = [], [], []
     current_codes, baseline_codes = Counter(), Counter()
     current_rules, baseline_rules = Counter(dict.fromkeys(CHECKED, 0)), Counter(dict.fromkeys(CHECKED, 0))
     for key, r in now.items():
         identity = {"path": key[0], "mode": key[1]}
         b = before.get(key)
+        current_bytes = _draft_bytes(current_drafts, r)
+        current_judged = _rules_judged(r, legacy_now)
         if b is None:
             counts["uncompared"] += 1
             added.append(identity)
             rows.append({**identity, "verdict": "uncompared", "reason": "no baseline run",
-                         "baseline_verdict": None, "current_verdict": _verdict(r),
+                         "baseline_verdict": None, "current_verdict": _verdict(r, current_bytes, current_judged),
                          "draft_changed": None})
             continue
-        old_score, new_score = _verdict(b), _verdict(r)
+        baseline_bytes = _draft_bytes(baseline_drafts, b)
+        baseline_judged = _rules_judged(b, legacy_before)
+        rules_judged = current_judged and baseline_judged
+        old_score = _verdict(b, baseline_bytes, baseline_judged)
+        new_score = _verdict(r, current_bytes, current_judged)
+        want = EXPECT.get(r.get("expect", "load"))
+        old_want = EXPECT.get(b.get("expect", "load"))
         reason = None
-        if b["result"] == "drawn" and r["result"] != "drawn":
+        if r["result"] != want:
+            verdict = "worse"
+            reason = f"expected {r.get('expect', 'load')} ({want}), got {r['result']}"
+        elif r["result"] == b["result"] == "drawn" and not rules_judged:
+            verdict = "unjudged"
+            reason = "rule checker did not run or failed"
+        elif r["result"] == want and b["result"] != old_want:
+            verdict = "better"
+        elif b["result"] == "drawn" and r["result"] != "drawn":
             verdict = "worse"
         elif b["result"] != "drawn" and r["result"] == "drawn":
             verdict = "better"
@@ -502,7 +539,7 @@ def compare_reports(current: Dict[str, Any], baseline: Dict[str, Any],
             verdict = "uncompared"
             reason = "checker failed" if r["result"] == b["result"] == "drawn" else "different undrawn results"
         counts[verdict] += 1
-        draft_changed = _draft_bytes(current_drafts, r) != _draft_bytes(baseline_drafts, b)
+        draft_changed = current_bytes != baseline_bytes
         if draft_changed:
             changed.append(identity)
         codes, old_codes = Counter(r["codes"]), Counter(b["codes"])
@@ -510,13 +547,14 @@ def compare_reports(current: Dict[str, Any], baseline: Dict[str, Any],
         old_violations = Counter(v["rule"] for v in b["violations"])
         current_codes.update(codes)
         baseline_codes.update(old_codes)
-        current_rules.update(violations)
-        baseline_rules.update(old_violations)
+        if rules_judged:
+            current_rules.update(violations)
+            baseline_rules.update(old_violations)
         row = {**identity, "verdict": verdict, "baseline_verdict": old_score,
                "current_verdict": new_score, "baseline_result": b["result"], "current_result": r["result"],
                "draft_changed": draft_changed, "check_problem_delta": len(r["codes"]) - len(b["codes"]),
                "code_deltas": _deltas(codes, old_codes),
-               "violation_deltas": _deltas(violations, old_violations)}
+               "violation_deltas": _deltas(violations, old_violations) if rules_judged else None}
         if reason:
             row["reason"] = reason
         rows.append(row)
@@ -531,6 +569,10 @@ def compare_reports(current: Dict[str, Any], baseline: Dict[str, Any],
         "check_problem_delta": sum(current_codes.values()) - sum(baseline_codes.values()),
         "code_deltas": _deltas(current_codes, baseline_codes),
         "violation_deltas": _deltas(current_rules, baseline_rules),
+        "precision": {
+            "text_shortfall": "recomputed from both drafts without rounding",
+            "tier_0_cost": "recorded violation costs; legacy standard-hook costs were rounded to 0.01",
+        },
         "runtime": {
             "wall_ratio": round(wall / old_wall, 3) if same_runs and old_wall else None,
             "summed_ratio": round(summed / old_summed, 3) if old_summed else None,
@@ -553,8 +595,9 @@ def print_comparison(comparison: Dict[str, Any]) -> None:
     print(f"check problem delta: {comparison['check_problem_delta']:+d}")
     for code, delta in comparison["code_deltas"].items():
         print(f"  {code}: {delta:+d}")
-    print("violation deltas: " + ", ".join(f"{rule} {delta:+d}"
-                                           for rule, delta in comparison["violation_deltas"].items()))
+    print("violation deltas (judged pairs only): " + ", ".join(
+        f"{rule} {delta:+d}" for rule, delta in comparison["violation_deltas"].items()))
+    print("verdict precision: " + "; ".join(comparison["precision"].values()))
     runtime = comparison["runtime"]
     ratios = []
     for kind in ("wall", "summed"):
