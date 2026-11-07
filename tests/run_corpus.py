@@ -30,7 +30,7 @@ a file listed twice, …), or a corpus or docs/examples spec it does not list, s
 before it starts. An entry with `known_fail: <why>` that does not end as expected is reported
 as a known failure without failing the run, and is reported again once it passes.
 
-The user rules (R-flow, R-rt, R-twin, R-label, R-fit) are judged by a rule checker plugged
+The user rules (R-flow, R-rt, R-twin, R-label, R-border, R-fit) are judged by a rule checker plugged
 into rule_violations() (scripts/rules.py:corpus is the one), by --rule-checker module:function (or path.py:function),
 or, in process with -j 1 only, by appending to RULE_CHECKERS (worker processes load only the
 --rule-checker ones; -j > 1 with appended checkers stops). Each checker gets (spec, build,
@@ -80,9 +80,9 @@ ALL_MODES = list(MODES)
 EXPECT = {"load": "drawn", "reject": "rejected", "refuse": "layout-error"}
 # the keys a manifest entry may have
 ENTRY_KEYS = {"path", "modes", "expect", "match", "rules", "what", "from", "note", "known_fail", "good", "bad"}
-RULES = ("R-flow", "R-rt", "R-twin", "R-label", "R-fit", "R-reject")
+RULES = ("R-flow", "R-rt", "R-twin", "R-label", "R-border", "R-fit", "R-reject")
 # the rules a rule checker judges (good / bad tags name these)
-CHECKED = ("R-flow", "R-rt", "R-twin", "R-label", "R-fit")
+CHECKED = ("R-flow", "R-rt", "R-twin", "R-label", "R-border", "R-fit")
 
 
 # =======================================================================================

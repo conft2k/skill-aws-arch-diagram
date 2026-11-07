@@ -880,6 +880,32 @@ def lines_in_line(paths, skip=()):
     return out
 
 
+def line_hugs(segs, masks):
+    """LINE HUGS BORDER: the connector pieces (collect's segments) running alongside a
+    container border, both horizontal or both vertical, less than HUG_CLEAR from it for more
+    than HUG_OVERLAP and not under a mask drawn after them: [(segment, border segment, px
+    apart)], the first such border for each piece (rules.py R-border judges the same)."""
+    out = []
+    for s in segs:
+        if s["kind"] != "connector":
+            continue
+        (x1, y1), (x2, y2) = s["p"], s["q"]
+        for b in segs:
+            if b["kind"] != "border":
+                continue
+            (bx1, by1), (bx2, by2) = b["p"], b["q"]
+            if abs(x1 - x2) < 0.5 and abs(bx1 - bx2) < 0.5:      # both vertical
+                d, lo, hi = abs(x1 - bx1), max(min(y1, y2), min(by1, by2)), min(max(y1, y2), max(by1, by2))
+            elif abs(y1 - y2) < 0.5 and abs(by1 - by2) < 0.5:    # both horizontal
+                d, lo, hi = abs(y1 - by1), max(min(x1, x2), min(bx1, bx2)), min(max(x1, x2), max(bx1, bx2))
+            else:
+                continue
+            if d < HUG_CLEAR and hi - lo > HUG_OVERLAP and not masked((min(x1, bx1), lo, max(x1, bx1) + 0.1, hi), s["o"], masks):
+                out.append((s, b, d))
+                break
+    return out
+
+
 def open_ends(paths, feet, rects, texts):
     """The connector ends (paths: id(element) -> its segments) that touch nothing — no node,
     no other line, no container border, no label its arrowhead points into — as
@@ -1000,25 +1026,10 @@ def run_checks(root):
             add("REPEATED POINT", f"REPEATED POINT  a connector repeats the point ({s['p'][0]:g},{s['p'][1]:g}) — "
                 "a zero-length piece, often a route squeezed flat: drop it, and check the line still reads as "
                 "the route it was", [s], s=s)
-    for s in segs:
-        if s["kind"] != "connector":
-            continue
-        (x1, y1), (x2, y2) = s["p"], s["q"]
-        for b in segs:
-            if b["kind"] != "border":
-                continue
-            (bx1, by1), (bx2, by2) = b["p"], b["q"]
-            if abs(x1 - x2) < 0.5 and abs(bx1 - bx2) < 0.5:      # both vertical
-                d, lo, hi = abs(x1 - bx1), max(min(y1, y2), min(by1, by2)), min(max(y1, y2), max(by1, by2))
-            elif abs(y1 - y2) < 0.5 and abs(by1 - by2) < 0.5:    # both horizontal
-                d, lo, hi = abs(y1 - by1), max(min(x1, x2), min(bx1, bx2)), min(max(x1, x2), max(bx1, bx2))
-            else:
-                continue
-            if d < HUG_CLEAR and hi - lo > HUG_OVERLAP and not masked((min(x1, bx1), lo, max(x1, bx1) + 0.1, hi), s["o"], masks):
-                where = "on top of" if d == 0 else f"{d:g}px from"
-                add("LINE HUGS BORDER", f"LINE HUGS BORDER {fmt(s)} runs {where} the border {fmt(b)} — "
-                    f"keep {HUG_CLEAR}px or more", [s, b], s=s, b=b, d=d)
-                break
+    for s, b, d in line_hugs(segs, masks):
+        where = "on top of" if d == 0 else f"{d:g}px from"
+        add("LINE HUGS BORDER", f"LINE HUGS BORDER {fmt(s)} runs {where} the border {fmt(b)} — "
+            f"keep {HUG_CLEAR}px or more", [s, b], s=s, b=b, d=d)
     # A connector stays on the canvas, and inside the innermost box that holds both of its
     # ends: a route that runs out of the box it starts and ends in (past the AWS Cloud or
     # Region border, or off the canvas) and back in is a detour, not a crossing.

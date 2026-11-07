@@ -281,6 +281,21 @@ class RouteTableRules(unittest.TestCase):
         bad = self.run_rt(sp, *self.bracket_parts(530, 540))
         self.assertEqual([v.owners for v in codes(bad, "RT2")], [("node:rt", "edge:2")])
 
+    def test_rt2_reach_two_icons_user_decision(self):
+        # user decision 2026-11-07 (rules-design §6, rt2.png): a one-line table passes within
+        # 2S + sibling_gap of its line — document 2·48 + 16 = 112, slide 2·48 + 12 = 108
+        for mode, reach in (("document", 112), ("slide", 108)):
+            with self.subTest(mode=mode):
+                sp = self.rt_spec(["c"], [("tgw", "a"), ("tgw", "b"), ("tgw", "c")], "abc")
+                sp.mode = mode
+                self.assertEqual(rules.rt2_reach(sp), reach)
+                # edge 2 runs along y = 300; the table's footprint top `gap` below it
+                at = lambda gap: self.run_rt(sp, *self.bracket_parts(530, 300 + gap + 24))
+                self.assertEqual(codes(at(reach), "RT2"), [])
+                over = codes(at(reach + 0.01), "RT2")
+                self.assertEqual([v.owners for v in over], [("node:rt", "edge:2")])
+                self.assertAlmostEqual(over[0].cost, 0.01, places=3)
+
     def test_rt3_rt4_lines_and_rivals_in_the_way(self):
         sp = self.rt_spec(["a", "b"], [("tgw", "a"), ("tgw", "b"), ("tgw", "c")], "abc")
         # right of the hub past edge 2's end object: crosses nothing but sits nearer c than the hub
@@ -304,6 +319,63 @@ class RouteTableRules(unittest.TestCase):
         self.assertEqual([v.owners for v in codes(inside, "RT5")], [("node:rt", "group:sn2")])
         between = self.run_rt(sp, *parts, node("rt", 250, 230, icon=RT))
         self.assertTrue(codes(between, "RT5"))
+
+
+def subnet(gid, x, y, w, h, title="App subnet"):
+    """A private subnet as layout.py draws it: border, badge at the top-left corner, title
+    at x + 32 on the header row (baseline y + 18)."""
+    return (f'<g id="group:{gid}"><rect x="{x}" y="{y}" width="{w}" height="{h}" fill="none" stroke="#00A4A6" '
+            f'stroke-width="1.5"/><image href="bundle:group/Private-subnet_32" x="{x}" y="{y}" width="24" '
+            f'height="24"/><text x="{x + 32}" y="{y + 18}" font-size="14" fill="#00A4A6" font-weight="600">'
+            f'{title}</text></g>')
+
+
+class BorderRules(unittest.TestCase):
+    """R-border (user decision 2026-11-07, rules-design §6, hug.png)."""
+
+    def run_border(self, *parts):
+        return rules.border_rules(rules.Drawn.parse(svg(*parts)))
+
+    def test_b1_hug_is_check_layouts_line_hugs_border(self):
+        # a vertical line 12 / 11.99 right of a box's left border (x = 100), alongside it 200px
+        for dx, hug in ((12, False), (11.99, True)):
+            with self.subTest(dx=dx):
+                parts = [group("vpc", 100, 100, 300, 300), edge(0, [(100 + dx, 150), (100 + dx, 350)])]
+                got = codes(self.run_border(*parts), "B1")
+                self.assertEqual([v.owners for v in got], [("edge:0", "group:vpc")] if hug else [])
+                cl = [i.kind for i in rules.CL.run_checks(rules.ET.fromstring(svg(*parts)))]
+                self.assertEqual("LINE HUGS BORDER" in cl, hug)
+                if hug:
+                    self.assertEqual(got[0].tier, rules.TIER_HARD)
+                    self.assertAlmostEqual(got[0].cost, 0.01, places=3)
+
+    def test_b2_header_band(self):
+        # App subnet at (282, 390): badge 282–306 × 390–414, title from x = 314; the band
+        # runs from x = 282 to the title's end, y = 390 to the header's bottom (414)
+        sn = subnet("appsn", 282, 390, 124, 106)
+        d = rules.Drawn.parse(svg(sn))
+        (gid, band, marks), = rules.header_bands(d)
+        self.assertEqual((gid, band[:2], band[3]), ("group:appsn", (282, 390), 414))
+        right = band[2]
+        # flowcol/t7-xyref slide: a line down x = 308 between the badge and the title
+        between = edge(3, [(308, 282), (308, 442)])
+        got = codes(self.run_border(sn, between), "B2")
+        self.assertEqual([v.owners for v in got], [("edge:3", "group:appsn")])
+        self.assertIn("between its badge and title", got[0].message)
+        # … which check_layout misses: no line over / near the badge or the title
+        cl = {i.kind for i in rules.CL.run_checks(rules.ET.fromstring(svg(sn, between)))}
+        self.assertFalse(cl & {"LINE OVER ICON", "LINE OVER TEXT", "LINE NEAR TEXT"}, cl)
+        # inside the band / outside it, on x (past the title's end) and on y (under the header)
+        for pts, hit in (([(right - 1, 300), (right - 1, 450)], True), ([(right + 1, 300), (right + 1, 450)], False),
+                         ([(250, 413), (450, 413)], True), ([(250, 415), (450, 415)], False),
+                         ([(282, 300), (282, 450)], False)):          # on the left border: not in the band
+            with self.subTest(pts=pts):
+                got = codes(self.run_border(sn, edge(0, pts)), "B2")
+                self.assertEqual([v.owners for v in got], [("edge:0", "group:appsn")] if hit else [])
+        over = codes(self.run_border(sn, edge(0, [(330, 300), (330, 450)])), "B2")
+        self.assertIn("over its title", over[0].message)
+        # a box with neither badge nor title has no band
+        self.assertEqual(rules.header_bands(rules.Drawn.parse(svg(group("g", 100, 100, 200, 200)))), [])
 
 
 def build(path_or_dict, mode=None):

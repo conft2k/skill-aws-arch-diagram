@@ -25,8 +25,9 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            With a hub (the TGW) and associated lines A, the others at the hub N: RT1 (|A| ≥
            2) its centre is inside the bracket A's lines draw (bracket()), or, when every line
            at the hub is associated with it (the hub's only table), it is within S +
-           sibling_gap of the hub (user decision); RT2 (|A| = 1) its footprint is within S +
-           sibling_gap of that line, reached without crossing another line; RT3 the segment
+           sibling_gap of the hub (user decision); RT2 (|A| = 1) its footprint is within
+           rt2_reach (2S + sibling_gap, user decision) of that line, reached without crossing
+           another line; RT3 the segment
            from its centre to the hub's crosses no line of N nor of another hub (except
            within RT_HUB_CLEAR of the hub's icon); RT4 it is nearer the hub than any other
            hub and any far end of N. A subnet association (no hub, every end a subnet box):
@@ -40,14 +41,21 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            on one over a background — any of them near a corner (user decision); L2 the step
            badges drawn are the edges' resolved steps (each note row once, or on each
            instance with step_each / steps), and every note row has one.
+  R-border a connector does not read as part of a group's box. B1 a piece runs alongside a
+           container border closer than HUG_CLEAR for more than HUG_OVERLAP (read as the
+           border): check_layout.line_hugs, the predicate of its LINE HUGS BORDER. B2 a piece
+           passes through a group's header band (header_bands: from the box's left edge to
+           the end of its title, top border to the bottom of its badge, title and CIDR line),
+           most often between the badge and the title, where check_layout's LINE OVER ICON,
+           LINE OVER TEXT and LINE NEAR TEXT do not reach (flowcol/t7-xyref slide: ALB →
+           AZ2 EC2 at x=308 between the App subnet's badge and its title). B2 is judged here
+           only: check_layout does not report it, so the engine's feedback does not move it.
   R-fit    a slide's 12px text comes out at ≥ K.SLIDE_MIN_PT (cost: the points short).
 
 User decisions (2026-11-07, rules-design §6, after the tgw / nlb-mtls / latest2 cases): the
 RT1 only-table pass, the F5 exemption for spec-placed labels and badges and L1's any-nearby-
-piece side test above.
-
-The hug of a connector along a container border (read as the border) is check_layout's
-LINE HUGS BORDER, not repeated here.
+piece side test above; after rt2.png the RT2 reach of 2S + sibling_gap (was S + sibling_gap);
+after hug.png the border hug and the header band crossing as the tier-0 rule R-border.
 
 Violation(rule, owners, message, cost, tier, code): owners are draft element ids (edge:3,
 node:rtsp, group:vpca, canvas, note); tier 0 a hard rule, 2 the slide fit. score() orders
@@ -82,6 +90,11 @@ RT_SUBNET_MARGIN = 8
 TWIN_TOL = 0.5
 # a piece is horizontal / vertical when it is off by less than this (check_layout's 0.5)
 STRAIGHT = 0.5
+# RT2: a table with one associated line is within this many icon sizes S, plus sibling_gap,
+# of that line (document 2·48 + 16 = 112, slide 2·48 + 12 = 108). User decision 2026-11-07
+# (rules-design §6, after rt2.png): was 1 (64 / 60); rt/single 88 and rt/hub 97 pass, the
+# rt/nd-single document's 135 stays a violation.
+RT2_REACH_ICONS = 2
 
 Pt = Tuple[float, float]
 BoxT = Tuple[float, float, float, float]
@@ -89,7 +102,7 @@ BoxT = Tuple[float, float, float, float]
 
 @dataclass(frozen=True)
 class Violation:
-    rule: str                   # R-flow | R-rt | R-twin | R-label | R-fit
+    rule: str                   # R-flow | R-rt | R-twin | R-label | R-border | R-fit
     owners: Tuple[str, ...]     # draft element ids it names ("edge:3", "node:rtsp", "group:vpca", "canvas")
     message: str
     cost: float = 1.0           # how far off (px, pt, or 1 for a yes/no predicate)
@@ -222,6 +235,11 @@ def _border_dist(p: Pt, r: BoxT) -> float:
     if r[0] <= p[0] <= r[2] and r[1] <= p[1] <= r[3]:
         return min(p[0] - r[0], r[2] - p[0], p[1] - r[1], r[3] - p[1])
     return _pt_box(p, r)
+
+
+def rt2_reach(spec) -> float:
+    """RT2's limit: RT2_REACH_ICONS × S + sibling_gap (user decision 2026-11-07)."""
+    return RT2_REACH_ICONS * spec.S + spec.const.sibling_gap
 
 
 def _centre(b: BoxT) -> Pt:
@@ -598,9 +616,11 @@ def rt_rules(spec, d: Drawn) -> List[Violation]:
             mine = set(d.edge_paths.get(A[0], ()))
             crossed = sorted({d.eid(pid) for pid, run in d.paths.items() if pid not in mine for s in run
                               if (c := seg_cross(rc, q, s["p"], s["q"])) is not None and math.dist(c, q) > 1})
-            if gap > lim:
+            reach = rt2_reach(spec)
+            if gap > reach:
                 out.append(Violation("R-rt", (me, f"edge:{A[0]}"), f"RT2 {rid} is {_f(gap)}px from its one associated "
-                                     f"line edge:{A[0]} (> S + sibling_gap = {_f(lim)})", gap - lim, code="RT2"))
+                                     f"line edge:{A[0]} (> {RT2_REACH_ICONS}S + sibling_gap = {_f(reach)})",
+                                     gap - reach, code="RT2"))
             elif crossed:
                 out.append(Violation("R-rt", (me, f"edge:{A[0]}") + tuple(crossed),
                                      f"RT2 {rid} reaches its associated line edge:{A[0]} only across "
@@ -757,6 +777,79 @@ def label_rules(spec, d: Drawn) -> List[Violation]:
 
 
 # =======================================================================================
+# R-border
+
+def header_bands(d: Drawn) -> List[Tuple[str, BoxT, List[Tuple[str, BoxT]]]]:
+    """Each group's header band: [(group id, band, [(what, box)] of its badge, title and
+    CIDR line)]. The band runs from the box's left edge to the right end of those (the badge
+    at the box's top-left corner, the title on its header row — check_layout title_at — and
+    a bare CIDR line under the title), from its top border to their bottom. A group with
+    neither badge nor title has none."""
+    out = []
+    for r in d.rects:
+        kind, ref, part = _split(d.owner.get(id(r[4]), ""))
+        if kind != "group" or part:
+            continue
+        x0, y0 = r[0], r[1]
+        badge = next((i["box"] for i in d.icons if i["badge"] and not i.get("dot")
+                      and i["box"][2] - i["box"][0] > CL.GROUP_BADGE_MIN
+                      and abs(i["box"][0] - x0) <= 1 and abs(i["box"][1] - y0) <= 1), None)
+        title = next((t for t in d.texts if CL.title_at(t, r)), None)
+        marks = ([("badge", badge)] if badge else []) + ([("title", title["box"])] if title else [])
+        if title:
+            marks += [("CIDR line", t["box"]) for t in d.texts if CL.BARE_CIDR.match(t["s"])
+                      and abs(t["box"][0] - title["box"][0]) <= 1 and CL.cidr_below(t["y"] - title["y"])][:1]
+        if not marks:
+            continue
+        band = (x0, y0, max(b[2] for _, b in marks), max(b[3] for _, b in marks))
+        out.append((f"group:{ref}", band, marks))
+    return out
+
+
+def _clip(s: dict, b: BoxT) -> Optional[BoxT]:
+    """The box of the part of a piece inside box b's interior, or None."""
+    if not CL.seg_hits_box(s["p"], s["q"], b):
+        return None
+    sb = CL.seg_box(s)
+    return (max(sb[0], b[0]), max(sb[1], b[1]), min(sb[2], b[2]), min(sb[3], b[3]))
+
+
+def border_rules(d: Drawn) -> List[Violation]:
+    out = []
+    # B1: check_layout's LINE HUGS BORDER predicate, once per connector and border owner
+    seen = set()
+    for s, b, dd in CL.line_hugs(d.segs, d.masks):
+        a, g = d.eid(id(s["el"])), d.owner.get(id(b["el"]), "?")
+        if (a, g) in seen:
+            continue
+        seen.add((a, g))
+        where = "on top of" if dd == 0 else f"{_f(dd)}px from"
+        out.append(Violation("R-border", (a, g), f"B1 {a} runs {where} {g}'s border ({CL.fmt(s)} / {CL.fmt(b)}, "
+                             f"< {K.HUG_CLEAR}px): the line reads as the border", K.HUG_CLEAR - dd, code="B1"))
+    # B2: a piece through a group's header band (its edges themselves: a border, not the band)
+    for g, band, marks in header_bands(d):
+        hit: Dict[str, Tuple[dict, BoxT]] = {}
+        for pid, run in d.paths.items():
+            for s in run:
+                part = _clip(s, CL.shrink(band, STRAIGHT))
+                if part is None or CL.masked(part, s["o"], d.masks):
+                    continue
+                hit.setdefault(d.eid(pid), (s, part))
+        box = dict(marks)
+        for a, (s, part) in sorted(hit.items()):
+            over = [w for w, b in marks if CL.seg_hits_box(s["p"], s["q"], b)]
+            if over:            # check_layout's LINE OVER ICON / TEXT too
+                how = f"over its {' and '.join(over)}"
+            elif "badge" in box and "title" in box and box["badge"][2] <= part[0] and part[2] <= box["title"][0]:
+                how = "between its badge and title"
+            else:
+                how = "beside its " + " and ".join(w for w, _ in marks)
+            out.append(Violation("R-border", (a, g), f"B2 {a} passes through {g}'s header band {CL.fmt(s)} {how} "
+                                 f"(band {_f(band[0])},{_f(band[1])}–{_f(band[2])},{_f(band[3])})", 1.0, code="B2"))
+    return out
+
+
+# =======================================================================================
 # R-fit
 
 def fit_rules(spec, d: Drawn) -> List[Violation]:
@@ -784,7 +877,8 @@ def check(spec, geom, draft: bytes, drawn: Optional[Drawn] = None) -> List[Viola
     if _last and _last[0] is spec and _last[1] is geom and _last[2] == draft:
         return list(_last[3])
     d = drawn if drawn is not None else Drawn.parse(draft)
-    out = flow_rules(spec, d) + rt_rules(spec, d) + twin_rules(spec, geom) + label_rules(spec, d) + fit_rules(spec, d)
+    out = (flow_rules(spec, d) + rt_rules(spec, d) + twin_rules(spec, geom) + label_rules(spec, d)
+           + border_rules(d) + fit_rules(spec, d))
     out.sort(key=lambda v: (v.tier, v.rule, v.code, v.owners, v.message))
     _last[:] = [spec, geom, draft, out]
     return list(out)

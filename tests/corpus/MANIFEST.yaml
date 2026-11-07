@@ -15,6 +15,9 @@
 #                       the same shape
 #              R-label  connector labels above horizontal / right of vertical lines; badges
 #                       1:1 with note rows
+#              R-border a connector does not read as part of a group's box: it keeps 12px from a
+#                       border it runs along (check_layout LINE HUGS BORDER) and stays out of a
+#                       group's header band (badge, title, CIDR line; user decision 2026-11-07)
 #              R-fit    a slide fits 1108 × 540 (titled) at ≥ 10pt
 #              R-reject the spec is rejected with a clear message
 #   good     rules the case's drafts keep: the rule checker (scripts/rules.py) finds no
@@ -196,10 +199,12 @@ cases:
     from: "gen/rr-rtside__var1__right.layout.json"
   - path: rt/single.layout.yaml
     rules: [R-rt, R-label]
+    good: [R-rt]   # document: Spoke RT 88.2px from its one line, within 2S + sibling_gap = 112 (user decision 2026-11-07, rt2.png; was a violation over 64)
     what: "nfw slide with VPC B removed: single spoke VPC A above the Spoke RT row"
     from: "gen/rr-rtside__var1__single.layout.json"
   - path: rt/single-below.layout.yaml
     rules: [R-rt, R-label]
+    good: [R-rt]   # document: Spoke RT 88.2px from its one line, within 2S + sibling_gap = 112 (user decision 2026-11-07, rt2.png)
     what: "nfw slide with VPC B removed and VPC A moved to az2: single spoke VPC below the Spoke RT row"
     from: "gen/rr-rtside__var1__single_below.layout.json"
   - path: rt/wide-a.layout.yaml
@@ -227,6 +232,7 @@ cases:
     from: "gen/rr-rtside__var4__dx30.layout.json"
   - path: rt/nd-single.layout.yaml
     rules: [R-rt, R-label]
+    bad: {R-rt: {document: node:rtsp}}   # document: Spoke RT 135.4px from its one line, past 2S + sibling_gap = 112 (RT2 stays a violation, user decision 2026-11-07); slides 102.4 < 108 pass
     what: "nfw doc with VPC B removed: single spoke VPC A (az1) above the Spoke RT"
     from: "gen/rtlone__single__nd_single.layout.json"
   - path: flowcol/base.layout.yaml
@@ -377,7 +383,8 @@ cases:
     what: "overlay over stacked cw/s3 with a long label (Observability stack) wider than the stack"
     from: "r4-port/rf/t6b_overlay.layout.json"
   - path: flowcol/t7-xyref.layout.yaml
-    rules: [R-flow]
+    rules: [R-flow, R-border]
+    bad: {R-border: {slide: edge:3, slide-no-title: edge:3}}   # slides: ALB → AZ2 EC2 down x = 308 through the App subnet's header band, between its badge (282–306) and title (from 314) — check_layout misses it (user decision 2026-11-07, hug.png); the document runs it at x = 344, left of the subnet
     what: "xy node using refs to a stack node: KMS at [col.users, cw.cy]"
     from: "r4-port/rf/t7_xyref.layout.json"
   - path: flowcol/t8-two-cols.layout.yaml
@@ -926,6 +933,7 @@ cases:
     from: "rtlone/v_probe/gw_ret-modeslide.json"
   - path: rt/hub.layout.yaml
     rules: [R-rt, R-label]
+    good: [R-rt]   # Spoke RT 97.2px (document, ≤ 112) / 89.2px (slides, ≤ 108) from its one line to the Hub: RT2 passes by the user decision of 2026-11-07 (rt2.png)
     what: "nfw slide where spoke lines end at an intermediate Hub node (hub col right of Spoke RT), then hub -> tgw"
     from: "rtlone/v_probe/hub-modedocument.json"
   - path: rt/nd-tgwside.layout.yaml
@@ -1058,9 +1066,9 @@ examples:
     rules: [R-flow, R-label, R-twin]
     what: "GWLB inspection: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs"
   - path: ../../docs/examples/specs/nfw-reference-architecture.layout.yaml
-    rules: [R-flow, R-label, R-rt]
+    rules: [R-flow, R-label, R-rt, R-border]
     what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
-    good: [R-flow, R-rt, R-label]   # golden (rules-design R-rt: Spoke RT and Firewall RT inside their brackets); Layout OK
+    good: [R-flow, R-rt, R-label, R-border]   # golden (rules-design R-rt: Spoke RT and Firewall RT inside their brackets); Layout OK; R-border: lines into nested subnets with badges and titles, none along a border or through a header band
   - path: ../../docs/examples/specs/nlb-mtls-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin]
     what: "NLB mutual TLS: client → IGW → NLB (nlb-sg, trust store from S3) → same-AZ EC2 in backend-sg, with a left legend pane"
@@ -1082,9 +1090,9 @@ examples:
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "GWLB inspection slide: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs"
   - path: ../../docs/examples/specs/slides/nfw-reference-architecture.layout.yaml
-    rules: [R-flow, R-label, R-rt, R-fit]
+    rules: [R-flow, R-label, R-rt, R-fit, R-border]
     what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
-    good: [R-flow, R-rt, R-label, R-fit]   # golden slide: RTs inside their brackets, 10.04pt titled
+    good: [R-flow, R-rt, R-label, R-fit, R-border]   # golden slide: RTs inside their brackets, 10.04pt titled; R-border as the document
   - path: ../../docs/examples/specs/slides/nlb-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-twin, R-fit]
     what: "Slide: internet-facing NLB over two AZs: Users → IGW → NLB (TLS, ACM cert) → ASG / target group of EC2, outbound via the same-AZ NAT gateway, Route 53 alias and a regional ACM / CloudWatch / S3 column"
