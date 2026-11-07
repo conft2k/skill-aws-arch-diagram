@@ -15,11 +15,12 @@ Sets built from the package (64px service/category, 48px resource, 32px group):
   category  Arch-Category_<Name>_64.svg     -> category/<Name>
 """
 import json
-import os
 import re
 import sys
-import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from outfile import write_atomic  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "assets" / "icons.json"
@@ -45,31 +46,6 @@ def resource_name(stem: str):
     if not m:
         return None
     return m.group(1) + ("_Dark" if m.group(2) == "Dark" else "")
-
-
-def write_atomic(out: Path, text: str):
-    """Write `text` to `out` so readers only ever see the old file or the complete new one.
-
-    Each call writes its own temp file beside `out` (same directory, so the rename never
-    crosses a filesystem) and renames it over `out`. Concurrent runs therefore never share
-    a temp path: the last rename wins and every rename finds its own file. If anything
-    fails before the rename, that run's temp file is removed and `out` is left as it was.
-    """
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=out.parent, prefix=f".{out.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-            f.flush()
-            os.fsync(f.fileno())
-        os.chmod(tmp, 0o644)  # mkstemp creates 0600; the bundle is an ordinary readable file
-        os.replace(tmp, out)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except FileNotFoundError:
-            pass
-        raise
 
 
 def build(pkg: Path, package: str):

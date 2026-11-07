@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import build_bundle  # noqa: E402
+import outfile  # noqa: E402  (build_bundle writes the bundle through outfile.write_atomic)
 
 
 class BuildBundleTest(unittest.TestCase):
@@ -71,7 +72,7 @@ class BuildBundleTest(unittest.TestCase):
             except Exception as error:  # noqa: BLE001 - report the failure kind
                 return type(error).__name__
 
-        with patch.object(build_bundle.os, "replace", synchronized_replace), \
+        with patch.object(outfile.os, "replace", synchronized_replace), \
                 ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(worker, ["run-a", "run-b"]))
 
@@ -91,7 +92,7 @@ class BuildBundleTest(unittest.TestCase):
     def assert_failure_keeps_old_bundle(self, target, error):
         self.build("old")
         before = self.out.read_bytes()
-        with patch.object(build_bundle.os, target, side_effect=error), \
+        with patch.object(outfile.os, target, side_effect=error), \
                 self.assertRaises(type(error)):
             self.build("new")
         self.assertEqual(self.out.read_bytes(), before)

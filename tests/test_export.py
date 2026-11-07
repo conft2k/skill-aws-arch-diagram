@@ -205,6 +205,107 @@ class OutputClash(unittest.TestCase):
         self.assert_refused(r, a, "--pptx", self.out / "arch.svg")
         self.assertEqual(self.written(), [])
 
+    # Two existing outputs can be one file under two names (a hard link): writing both would
+    # leave one draft's result under both names, so they clash like a shared name.
+    def assert_linked_outputs_refused(self, first, second, *args):
+        first.parent.mkdir(parents=True, exist_ok=True)
+        second.parent.mkdir(parents=True, exist_ok=True)
+        first.write_bytes(b"previous output")
+        os.link(first, second)
+        r = export(*args)
+        self.assert_refused(r, first, second)
+        self.assertIn("hard links to one file", r.stdout)
+        self.assertEqual(first.read_bytes(), b"previous output")
+        self.assertEqual(second.read_bytes(), b"previous output")
+        return r
+
+    def test_svg_outputs_hard_linked(self):
+        # the review's repro: out/a.svg and out/b.svg one inode, b's rect ended up in both
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        b = draft(self.work / "b.draft.svg", "#0000FF")
+        self.assert_linked_outputs_refused(self.out / "a.svg", self.out / "b.svg",
+                                           a, b, "--svg", "--png", "--out-dir", self.out)
+        self.assertEqual(self.written(), ["a.svg", "b.svg"])  # no PNG written either
+
+    def test_svg_and_png_outputs_hard_linked(self):
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        b = draft(self.work / "b.draft.svg", "#0000FF")
+        self.assert_linked_outputs_refused(self.out / "a.svg", self.out / "b.png",
+                                           a, b, "--svg", "--png", "--out-dir", self.out)
+        self.assertEqual(self.written(), ["a.svg", "b.png"])
+
+    def test_one_drafts_svg_and_png_hard_linked(self):
+        # one draft, but SVG text and PNG bytes are different results for one file
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        self.assert_linked_outputs_refused(self.out / "a.svg", self.out / "a.png",
+                                           a, "--svg", "--png", "--out-dir", self.out)
+
+    def test_svg_output_and_deck_hard_linked(self):
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        deck = self.work / "slides" / "deck.pptx"
+        self.assert_linked_outputs_refused(self.out / "a.svg", deck,
+                                           a, "--svg", "--out-dir", self.out, "--pptx", deck)
+        self.assertEqual(self.written(), ["a.svg"])
+
+    def test_png_output_and_preview_hard_linked(self):
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        deck = self.work / "slides" / "deck.pptx"
+        self.assert_linked_outputs_refused(self.out / "a.png", self.work / "slides" / "deck-1.png",
+                                           a, "--png", "--out-dir", self.out, "--pptx", deck,
+                                           "--preview")
+        self.assertFalse(deck.exists())
+
+    def test_same_draft_twice_onto_existing_outputs(self):
+        # the same draft by two names writes identical bytes: still not a clash with outputs there
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        b = self.work / "A.draft.svg"
+        os.link(a, b)
+        self.out.mkdir()
+        (self.out / "a.svg").write_text("old", encoding="utf-8")
+        r = export(a, b, "--svg", "--out-dir", self.out)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(ET.parse(self.out / "a.svg").getroot()[0].get("fill"), "#FF0000")
+
+    # The deck goes to its own path: its directory is made once every check has passed.
+    def test_pptx_alone_in_a_new_directory(self):
+        # the review's repro: FileNotFoundError, as only --out-dir was ever created
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        r = export(a, "--pptx", "new/nested/deck.pptx", cwd=self.work)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertGreater((self.work / "new" / "nested" / "deck.pptx").stat().st_size, 0)
+
+    def test_svg_png_and_pptx_in_different_new_directories(self):
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        deck = self.work / "slides" / "new" / "deck.pptx"
+        r = export(a, "--svg", "--png", "--out-dir", self.out, "--pptx", deck, "--preview")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.written(), ["a.png", "a.svg"])
+        self.assertEqual(sorted(p.name for p in deck.parent.iterdir()), ["deck-1.png", "deck.pptx"])
+
+    def test_pptx_replaces_a_deck_in_an_existing_directory(self):
+        a = draft(self.work / "a.draft.svg", "#FF0000")
+        deck = self.out / "deck.pptx"
+        self.out.mkdir()
+        deck.write_bytes(b"previous deck")
+        r = export(a, "--pptx", deck)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(deck.read_bytes().startswith(b"PK"))
+        self.assertEqual(self.written(), ["deck.pptx"])  # and no temp file left beside it
+
+    def test_refused_export_makes_no_deck_directory(self):
+        bad = self.work / "bad.draft.svg"
+        bad.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+                       '<path d="M0,0 L9,9"/></svg>', encoding="utf-8")
+        r = export(bad, "--pptx", self.work / "new" / "deck.pptx")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertFalse((self.work / "new").exists())
+        x = draft(self.work / "document" / "arch.draft.svg", "#FF0000")
+        y = draft(self.work / "slides" / "arch.draft.svg", "#0000FF")
+        r = export(x, y, "--svg", "--out-dir", self.out, "--pptx", self.work / "new" / "deck.pptx")
+        self.assert_refused(r, x, y)
+        self.assertFalse((self.work / "new").exists())
+        self.assertFalse(self.out.exists())
+
     def test_every_format_end_to_end(self):
         a = draft(self.work / "a.draft.svg", "#FF0000")
         b = draft(self.work / "b.draft.svg", "#0000FF")

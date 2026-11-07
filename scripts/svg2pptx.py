@@ -53,6 +53,7 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
 from embed import icon_sets  # noqa: E402,F401  (one cached load shared with embed.py)
+from outfile import same_file, write_atomic  # noqa: E402
 
 
 @cache
@@ -523,9 +524,16 @@ class Deck:
 
 
 def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
-    """Convert layout SVGs into a deck at `out`; return False (writing nothing) on a bad SVG."""
+    """Convert layout SVGs into a deck at `out`; return False (writing nothing) on a bad SVG.
+    A file already at `out` is left as it was on failure and replaced only by the complete
+    deck; `out` naming one of the SVGs (by any path or link) is refused. `out`'s directory
+    is created once every SVG has passed."""
     if len(titles) > len(svgs):
         print("more --title values than SVGs")
+        return False
+    inputs = [path for path in svgs if same_file(path, out)]
+    if inputs:
+        print(f"Nothing written: the deck {out} is the input {inputs[0]}; name a different output.")
         return False
     parsed, failed = [], False
     for path in svgs:
@@ -537,8 +545,6 @@ def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
                 print(f"  {p}")
         parsed.append((view, items))
     if failed:
-        if out.exists():
-            out.unlink()  # never leave a stale deck behind
         print(f"Nothing written to {out}; fix the SVG(s) above and re-run.")
         return False
 
@@ -553,7 +559,9 @@ def build(svgs, titles, out, font="Arial", ea_font="Malgun Gothic"):
         elif sizes and min(sizes) < MIN_PT:
             print(f"note: slide {i + 1} ({svgs[i].name}): smallest text is {min(sizes):.1f}pt (< {MIN_PT}pt) — "
                   f"tighten or split it; keep {FLOOR_PT}-{MIN_PT}pt only if unavoidable and tell the user")
-    deck.prs.save(out)
+    buf = io.BytesIO()
+    deck.prs.save(buf)
+    write_atomic(out, buf.getvalue())  # a deck already at `out` stays until this one is complete
     icons = sum(1 for _, items in parsed for it in items if it["k"] == "image")
     print(f"Wrote {len(parsed)} slide(s), {icons} icon(s) ({len(deck.svg_parts)} distinct SVGs) -> {out}")
     return True

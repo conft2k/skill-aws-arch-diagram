@@ -21,7 +21,9 @@ so the final SVG renders anywhere with no external files. The output is written
 only when every icon resolves: refs that don't resolve, image hrefs that point at
 external files or URLs, and refs to the logo-less AWS Cloud outline (the badge
 must carry the AWS logo) are reported instead,
-nothing is written, and the script exits with status 1.
+nothing is written, and the script exits with status 1. A file already at the output
+path is left as it was then, and is replaced only by a complete new file; an output that
+is the input itself (by any path or link) is refused.
 """
 import base64
 import re
@@ -31,6 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_icons import load_sets  # noqa: E402
+from outfile import same_file, write_atomic  # noqa: E402
 
 
 @cache
@@ -151,21 +154,21 @@ def main():
         print(__doc__)
         sys.exit(1)
     src, dst = Path(args[0]), Path(args[1])
+    if same_file(src, dst):
+        sys.exit(f"Nothing written: the output {dst} is the input {src}; name a different output.")
     if reverse:
         out, n, report = unembed(src.read_text(encoding="utf-8"))
         if report:
             print("\n".join(report))
             sys.exit(f"Nothing written to {dst}.")
-        dst.write_text(out, encoding="utf-8")
+        write_atomic(dst, out)
         print(f"Restored {n} bundle: ref(s) -> {dst}")
         return
     out, embedded, report = embed(src.read_text(encoding="utf-8"))
     if report:
         print("\n".join(report))
-        if dst.exists():
-            dst.unlink()  # never leave a stale or half-embedded final file behind
         sys.exit(f"Nothing written to {dst}; fix the refs above and re-run.")
-    dst.write_text(out, encoding="utf-8")
+    write_atomic(dst, out)  # a file already at dst stays as it was until the new one is complete
     print(f"Embedded {embedded} icon(s) -> {dst}")
 
 

@@ -515,6 +515,9 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
   `fetch_icons.py`).
 - `scripts/macos_cairo.py` — imported before cairosvg so it finds Homebrew's cairo on
   Apple Silicon without shell setup.
+- `scripts/outfile.py` — how the export scripts write: a failed run keeps the file already
+  at the output path, a result replaces it only when complete, and an output that is the
+  input itself is refused.
 - `docs/examples/` — checked NLB, ALB, GWLB, TGW, Network Firewall, centralized egress, NLB mTLS and Bedrock-over-DX reference layouts and the serverless order pipeline in lanes
   (exported SVGs with inlined icons + PNG; copy them as drafts on the draft path); `specs/`
   has the layout spec that regenerates each of them and the skeleton (copy one in step 2);

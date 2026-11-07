@@ -23,7 +23,10 @@ check needs no icons: the official icon bundle is loaded (and downloaded on firs
 only when the drafts are checked. Every draft is checked next — icon refs (embed.py) and
 the shared draft subset (svg2pptx.py) — whatever formats are asked for, so one draft
 always works for all of them. If any draft fails, nothing is
-written and the script exits with status 1.
+written and the script exits with status 1. Two outputs that already exist as one file
+under two names (hard links) are one output too. --out-dir and the deck's directory are
+created only once every check has passed, and each output replaces a file already there
+only when it is complete.
 """
 import argparse
 import os
@@ -38,6 +41,7 @@ import cairosvg  # noqa: E402
 import embed  # noqa: E402
 import render_pptx  # noqa: E402
 import svg2pptx  # noqa: E402
+from outfile import write_atomic  # noqa: E402
 
 
 def stem(path: Path) -> str:
@@ -74,12 +78,13 @@ def draft_source(path: Path):
 
 def planned_outputs(drafts, svg, png, out_dir, pptx, preview):
     """[(output path, source, label)] for every file the export would write. `source` says
-    which input the bytes come from (a draft's identity, or the deck), `label` names it."""
+    which bytes go there (a draft's identity and format, the deck, or a slide preview),
+    `label` names it."""
     plan = []
     for d in drafts:
         for on, ext in ((svg, "svg"), (png, "png")):
             if on:
-                plan.append((out_dir / f"{stem(d)}.{ext}", draft_source(d), str(d)))
+                plan.append((out_dir / f"{stem(d)}.{ext}", (draft_source(d), ext), str(d)))
     if pptx:
         plan.append((pptx, "deck", "--pptx"))
         if preview:
@@ -91,19 +96,40 @@ def planned_outputs(drafts, svg, png, out_dir, pptx, preview):
 
 def clashes(drafts, plan):
     """Error lines for every output written from two different sources or landing on a draft.
-    Output paths are compared case-folded and NFC-normalised (see path_key); the same draft
-    given twice writes identical bytes, so that alone is not a clash."""
-    by_path = {}
-    for out, source, label in plan:
-        first, sources = by_path.setdefault(path_key(out), (out, {}))
+    Two outputs are one file when their paths match case-folded and NFC-normalised (see
+    path_key) or, for outputs that already exist, when they are one file under two names (a
+    hard link); the same draft given twice writes identical bytes, so that alone is not a
+    clash."""
+    parent = list(range(len(plan)))  # union-find: plan entries that land on one file
+
+    def root(n):
+        while parent[n] != n:
+            n = parent[n]
+        return n
+
+    seen = {}
+    for n, (out, _, _) in enumerate(plan):
+        for key in (path_key(out), file_id(out)):  # a str, and a (dev, inode) tuple or None
+            if key is None:
+                continue
+            if key in seen:
+                a, b = root(n), root(seen[key])
+                parent[max(a, b)] = min(a, b)
+            else:
+                seen[key] = n
+    groups = {}
+    for n, (out, source, label) in enumerate(plan):
+        first, sources, keys = groups.setdefault(root(n), (out, {}, set()))
         sources.setdefault(source, label if out == first else f"{label} (as {out})")
+        keys.add(path_key(out))
+    lines, overwritten = [], set()
+    for out, sources, keys in groups.values():
+        if len(sources) > 1:  # outputs under different names are one file only by a link
+            lines.append(f"{out} would be written from each of"
+                         + (" (hard links to one file):" if len(keys) > 1 else ":"))
+            lines += [f"  {label}" for label in sources.values()]
     by_key = {path_key(d): d for d in drafts}
     by_file = {i: d for d in drafts if (i := file_id(d))}
-    lines, overwritten = [], set()
-    for out, sources in by_path.values():
-        if len(sources) > 1:
-            lines.append(f"{out} would be written from each of:")
-            lines += [f"  {label}" for label in sources.values()]
     for out, _, _ in plan:  # an existing output may be a draft under another name (hard link)
         hit = by_key.get(path_key(out)) or by_file.get(file_id(out))
         if hit and path_key(out) not in overwritten:
@@ -150,16 +176,17 @@ def main():
     if failed:
         sys.exit("Nothing written; fix the draft(s) above and re-run.")
 
-    a.out_dir.mkdir(parents=True, exist_ok=True)
+    # every write creates its file's directory (--out-dir, the deck's) and replaces a file
+    # already there only with the complete new one
     for d in a.drafts:
         svg_text = embedded[d]
         if a.svg:
             out = a.out_dir / f"{stem(d)}.svg"
-            out.write_text(svg_text, encoding="utf-8")
+            write_atomic(out, svg_text)
             print(out)
         if a.png:
             out = a.out_dir / f"{stem(d)}.png"
-            cairosvg.svg2png(bytestring=svg_text.encode("utf-8"), write_to=str(out), output_width=a.png_width)
+            write_atomic(out, cairosvg.svg2png(bytestring=svg_text.encode("utf-8"), output_width=a.png_width))
             print(out)
     if a.pptx:
         if not svg2pptx.build(a.drafts, a.title, a.pptx, a.font, a.ea_font):
