@@ -119,8 +119,9 @@ table of routes may overlap borders (see the guide).
 
 A route table sits beside what it is associated with ("A route table sits beside what
 it is attached to"), no line to it. In a layout spec the node says which with `for: [ids]`
-(the far ends of the associated attachment lines, or the subnet boxes; `via: <hub>` when two
-hubs reach them; see layout_spec.md → nodes):
+(the far ends of the associated attachment lines, or the subnet boxes, which have no hub;
+`via: <hub>` when several nodes reach them, as for most one-attachment tables, `via: none`
+for no hub; see layout_spec.md → nodes):
 
 | Route table | Place |
 |---|---|

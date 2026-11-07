@@ -435,11 +435,14 @@ is a list of one-line strings, each starting with the spec location ("nodes[3] n
     ids, `<id>.*` for a template's instances (in a template, a bare id of an item of the
     same template means the node's own instance; a per-instance map `{1: [...], 2: [...]}`
     works too) — and optional `via: <node id>` its hub. W1 resolves them to Node.assoc =
-    Assoc(hub, ends, edges): ends = the ids expanded, deduplicated, spec order; hub = the one
-    node other than the table with an edge (either direction, any operator) to every end, or
-    `via` (a SpecError unless it has an edge to each end); none and every end a group → hub
-    None, a subnet association; none otherwise, or several, is a SpecError naming the
-    candidates and asking for `via:`; edges = Edge.n of every hub ↔ end edge, ascending. `for` on a node whose icon is no route table
+    Assoc(hub, ends, edges): ends = the ids expanded, deduplicated, spec order; hub = None
+    when `via: none` or every end is a subnet box (layout_spec.SUBNET_TYPES, whatever lines
+    reach it), else `via` (a SpecError unless it has an edge to each end), else the one node
+    other than the table with an edge (either direction, any operator) to every end; none and
+    every end a group → hub None; none otherwise, or several, is a SpecError (several: the
+    candidates listed, Transit Gateways first, asking for `via:`; a one-end table often has
+    several); a template node reports its first failing instance only; edges = Edge.n of
+    every hub ↔ end edge, ascending. `for` on a node whose icon is no route table
     (layout_spec.RT_ICONS) is allowed — another per-attachment table may declare it; a route
     table without `for` is a lint warning. The association is AWS's (the attachments or
     subnets associated with the table), not its propagations; a later rule checker reads it.
@@ -565,9 +568,9 @@ class Group:
 class Assoc:
     """A route table's association (node keys `for` / `via`, decision t): what it belongs to."""
     hub: Optional[str]              # the node whose lines are the associated attachments (the TGW);
-                                    # None = a subnet association (every end a group no node draws a line to)
+                                    # None = no hub: subnet boxes, `via: none`, or unreached groups
     ends: List[str]                 # the associated ids, `*` expanded, spec order (nodes or groups)
-    edges: List[int]                # Edge.n of every hub ↔ end line, ascending (empty for a subnet association)
+    edges: List[int]                # Edge.n of every hub ↔ end line, ascending (empty without a hub)
 
 
 @dataclass

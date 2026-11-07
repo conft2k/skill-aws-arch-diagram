@@ -222,12 +222,19 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   For a TGW table list the far ends of its associated attachments' lines, node or group ids,
   `<id>.*` for a template's instances: nfw `rtsp` `for: [vpca, vpcb]`, `rtfw` `for:
   [eni.*]`. The loader takes as the hub the one node with a line (either direction, any
-  operator) to every listed id — the TGW. For a subnet table list the subnet boxes, which no
-  node draws a line to (hub none). No such node, or several (two TGWs reach the same VPCs),
-  is a spec error; `via: <node>` then names the hub, which must have a line to each id.
+  operator) to every listed id — the TGW. For a subnet table list the subnet boxes
+  (`public` / `private` groups): when every id is one, there is no hub, even if lines reach
+  the subnets (bedrock-dx's VGW bus to `sn.*`); a VPC or other box still gets one. No such
+  node, or several, is a spec error; `via: <node>` then names the hub, which must have a
+  line to each id, and `via: none` declares that the table has none (`none` is never read
+  as a node id there). Several is common for a table of one attachment: every node with a
+  line to that end is a candidate (tgw `for: [vpn]` finds TGW A and the Internet), so such
+  a table usually needs `via:`; the error lists the candidates, Transit Gateways first.
   It is the association, not propagation: a TGW's only table lists every attachment of
   that TGW (tgw `rta` `for: [vpn, svcs, prod, dev, test, peer]`). In a template, a bare id
-  of an item of the same template means the node's own instance. The key moves nothing
+  of an item of the same template in `for` or `via` means the node's own instance, and
+  either takes a per-instance map (`for: {1: [eni.1], 2: [eni.2]}`); an error is reported
+  for the first failing instance only. The key moves nothing
   (the draft is byte-identical with or without it); it records the association so a rule
   checker can verify the table sits beside it. `for` on a node that is no route table (a
   per-attachment table with another icon) is accepted, without a warning.
@@ -457,10 +464,11 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   inspection VPC — `shape: VH` on `tgw <-> eni.*` so the inspection lines leave the TGW's
   top and bottom around `rtfw`; each table says which attachments it is associated with,
   `rtsp` `for: [vpca, vpcb]` and `rtfw` `for: [eni.*]` (centralized-egress: `for: [enia.*,
-  enib.*]` and `for: [seni.*]`, the TGW's lines from the TGW ENIs). Neither the document nor the slide needs an empty column:
-  the engine keeps the Spoke RT beside VPC A and VPC B (diagonal neighbours) on x, since
-  apart on y the table would sit in the spoke column between the two VPCs, left of their
-  lines to the TGW (the slide titled or not, and as a document).
+  enib.*]` and `for: [seni.*]`, the TGW's lines from the TGW ENIs). Neither the document
+  nor the slide needs an empty column: the engine keeps the Spoke RT beside VPC A and VPC B
+  (diagonal neighbours) on x, since apart on y the table would sit in the spoke column
+  between the two VPCs, left of their lines to the TGW (the slide titled or not, and as a
+  document).
 - **Two VPCs** (gwlb): two `vpc` groups in one Region, each with its own `az` template.
 
 ```yaml

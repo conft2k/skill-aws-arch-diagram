@@ -808,6 +808,39 @@ class Associations(unittest.TestCase):
 
     def test_subnet_association(self):
         self.assertEqual(self.assoc(rt={"for": ["sna", "snb"]}), (M.Assoc(None, ["sna", "snb"], []), []))
+        # lines to the subnets do not make a hub: every end a subnet box → none
+        lines = dict(extra_edges=[{"e": "tgw -- sna"}, {"e": "tgw -> snb"}])
+        self.assertEqual(self.assoc(rt={"for": ["sna", "snb"]}, **lines)[0], M.Assoc(None, ["sna", "snb"], []))
+        # a VPC box still takes its hub from the lines
+        self.assertEqual(self.assoc(rt={"for": ["vpca", "sna"]}, **lines)[0],
+                         M.Assoc("tgw", ["vpca", "sna"], [0, 4]))
+
+    def test_subnet_association_with_lines_bedrock_dx(self):
+        """bedrock-dx draws the VGW's bus to `sn.1` / `sn.2`; a subnet table there has no hub."""
+        text = (ROOT / "docs/examples/specs/bedrock-dx-reference-architecture.layout.yaml").read_text(encoding="utf-8")
+        rtsn = ("  - {id: rtsn, icon: resource/Amazon-Route-53_Route-Table, label: Subnet RT, in: rs, "
+                "at: [ext, sbot], dx: 200, for: [sn.*]}\n")
+        s = load_text(text.replace("\nedges:", "\n" + rtsn + "edges:", 1))
+        self.assertEqual(s.nodes["rtsn"].assoc, M.Assoc(None, ["sn.1", "sn.2"], []))
+
+    def test_via_none(self):
+        self.assertEqual(self.assoc(rt={"for": ["vpca", "vpcb"], "via": "none"}),
+                         (M.Assoc(None, ["vpca", "vpcb"], []), []))
+        self.assertEqual(self.assoc(rt={"for": ["eni.*"], "via": "none"})[0], M.Assoc(None, ["eni.1", "eni.2"], []))
+        self.assertEqual(self.problems(rt={"via": "none"}), [
+            "nodes[4] rt: via: names the hub whose lines to the `for:` ids are the associated attachments; "
+            "give for: too"])
+        self.assertEqual(self.problems(rt={"for": ["vpca"], "via": 3}), [
+            "nodes[4] rt: via: expected the hub node's id, or none for no hub, got 3"])
+
+    def test_mixed_groups_and_nodes(self):
+        """`for:` may list group and node ids together: the hub has a line to each."""
+        self.assertEqual(self.assoc(rt={"for": ["vpca", "eni.*", "vpcb"]})[0],
+                         M.Assoc("tgw", ["vpca", "eni.1", "eni.2", "vpcb"], [0, 1, 2, 3]))
+        # a subnet box among them is no longer "every end a subnet": hub detection applies
+        self.assertEqual(self.problems(rt={"for": ["sna", "eni.1"]}), [
+            "nodes[4] rt: for: no node has a line to every listed id (sna: no line; eni.1: tgw); list the ends of "
+            "one hub's lines (the attachments associated with the table), or name the hub with `via:`"])
 
     def test_in_a_template_own_instance(self):
         rt = {"id": "trt", "icon": "resource/Amazon-Route-53_Route-Table", "label": "TGW subnet RT", "in": "tsn",
@@ -822,6 +855,32 @@ class Associations(unittest.TestCase):
         with self.assertRaises(SpecError) as cm:
             L.load(tgw_spec(rt={"for": ["eni.*"]}, extra_nodes=[rt]))
         self.assertEqual(cm.exception.problems, ["nodes[5] trt: for: unknown id 'enx'"])
+        rt.update({"for": ["eni", "ec2a"]})            # each instance fails with its own ids: the first only
+        with self.assertRaises(SpecError) as cm:
+            L.load(tgw_spec(rt={"for": ["eni.*"]}, extra_nodes=[rt]))
+        self.assertEqual(cm.exception.problems, [
+            "nodes[5] trt: for (trt.1): no node has a line to every listed id (eni.1: tgw; ec2a: no line); list "
+            "the ends of one hub's lines (the attachments associated with the table), or name the hub with `via:`"])
+
+    def test_in_a_template_own_instance_via(self):
+        """A bare `via` id of an item of the same template is the node's own instance."""
+        hub = {"id": "hub", "icon": "resource/Amazon-VPC_Router", "label": "Router", "in": "tsn", "col": "eni"}
+        rt = {"id": "trt", "icon": "resource/Amazon-Route-53_Route-Table", "label": "TGW subnet RT", "in": "tsn",
+              "col": "trt", "for": ["eni"], "via": "hub"}
+        s = L.load(tgw_spec(rt={"for": ["eni.*"]}, extra_nodes=[hub, rt], extra_edges=[{"e": "hub.* -- eni.*"}]))
+        self.assertEqual([s.nodes[i].assoc for i in ("trt.1", "trt.2")],
+                         [M.Assoc("hub.1", ["eni.1"], [4]), M.Assoc("hub.2", ["eni.2"], [5])])
+
+    def test_in_a_template_per_instance_map(self):
+        rt = {"id": "trt", "icon": "resource/Amazon-Route-53_Route-Table", "label": "TGW subnet RT", "in": "tsn",
+              "col": "trt", "for": {1: ["eni.1"], 2: ["vpca", "vpcb"]}, "via": {1: "tgw", 2: "none"}}
+        s = L.load(tgw_spec(rt={"for": ["eni.*"]}, extra_nodes=[rt]))
+        self.assertEqual([s.nodes[i].assoc for i in ("trt.1", "trt.2")],
+                         [M.Assoc("tgw", ["eni.1"], [2]), M.Assoc(None, ["vpca", "vpcb"], [])])
+        rt["for"] = {1: ["eni.1"]}
+        with self.assertRaises(SpecError) as cm:
+            L.load(tgw_spec(rt={"for": ["eni.*"]}, extra_nodes=[rt]))
+        self.assertEqual(cm.exception.problems, ["nodes[5] trt: for: no value for instance 2 (give 1..2)"])
 
     def test_no_hub(self):
         self.assertEqual(self.problems(rt={"for": ["vpca", "ec2a"]}), [
@@ -831,10 +890,27 @@ class Associations(unittest.TestCase):
     def test_several_hubs(self):
         two = dict(extra_nodes=[TGW2], extra_edges=[{"e": "vpca -- tgw2"}, {"e": "tgw2 -> vpcb"}])
         self.assertEqual(self.problems(rt={"for": ["vpca", "vpcb"]}, **two), [
-            "nodes[4] rt: for: 'tgw', 'tgw2' each have a line to every listed id; name the hub with `via:` "
-            "(e.g. via: tgw)"])
+            "nodes[4] rt: for: 'tgw', 'tgw2' each have a line to every listed id (Transit Gateways first); name "
+            "the hub with `via: <one of them>` — the node whose lines are the associated attachments — or "
+            "`via: none` if the table has none"])
         self.assertEqual(self.assoc(rt={"for": ["vpca", "vpcb"], "via": "tgw2"}, **two)[0],
                          M.Assoc("tgw2", ["vpca", "vpcb"], [4, 5]))
+
+    def test_several_hubs_transit_gateway_first(self):
+        """A one-attachment table: every node with a line to it is a candidate; the TGW is listed first."""
+        import yaml
+        d = yaml.safe_load((ROOT / "docs/examples/specs/tgw-reference-architecture.layout.yaml")
+                           .read_text(encoding="utf-8"))
+        i = next(k for k, nd in enumerate(d["nodes"]) if nd["id"] == "rta")
+        d["nodes"][i]["for"] = ["vpn"]                 # inet -- vpn comes before tgwa in the spec
+        with self.assertRaises(SpecError) as cm:
+            L.load(d)
+        self.assertEqual(cm.exception.problems, [
+            f"nodes[{i}] rta: for: 'tgwa', 'inet' each have a line to every listed id (Transit Gateways first); "
+            "name the hub with `via: <one of them>` — the node whose lines are the associated attachments — or "
+            "`via: none` if the table has none"])
+        d["nodes"][i]["via"] = "tgwa"
+        self.assertEqual(L.load(d).nodes["rta"].assoc, M.Assoc("tgwa", ["vpn"], [2]))
 
     def test_via_mismatch(self):
         self.assertEqual(self.problems(rt={"for": ["vpca", "vpcb", "eni.1"], "via": "ec2a"}), [

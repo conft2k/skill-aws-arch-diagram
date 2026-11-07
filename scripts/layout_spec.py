@@ -58,6 +58,11 @@ LB_PREFIX = "resource/Elastic-Load-Balancing_"
 # Route tables (VPC subnet and TGW tables alike): the package's only route table icon. A node
 # with one of these icons should say what it is associated with (`for:`, layout_model decision t).
 RT_ICONS = ("resource/Amazon-Route-53_Route-Table",)
+# `for:` ends that are all subnet boxes make a subnet association (no hub), whatever lines reach them;
+# `via: none` forces no hub. A Transit Gateway is the likeliest hub when several nodes reach the ends.
+SUBNET_TYPES = ("public", "private")
+VIA_NONE = "none"
+TGW_ICONS = ("service/AWS-Transit-Gateway",)
 
 TOP_KEYS = ("name", "mode", "title", "S", "font", "cols", "rows", "groups", "nodes", "edges", "note", "raw")
 TRACK_KEYS = ("id", "min_gap_before", "min_w", "flow", "align")
@@ -729,7 +734,7 @@ class _Loader:
     @staticmethod
     def c_id(v):
         if not isinstance(v, str) or not v:
-            raise _Conv(f"expected the hub node's id, got {v!r}")
+            raise _Conv(f"expected the hub node's id, or {VIA_NONE} for no hub, got {v!r}")
         return v
 
     @staticmethod
@@ -1482,8 +1487,9 @@ class _Loader:
             for n, iid in insts:
                 if iid in sp.nodes:
                     self.assoc(r, sp.nodes[iid], _pick(r["for"], n), _pick(r.get("via"), n), n, nbr, err)
-            # one report per spec item: a template's instances repeat the same unknown id
-            self.problems[n0:] = list(dict.fromkeys(self.problems[n0:]))
+                if len(self.problems) > n0:
+                    break                        # one report per spec item: the first failing instance
+                                                 # (the others repeat it with their own ids)
 
     def own_instance(self, r: dict, pat: str, n: Optional[int]) -> str:
         """In a template, a bare id of an item of the same template is the node's own instance."""
@@ -1508,7 +1514,11 @@ class _Loader:
             err(node, key, f"{node.id!r} lists itself; name what the table is associated with")
             return
         quiet = self.edge_failed                 # a dropped edge line: its lines are missing, not wrong
-        if via is not None:
+        if via == VIA_NONE:
+            hub: Optional[str] = None            # declared: no hub (a subnet or other hubless association)
+        elif via is None and all(x in sp.groups and sp.groups[x].type in SUBNET_TYPES for x in ends):
+            hub = None                           # a subnet association, even when lines reach the subnets
+        elif via is not None:
             vkey = "via" if n is None else f"via ({node.id})"
             via = self.own_instance(r, via, n)
             if via not in sp.nodes:
@@ -1526,13 +1536,13 @@ class _Loader:
                     err(node, vkey, f"{via!r} has no line to {', '.join(map(repr, missing))}; an association is "
                                     f"the line between the hub and each `for:` id — draw it, or fix for: / via:")
                 return
-            hub: Optional[str] = via
+            hub = via
         else:
             cands = set.intersection(*(nbr.get(x, set()) for x in ends)) - {node.id} if ends else set()
             if len(cands) == 1:
                 hub = next(iter(cands))
             elif not cands and all(x in sp.groups for x in ends):
-                hub = None                       # a subnet association
+                hub = None                       # boxes no node draws a line to
             elif not cands:
                 if quiet:
                     return
@@ -1541,9 +1551,13 @@ class _Loader:
                                "lines (the attachments associated with the table), or name the hub with `via:`")
                 return
             else:
-                order = [i for i in sp.nodes if i in cands]
-                err(node, key, f"{', '.join(map(repr, order))} each have a line to every listed id; name the hub "
-                               f"with `via:` (e.g. via: {order[0]})")
+                # Transit Gateways first, then spec order: with one listed id every node with a line
+                # to it is a candidate (a VPN's Internet beside its TGW), so no single one is suggested
+                order = sorted((i for i in sp.nodes if i in cands),
+                               key=lambda i: sp.nodes[i].icon not in TGW_ICONS)
+                err(node, key, f"{', '.join(map(repr, order))} each have a line to every listed id (Transit "
+                               f"Gateways first); name the hub with `via: <one of them>` — the node whose lines "
+                               f"are the associated attachments — or `via: {VIA_NONE}` if the table has none")
                 return
         endset = set(ends)
         edges = [e.n for e in sp.edges if hub is not None
