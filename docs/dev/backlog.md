@@ -7,7 +7,8 @@
 
 - **회귀 corpus:** `tests/corpus/`(MANIFEST.yaml) + `tests/run_corpus.py`가 변경 판정의 기준입니다.
   - 실행: `python3 tests/run_corpus.py --rule-checker scripts/rules.py:corpus --keep <dir> --out <json> -q -j 6`
-  - 결과: 246개 항목, 706회 실행. spec 형식 오류 16건만 거부되고, 이전에 거부되던 모순 제약 케이스 4개도 이제 그려집니다.
+  - 결과(main 36c7ea3): 267개 항목, 760회 실행. spec 형식 오류 16건만 거부되고, 이전에 거부되던 모순 제약 케이스 4개도 이제 그려집니다.
+    QA 재현 15개(`tests/corpus/qa/`)와 새 slide 예제가 포함됩니다. 태그 불일치는 0건입니다.
 - **규칙 검사기 1단계:** `scripts/rules.py`는 보고 전용이라 엔진 draft를 바꾸지 않습니다.
   - 규칙: R-flow, R-rt, R-twin, R-label, R-fit, R-border
   - corpus의 `good`/`bad` 태그로 검사기 판정을 검증합니다.
@@ -56,7 +57,9 @@
      이때 비멤버 B1이 TG 안에 들어갑니다.
    - 사례별 수정이 수렴하지 않는 모양이라 2단계(규칙 판정)와 함께 다룹니다.
      멤버십 검사(비멤버가 overlay 안에 들어감)를 rules.py에 먼저 넣어야 합니다.
-   - 재현 spec: `tests/corpus/qa/`의 T4 overlay_headers.
+   - 재현 spec은 둘입니다.
+     - 원래 제목 겹침(동일 멤버 `web.*`): `tests/corpus/qa/t4-overlay-headers.layout.yaml`
+     - 수정본이 만든 B1 포함 회귀: 위 입력이며, 출처는 개발 머신의 `~/.cache/skill-design/s5/rv-overlay-title-r2.md`입니다. corpus에는 아직 없습니다.
 6. **글자 확대 비용 줄이기.**
    - 그림 하나 기준 중앙값은 1.29배입니다. 최악은 1.5초가 12.3초로 늘었습니다(`bench/engine2-pipeline` slide).
    - 확대 후보마다 feedback 전체를 다시 돌리기 때문입니다.
@@ -66,7 +69,6 @@
    - `SKILL.md`의 "slide에는 spec이 없다"는 안내를 고치고, 예제 목록에 새 slide spec을 링크합니다.
      새 slide spec은 centralized-egress, nlb-mtls, serverless-order-pipeline-1/2, bedrock-dx-reference-architecture-1/2입니다.
    - L1 안내: `label_at: right`만 쓰면 그림은 그대로이고 보고만 사라집니다. 공간 확보와 실제 위치 확인을 먼저 안내합니다.
-   - 컨테이너 분리 경고: 계정 사례에서 실제로 옮길 노드(`s3`)와 수정량을 바로 짚게 합니다.
    - 제목 포함 PPTX의 최소 글자를 자동으로 검증합니다(nlb-mtls slide는 10.03pt로 여유가 0.03pt뿐입니다).
 
 ## 2026-11-07 인수 검토·QA에서 나온 문제 (막는 문제, 아직 안 고침)
@@ -74,7 +76,8 @@
 예제 15개 인수 검토(Codex A·B·C)와 처음 쓰는 사용자 역할 QA 4명(T1 네트워크, T2 앱·데이터, T3 엔터프라이즈,
 T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 가운데 이번에 고치지 못한 것입니다.
 재현 spec과 PNG는 개발 머신의 `~/.cache/skill-design/qa/T*/`(minimal/, repro-*.layout.yaml)에 있습니다.
-corpus에 옮겨 2단계(규칙 판정으로 배치 고르기)의 시험 사례로 쓰는 것이 다음 일입니다.
+가장 작은 재현 15개는 `tests/corpus/qa/`로 옮겼습니다(071c633). 문서 예제의 slide 글자 크기 결함에는 `bad R-fit` 태그를 달았습니다(bfe8cf7).
+이 사례들이 2단계(규칙 판정으로 배치 고르기)의 시험 사례입니다.
 
 - **선이 다른 노드의 아이콘·이름을 관통 (LINE OVER ICON/TEXT):**
   - 3 AZ 큰 그림에서 AZ 3 → DB 선이 AZ 2 서버를 지나갑니다(T4 large_3az). 축소본 three_az_writer_9nodes에서는
@@ -140,11 +143,8 @@ corpus에 옮겨 2단계(규칙 판정으로 배치 고르기)의 시험 사례�
   - overlay 멤버가 VPC 안과 밖에 나뉜 경우
   - "테두리에 걸치려면 `in:`을 빼라"
 - **문서:** `layout_spec.md`의 hub 설명이 동작과 다릅니다. 선이 닿지 않는 박스는 오류가 아니라 hub None입니다.
-- **corpus 태그:** 문서 모드에도 R-fit 판정이 생기면서 `slide-fit/nfw-s2`, `slide-fit/nfw-t3`,
-  `slides/nfw-reference-architecture`의 `good R-fit` 태그 3개가 document run과 맞지 않습니다.
-  태그를 slide 모드로 한정해야 합니다.
 - **corpus 범위:** `slide-fit/nfw-s2`, `slide-fit/nfw-t3`, `slides/nfw-reference-architecture`는 `good R-fit`을 slide에만
-  적용하려고 `modes`를 slide로 줄였습니다. 그래서 document 모드 run 3개(R-rt, R-label 검사)가 빠졌습니다.
+  적용하려고 `modes`를 slide로 줄였습니다(071c633, 태그 불일치는 해소). 그래서 document 모드 run 3개(R-rt, R-label 검사)가 빠졌습니다.
   `good`에 모드별 map을 지원하면 document run을 되살릴 수 있습니다.
 - **범례(note):** 줄바꿈이 홉 이름(`GWLBe → EC2` 등) 가운데서 일어날 수 있습니다.
 - **글자 확대 기록:** `w4-text-fit-validation.md`의 수치는 88872ab 기준입니다. 병합 후 수치는 위 "지금 상태"에 있습니다.
