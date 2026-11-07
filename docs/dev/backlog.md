@@ -48,13 +48,26 @@
 4. **저장소 전체 Codex 재리뷰(`CODE_REVIEW-2.md`).**
    - 첫 리뷰의 R1~R7은 모두 고쳤습니다.
    - 레이아웃 엔진 바깥 부분(export, PPTX, 아이콘, spec 로더, 문서)은 지금 바로 리뷰할 수 있습니다.
-5. **QA 재현 spec을 corpus로 옮기기.**
-   - 아래 "인수 검토·QA에서 나온 문제"의 재현 spec을 `tests/corpus/qa/`에 넣고 MANIFEST에 `bad` 태그를 답니다.
-   - 2단계 완료 기준의 시험 사례로 씁니다.
+5. **overlay 제목 겹침(QA T4) 다시 하기.**
+   - 브랜치 `overlay-title`(a2b59a9, 병합 안 함)은 동일·포함·부분 공유 overlay의 제목 띠를 쌓습니다.
+     리뷰에서 처음 지적된 2건(선언 순서로 R-twin 대응이 어긋남, 부분 공유)은 고쳤습니다.
+   - 그런데 수정이 새 차단을 만들었습니다. 재현은 한 subnet에 `a1@(a,1)`, `b1@(b,1)`, `b2@(b,2)`, `c3@(c,3)`,
+     ASG `[a1,b1,b2]`, TG `[b2,c3]`, SG 전체, 모두 `header: below`, row 2 `min_gap_before: 200`입니다.
+     이때 비멤버 B1이 TG 안에 들어갑니다.
+   - 사례별 수정이 수렴하지 않는 모양이라 2단계(규칙 판정)와 함께 다룹니다.
+     멤버십 검사(비멤버가 overlay 안에 들어감)를 rules.py에 먼저 넣어야 합니다.
+   - 재현 spec: `tests/corpus/qa/`의 T4 overlay_headers.
 6. **글자 확대 비용 줄이기.**
    - 그림 하나 기준 중앙값은 1.29배입니다. 최악은 1.5초가 12.3초로 늘었습니다(`bench/engine2-pipeline` slide).
    - 확대 후보마다 feedback 전체를 다시 돌리기 때문입니다.
    - 확대를 포기한 이유와 목표 근처의 반올림 정체(nlb 10.69px)를 로그에 남깁니다.
+
+7. **작은 문서 정리 (리뷰 백로그).**
+   - `SKILL.md`의 "slide에는 spec이 없다"는 안내를 고치고, 예제 목록에 새 slide spec을 링크합니다.
+     새 slide spec은 centralized-egress, nlb-mtls, serverless-order-pipeline-1/2, bedrock-dx-reference-architecture-1/2입니다.
+   - L1 안내: `label_at: right`만 쓰면 그림은 그대로이고 보고만 사라집니다. 공간 확보와 실제 위치 확인을 먼저 안내합니다.
+   - 컨테이너 분리 경고: 계정 사례에서 실제로 옮길 노드(`s3`)와 수정량을 바로 짚게 합니다.
+   - 제목 포함 PPTX의 최소 글자를 자동으로 검증합니다(nlb-mtls slide는 10.03pt로 여유가 0.03pt뿐입니다).
 
 ## 2026-11-07 인수 검토·QA에서 나온 문제 (막는 문제, 아직 안 고침)
 
@@ -79,11 +92,12 @@ corpus에 옮겨 2단계(규칙 판정으로 배치 고르기)의 시험 사례�
   - 두 선이 같은 꺾임점을 씁니다(T2 attempts/data-lake.slide.v2. 축소본 repro-false-junction은 수직 구간 6px 겹침).
   - 241px 구간을 함께 씁니다(T4 order_14steps slide, F1).
   - DNS 제어선과 앱 선이 한 선처럼 이어집니다(T1 multiregion-dr slide).
-- **규칙 위반이 있어도 `Layout OK`:** F3/F5가 나와도 exit 0이라 사용자는 끝났다고 믿습니다. 2단계에서 규칙
-  판정이 엔진 선택에 들어가면 함께 정합니다(최소한 summary에 "rule violations remain"을 표시).
-- **컨테이너 포함 오류:** `in: cloud`인 private hosted zone이 Region 안에 그려짐(T3 sibling-containment,
-  경고 없음), 형제 account가 다른 account 안에 그려짐(T3 account-containment).
-- **overlay 제목 겹침:** 같은 멤버를 공유하는 overlay 3개의 제목이 겹침(T4 overlay_headers).
+- **규칙 위반이 있어도 `Layout OK` (해결, 42a877b):** 이제 마지막 줄에 남은 위반 수와 규칙 코드가 나옵니다.
+  `SKILL.md`에는 규칙별로 spec에서 시도할 수단을 적었습니다. exit status는 그대로입니다.
+- **컨테이너 포함 오류 (해결, 8533e44·207f80c):** 형제 컨테이너를 분리하는 제약을 넣었습니다.
+  충돌은 거부하지 않고 완화하며, 이동량과 고정할 값을 경고로 알립니다. rules.py에 B3/B4 포함 검사를 넣었습니다.
+- **overlay 제목 겹침:** 같은 멤버를 공유하는 overlay 3개의 제목이 겹칩니다(T4 overlay_headers).
+  아직 남아 있습니다. 위 "남은 일" 5번을 봅니다.
 - **선이 아래 AZ subnet 머리띠 관통:** T2 repro-alb-trunk-header의 slide는 797f782에서도 관통합니다.
   `LINE IN HEADER`와 `R-border B2`가 나오고 exit 1입니다. 재판정에서는 흐름이 읽혀 경미로 봤습니다.
   feedback 수리가 이 모양(AZ 템플릿 trunk 분기)을 아직 풀지 못합니다.
@@ -92,6 +106,9 @@ corpus에 옮겨 2단계(규칙 판정으로 배치 고르기)의 시험 사례�
   - alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
   - 따로 쓴 slide spec(`docs/examples/specs/slides/*`)은 모두 10pt 이상이고 통과합니다.
   - 남은 것은 자동 확대로 풀 수 있는 크기가 아니므로, spec 분할이나 slide 전용 배치가 필요합니다.
+  - 2026-11-07 세션 5에서 문서 예제 4개에 slide spec을 만들었습니다(모두 10pt 이상, 규칙 위반 0).
+    centralized-egress, nlb-mtls, serverless-order-pipeline(2장), bedrock-dx(2장)입니다.
+    alb, nlb, nfw는 원래 slide spec이 있습니다.
   - 인수 재판정(main 797f782, 그림 20개): 차단 7건이고, 7건 모두 위 글자 크기입니다.
     범례 잘림(nlb-mtls, gwlb, tgw, bedrock-dx)은 모두 해소됐고, 이전에 통과한 그림 가운데 나빠진 것은 없습니다.
 - **작성 안내 부족(처음 사용자):** multi-account 작성 패턴, CloudFront VPC origin → internal ALB 예제,
