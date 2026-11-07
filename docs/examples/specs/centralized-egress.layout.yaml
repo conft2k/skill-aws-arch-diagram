@@ -1,7 +1,7 @@
 # Centralized egress through a Security VPC: App VPC A and App VPC B (EC2 → TGW ENI per AZ) → TGW (Spoke RT on the spoke side, Firewall RT on the Security VPC side) → Security VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet
 name: centralized-egress
 mode: document
-cols: [ec2, att, sp, rtsp, tgw, rtfw, seni, fw, nat, igw, inet]   # sp: an empty column, so Spoke RT (on main) is two columns off App VPC B (on b1) and the solve keeps them apart on x, not by pushing App VPC B down
+cols: [ec2, att, rtsp, tgw, rtfw, seni, fw, nat, igw, inet]
 rows: [a1, a2, main, b1, b2]   # App VPC A on a1/a2, App VPC B on b1/b2: one template each over the same columns, so both come out identical; the Security VPC's AZs share the inner rows a2/b1
 
 groups:
