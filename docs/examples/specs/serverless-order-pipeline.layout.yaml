@@ -67,7 +67,7 @@ edges:
   - {e: "ingest -> fh"}
   - {e: "fh -> lake"}
   - {e: "sfn -> pay", step: 6}
-  - {e: "sfn -> reserve.*", trunk: true, from_offset: 0, step: 7, step_at: stem}   # from_offset 0: temporary workaround so both branches leave from one port (one stem forking to each AZ)
+  - {e: "sfn -> reserve.*", trunk: true, step: 7, step_at: stem}   # trunk: one stem from one port, forking to each AZ
   - {e: "sfn -> sns", verb: Publish, step: 8}
   - {e: "sns -> mail", step: 9}
   - {e: "mail -> ses", verb: SendEmail}

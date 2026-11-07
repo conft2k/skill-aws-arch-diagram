@@ -312,8 +312,8 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   row is left mostly empty. The shared columns take the widest pitch any lane needs, and
   a VPC lane's rows (labels before a trunk bend, subnet headers beside an overlay) usually
   set it: keep the labels in the VPC short and put a long one on the hop with room. A
-  per-AZ fork is `trunk: true` (the example also sets `from_offset: 0`, a temporary
-  workaround so both branches leave from one port; drop it once trunk forks share one). layout.py warns past 1800 px wide.
+  per-AZ fork is `trunk: true` (one stem from one port, forking to each AZ). layout.py warns
+  past 1800 px wide.
 
 - **AZ template** (nlb): `az` with `per`, subnets `in: az`, nodes `col:` only, an ASG
   overlay over both EC2 columns and one arrow into it; the LB (`in: vpc, at: [pub, main]`)
