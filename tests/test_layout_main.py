@@ -1089,13 +1089,12 @@ class FallbackPorts(unittest.TestCase):
         got = self.starts(spec, b)
         (a, fa), (c, fc) = got["enib.1"], got["seni.2"]
         self.assertNotEqual(fa, fc)                     # two spec lines, two data-flow values
-        self.assertNotEqual(a[0], c[0], got)            # not one port ...
-        self.assertNotEqual(a, c, got)                  # ... nor one stem
+        self.assertNotEqual(a[0], c[0], got)            # not one port, and (below) no shared stem
         self.assertEqual([i.msg for i in CL.run_checks(ET.fromstring(b.svg)) if i.kind == "LINE ON LINE"], [])
 
     def test_checker_flags_the_shared_stem(self):
         """Without the drawn-port bookkeeping the two share the stem: LINE ON LINE says so
-        (data-flow), so the feedback round re-routes them."""
+        (data-flow), the problem layout.py's feedback rounds answer."""
         with mock.patch.object(layout.layout_route, "_note_drawn", lambda *a: None):
             spec, b = built(self.spec())
         got = self.starts(spec, b)

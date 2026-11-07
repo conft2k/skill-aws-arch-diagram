@@ -892,6 +892,29 @@ class DetourPorts(unittest.TestCase):
         ctx.side_use[("y", "right")] = [(1, "a", -16.0, 1, False)]
         self.assertEqual(R._end_off(ctx, xs[0], "b", "right", ports), -4.0)
 
+    def test_drawn_fallbacks_count_and_trunk_mates_do_not(self):
+        """A port a route already drew on a side its chosen shape does not use (drawn_use)
+        is taken like a planned one; the instances of x's own trunk line share it."""
+        ctx, xs, ports = self.setup()
+        x = xs[0]
+        ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False)]
+        self.assertEqual(R._side_taken(ctx, x, "b", "top"), [0.0])
+        self.assertNotEqual(R._end_off(ctx, x, "b", "top", ports), 0.0)
+        x.e.trunk = True
+        ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, x.e.line, True)]
+        self.assertEqual(R._side_taken(ctx, x, "b", "top"), [])
+        self.assertEqual(R._end_off(ctx, x, "b", "top", ports), 0.0)
+
+    def test_crowded_side_finds_a_free_spot(self):
+        """The fourth line onto a 48px side (0, then ±12 taken, ±24 off the icon) takes the
+        widest free gap, never a taken port."""
+        ctx, xs, ports = self.setup()
+        ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False), (6, "a", 12.0, 6, False), (7, "a", -12.0, 7, False)]
+        v = R._end_off(ctx, xs[0], "b", "top", ports)
+        self.assertEqual(abs(v), 20.0)
+        ctx.drawn_use[("y", "top")] = [(5, "a", 0.0, 5, False), (6, "a", 12.0, 6, False)]
+        self.assertEqual(R._end_off(ctx, xs[0], "b", "top", ports), -12.0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

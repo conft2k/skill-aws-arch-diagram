@@ -1436,7 +1436,10 @@ def _end_off(ctx: _Ctx, x: "_Edge", end: str, side: str, ports: Dict[Tuple[int, 
     spec's from_offset / to_offset; on the chosen shape's side its assigned port; on a side
     other edges use, PORT_PITCH past their outermost port toward the other end (so an arrow
     into a node never lands on the port the next flow leaves from: alb → ec2.2's detour
-    into EC2's right side beside ec2.2 ..> cw); else the center."""
+    into EC2's right side beside ec2.2 ..> cw); when neither end of the row of ports has
+    room on the icon, the free spot on the side farthest from every port taken there (a
+    gap between two of them, at least PORT_PITCH or, on a crowded side, over 2px — never
+    one already taken: the fourth fallback onto a 48px side); else the center."""
     e = x.e
     fixed = e.from_offset if end == "a" else e.to_offset
     if fixed is not None:
@@ -1454,7 +1457,13 @@ def _end_off(ctx: _Ctx, x: "_Edge", end: str, side: str, ports: Dict[Tuple[int, 
         v = (min(others) - K.PORT_PITCH) if d < 0 else (max(others) + K.PORT_PITCH)
         if abs(v) <= half:
             return v
-    return 0.0
+    spots = [0.0] + [o + k * K.PORT_PITCH for o in others for k in (-1, 1)]
+    free = [v for v in spots if abs(v) <= half and all(abs(v - o) >= K.PORT_PITCH - 0.5 for o in others)]
+    if free:
+        return min(free, key=lambda v: (abs(v), -first * v))
+    grid = [float(v) for v in range(-int(half), int(half) + 1)]
+    best = max(grid, key=lambda v: (min(abs(v - o) for o in others), -abs(v), first * v))
+    return best if min(abs(best - o) for o in others) > 2 else 0.0
 
 
 def _detours(ctx: _Ctx, x: _Edge, ports: Optional[Dict[Tuple[int, str], float]] = None):
