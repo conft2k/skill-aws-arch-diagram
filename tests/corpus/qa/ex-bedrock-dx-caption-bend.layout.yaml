@@ -1,0 +1,24 @@
+# Source: docs/examples/specs/bedrock-dx-reference-architecture.layout.yaml at 91062e1, reduced to the on-premises PC → Internet proxy line
+# Defect: the routed HVH out of PC's right side bends at the layout's measure of the caption
+# CLAUDE_CODE_USE_BEDROCK=1 plus its gutter, but the render draws that all-caps/underscore
+# line ~14 px wider, so the vertical leg runs ~2 px past the rendered caption.
+# Also: the label's soft run before the bend is measured from the On-premises border, so
+# Direct Connect (and everything right of it) is pushed ~95 px right although the label sits below the box.
+name: ex-bedrock-dx-caption-bend
+mode: document
+cols: [pc, rtr, dx]
+rows: [link, {id: sbot, min_gap_before: 200}]   # the original Internet row sits well below the box (323 px)
+
+groups:
+  - {id: onprem, type: onprem, label: On-premises}
+
+nodes:
+  - {id: pc,   icon: resource/Client, label: 개발자 PC, sub: [Claude Code, CLAUDE_CODE_USE_BEDROCK=1, AWS_REGION=ap-northeast-2], in: onprem, at: [pc, link]}
+  - {id: rtr,  icon: resource/Amazon-VPC_Customer-Gateway, label: 고객 라우터, in: onprem, at: [rtr, link]}
+  - {id: dx,   icon: service/AWS-Direct-Connect, label: Direct Connect, sub: private VIF · BGP, at: [dx, link]}
+  - {id: inet, icon: resource/Internet, label: Internet, at: [dx, sbot]}
+
+edges:
+  - {e: "pc ..> inet", label: HTTPS (프록시), from_side: right}
+  - {e: "pc -> rtr", label: "HTTPS :443"}
+  - {e: "rtr -> dx"}
