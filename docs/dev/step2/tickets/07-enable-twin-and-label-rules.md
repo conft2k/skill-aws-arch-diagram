@@ -4,8 +4,10 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** implemented; awaiting independent review
 
-- [ ] The tier-0 part of the verdict now counts all tier-0 rules.
-- [ ] Corpus (ticket 01 report): 0 cases worse, earlier groups not higher, and check problems not higher. Each R-twin and R-label bad-tagged case is listed with its before and after counts, the group's bad-tagged cases have fewer violations in total, and tags the evidence fixes move from bad to good with the reason.
-- [ ] Runtime stays within the ticket 04 limits.
+Evidence: [ticket 07 validation](../results/07-enable-twin-and-label-rules.md).
+
+- [x] The tier-0 part of the verdict now counts all tier-0 rules.
+- [x] Corpus (ticket 01 report): 0 cases worse, earlier groups not higher, and check problems not higher. Each R-twin and R-label bad-tagged case is listed with its before and after counts, the group's bad-tagged cases have fewer violations in total, and tags the evidence fixes move from bad to good with the reason.
+- [x] Runtime stays within the ticket 04 limits.

@@ -594,3 +594,61 @@ def test_gw_ret_response_label_is_not_covered_by_note_background(tmp_path, capsy
             a, b, c, d = text["box"]
             assert not (max(x, a) < min(x + w, c) and max(y, b) < min(y + h, d)), (
                 f"{text['own']} at y={text['y']} is occluded by later rect at y={y}")
+
+
+BEDROCK_DX = ROOT / "docs/examples/specs/bedrock-dx-reference-architecture.layout.yaml"
+
+
+def test_all_tier_zero_rules_count_in_the_verdict(tmp_path):
+    before = default(BEDROCK_DX, tmp_path, "slide")
+    b, draft, _, problems, *_ = before
+    violations = rules.check(b.spec, b.geom, draft)
+    verdict = layout.RuleGuard(selection=True).verdict(b, draft, problems)
+    hard = [v for v in violations if v.tier == 0]
+    assert any(v.rule == "R-label" for v in hard)
+    assert verdict.tier_0_count == len(hard)
+    assert verdict.tier_0_cost == round(sum(v.cost for v in hard), 3)
+
+
+def test_label_violation_skips_its_edge_route(tmp_path, capsys):
+    before = default(BEDROCK_DX, tmp_path, "slide")
+    assert any(v.rule == "R-label" and v.owners == ("edge:2",)
+               for v in rules.check(before[0].spec, before[0].geom, before[1]))
+    status, draft, text = invoke(BEDROCK_DX, tmp_path, capsys, "--mode", "slide")
+    assert "rule: R-label" not in text
+    assert "skip edges[2]=" in text and "removed R-label L1 ×1" in text
+    assert len(CL.run_checks(ET.fromstring(draft))) <= len(CL.run_checks(ET.fromstring(before[1])))
+    assert invoke(BEDROCK_DX, tmp_path, capsys, "--mode", "slide")[1] == draft
+
+
+def test_header_conflict_flips_the_overlay_header(tmp_path, capsys):
+    source = ROOT / "tests/corpus/twin/three.layout.yaml"
+    before = default(source, tmp_path, "slide")
+    assert any(v.rule == "R-border" and "group:asg" in v.owners
+               for v in rules.check(before[0].spec, before[0].geom, before[1]))
+    _, draft, text = invoke(source, tmp_path, capsys, "--mode", "slide")
+    assert "overlay asg header beside" in text
+    assert "rule: R-border" not in text
+    assert len(CL.run_checks(ET.fromstring(draft))) < len(CL.run_checks(ET.fromstring(before[1])))
+
+
+def test_pinned_overlay_header_is_not_flipped(tmp_path, capsys):
+    source = ROOT / "tests/corpus/twin/three.layout.yaml"
+    document = layout_spec._read(source)[0]
+    overlay = next(g for g in document["groups"] if g["id"] == "asg")
+    overlay["header"] = "right"
+    pinned = tmp_path / "pinned.json"
+    pinned.write_text(json.dumps(document))
+    _, _, text = invoke(pinned, tmp_path, capsys, "--mode", "slide")
+    assert "overlay asg header" not in text
+
+
+def test_enabling_twins_and_labels_keeps_the_previous_groups_winner(tmp_path, capsys, monkeypatch):
+    with monkeypatch.context() as prior:
+        prior.setattr(layout, "SELECTION_RULES", frozenset(("R-border", "R-flow", "R-rt")))
+        _, before, old_text = invoke(BEDROCK_DX, tmp_path, capsys, "--mode", "slide")
+    _, after, text = invoke(BEDROCK_DX, tmp_path, capsys, "--mode", "slide")
+    for rule in ("R-border", "R-flow", "R-rt"):
+        assert text.count(f"rule: {rule}") <= old_text.count(f"rule: {rule}")
+    assert text.count("rule: R-label") < old_text.count("rule: R-label")
+    assert len(CL.run_checks(ET.fromstring(after))) <= len(CL.run_checks(ET.fromstring(before)))

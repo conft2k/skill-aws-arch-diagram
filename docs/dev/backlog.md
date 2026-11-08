@@ -30,7 +30,7 @@
 ## 남은 일 (순서대로)
 
 1. **2단계: 엔진이 규칙 판정으로 후보를 고르기 (진행 중, 2026-11-08).**
-   - spec과 티켓은 `docs/dev/step2/`에 있습니다. 01–06, 08, 10은 병합했습니다. 07(R-twin·R-label)과 09의 3단계 목록은 다음 세션에 합니다.
+   - spec과 티켓은 `docs/dev/step2/`에 있습니다. 01–06, 08, 10은 병합했습니다. 07(R-twin·R-label)은 [검증 결과](step2/results/07-enable-twin-and-label-rules.md)를 냈습니다(main 6e3fb7a 대비 8 better / 752 same / 0 worse). 09의 3단계 목록은 다음 세션에 합니다.
    - corpus 결과 (main 36c7ea3 → main 6e3fb7a, 티켓 10 포함):
      - R-flow 82 → 46
      - R-rt 94 → 90

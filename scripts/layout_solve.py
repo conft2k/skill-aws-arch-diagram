@@ -2528,3 +2528,31 @@ def twin_classes(spec: Spec) -> List[List[Tuple[str, Dict[str, List[Tuple[str, s
             row.append((gid, {axis: m._twin_measures(axis, mem) for axis in ("x", "y")}, norder))
         out.append(row)
     return out
+
+
+def twin_maps(spec: Spec) -> List[Tuple[str, str, Dict[str, str]]]:
+    """Per pair of twins (twin_classes), one twin's box, node and overlay ids (group:… /
+    node:…) mapped to the other's corresponding ids, so selection can copy one twin's layout
+    decisions to the other. Read only, like twin_classes."""
+    m = _Model(spec)
+    out = []
+    for cls in m.twin_sets():
+        ids = []
+        for gid, _, order, oedges in cls:
+            rows, cols = m._tracks_used(gid)
+            rank = ({r: k for k, r in enumerate(rows)}, {c: k for k, c in enumerate(cols)})
+            norder = m._shape(gid, rank, root=True)[2]
+            ids.append((gid, [f"group:{g}" for g in order] + [f"node:{n}" for n in norder]
+                        + [f"group:{o[0]}" for o in oedges]))
+        for i, (a, ia) in enumerate(ids):
+            for b, ib in ids[i + 1:]:
+                if len(ia) == len(ib):
+                    out.append((a, b, dict(zip(ia, ib))))
+    return out
+
+
+def overlay_headers(spec: Spec, decisions: Optional[Decisions] = None) -> Dict[str, str]:
+    """Each overlay without a spec `header:`, and where its title goes under these decisions:
+    beside (left of the first member row) or above the members (_overlay_beside)."""
+    m = _Model(spec, decisions=decisions)
+    return {g.id: "beside" if m._overlay_beside(g) else "above" for g in m.overlays if g.header is None}

@@ -1,0 +1,21 @@
+# Source: ~/.cache/claude-tmp/claude-1000/-home-ec2-user-dev-skill-aws-arch-diagram/2ea5faeb-d56e-4bd4-9999-2e3fad2c1b8a/scratchpad/timing/e2e/arch.layout.yaml
+# (timing test, TGW + GWLB inspection): the Inspection VPC's nat column only, without Cloud, Region or CIDR.
+# AZ 1 = public row a1 above appliance row a2; AZ 2 = appliance row b1 above public row b2 (mirrored).
+name: mirrored-az-rows
+mode: document
+cols: [nat]
+rows: [a1, a2, b1, b2]
+groups:
+  - {id: insp,  type: vpc, label: Inspection VPC}
+  - {id: azi1,  type: az, label: Availability Zone 1, in: insp}
+  - {id: pubi1, type: public, label: Public subnet, in: azi1}
+  - {id: apsn1, type: private, label: Appliance subnet, in: azi1}
+  - {id: azi2,  type: az, label: Availability Zone 2, in: insp}
+  - {id: pubi2, type: public, label: Public subnet, in: azi2}
+  - {id: apsn2, type: private, label: Appliance subnet, in: azi2}
+nodes:
+  - {id: nat1, icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubi1, at: [nat, a1]}
+  - {id: fw1,  icon: service/Amazon-EC2, label: 방화벽, in: apsn1, at: [nat, a2]}
+  - {id: fw2,  icon: service/Amazon-EC2, label: 방화벽, in: apsn2, at: [nat, b1]}
+  - {id: nat2, icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubi2, at: [nat, b2]}
+edges: []

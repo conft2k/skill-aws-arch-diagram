@@ -84,7 +84,10 @@ from layout_model import Element, Geometry, NoteBlock, Requirement, Spec  # noqa
 MAX_ROUNDS = 5          # feedback rounds after the first solve (DESIGN 4.10)
 WIDEN = 16              # px a feedback round adds to a gap
 MAX_SKIP = 3            # candidates an edge may skip before its gap is widened instead
-SELECTION_RULES = frozenset(("R-border", "R-flow", "R-rt"))
+# Rule groups enter selection one ticket at a time (step 2 spec): group 1 R-border and
+# R-flow, group 2 R-rt, group 3 R-twin and R-label. All tier-0 rules now count.
+RULE_GROUPS = (frozenset(("R-border", "R-flow")), frozenset(("R-rt",)), frozenset(("R-twin", "R-label")))
+SELECTION_RULES = frozenset().union(*RULE_GROUPS)
 MAX_CANDIDATES = {"document": 12, "slide": 16}
 MIN_TEXT_RETENTION = 0.9  # below-target text keeps at least 90% of the completed default's size
 REPAIR_TEXT_RETENTION = 0.99  # greater later shrink below target requires fewer tier-0 violations
@@ -96,6 +99,8 @@ REFUSED = "refusing the requested"
 DETOURS = ("LINE OFF CANVAS", "LINE LEAVES BOX")
 # check_layout's text clashes: one set of owners clashing counts once in a round's score.
 TEXT_CLASH = ("TEXT NEAR ICON", "TEXT OVERLAP")
+# check_layout's problems that put an overlay's title in conflict with text or a line.
+HEADER_CONFLICTS = TEXT_CLASH + ("LINE IN HEADER", "LINE OVER TEXT", "LINE NEAR TEXT")
 SIDE_VAR = {"left": "L", "right": "R", "top": "T", "bottom": "B"}
 SVG_NS = "http://www.w3.org/2000/svg"
 # The tags, and the <g> attributes, svg2pptx.collect accepts (DRAWN / its <g> rule).
@@ -1624,7 +1629,82 @@ def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = Fal
     return result
 
 
-def neighbours(b: Build, violations, enabled_rules=None):
+def twin_copy(b: Build, src: str, dst: str):
+    """One twin's decisions copied to the other: its diagonal pairs' axes, its overlays'
+    header places and its edges' routing alternatives. None when no twin map pairs them
+    or nothing changes; spec placements (xy, header, pinned routes) are not varied."""
+    decisions = b.decisions
+    mapping = None
+    for a, c, m in layout_solve.twin_maps(b.spec):
+        if (a, c) == (src, dst):
+            mapping = m
+        elif (a, c) == (dst, src):
+            mapping = {v: k for k, v in m.items()}
+    if mapping is None:
+        return None
+    nodes = b.spec.nodes
+    pinned = {f"node:{n}" for n, node in nodes.items() if node.xy is not None}
+    on_x = set(decisions.diag if decisions.diag is not None else
+               (p.key for p in b.diag_pairs if p.default_axis == "x"))
+    keys = {p.key for p in b.diag_pairs}
+    for p in sorted(keys, key=lambda k: tuple(sorted(k))):
+        if not any(x in mapping for x in p):
+            continue
+        q = frozenset(mapping.get(x, x) for x in p)
+        if q == p or q not in keys or q & pinned:
+            continue
+        on_x.discard(q)
+        if p in on_x:
+            on_x.add(q)
+    diag = frozenset(on_x)
+    if decisions.diag is None and diag == frozenset(p.key for p in b.diag_pairs if p.default_axis == "x"):
+        diag = None
+    overlay = dict(decisions.overlay)
+    heads = layout_solve.overlay_headers(b.spec, decisions)
+    for key, value in mapping.items():
+        o, t = key[6:], value[6:]
+        if key.startswith("group:") and o in heads and t in heads and heads[o] != heads[t]:
+            overlay[t] = heads[o]
+    skips = dict(decisions.skip)
+    ends = {}
+    for e in b.spec.edges:
+        ends.setdefault((e.a, e.b), []).append(e)
+    for e in b.spec.edges:
+        a, c = (f"node:{e.a}" if e.a in nodes else f"group:{e.a}"), (f"node:{e.b}" if e.b in nodes else f"group:{e.b}")
+        if a not in mapping and c not in mapping:
+            continue
+        ta, tc = mapping.get(a, a), mapping.get(c, c)
+        twins = ends.get((ta.split(":", 1)[1], tc.split(":", 1)[1]), [])
+        if len(twins) != 1 or twins[0] is e or not layout_route.skippable(twins[0]):
+            continue
+        k = skips.get(e.n, 0)
+        if k != skips.get(twins[0].n, 0):
+            skips[twins[0].n] = k
+    move = dataclasses.replace(decisions, diag=diag, overlay=tuple(sorted(overlay.items())),
+                               skip=tuple(sorted(skips.items())))
+    return None if move == decisions else move
+
+
+def header_flips(b: Build, problems=(), violations=()):
+    """Flip the title of each overlay a header conflict involves (beside ↔ above); an
+    overlay with a spec `header:` keeps it."""
+    heads = layout_solve.overlay_headers(b.spec, b.decisions)
+    involved = []
+    for p in problems:
+        if p.iss.kind in HEADER_CONFLICTS:
+            involved += p.owners
+    for v in violations:
+        if v.rule == "R-border":
+            involved += v.owners
+    overlay = dict(b.decisions.overlay)
+    for owner in involved:
+        gid = owner[6:] if owner.startswith("group:") else None
+        if gid in heads:
+            flipped = {**overlay, gid: "above" if heads[gid] == "beside" else "beside"}
+            yield dataclasses.replace(b.decisions, overlay=tuple(sorted(flipped.items())))
+
+
+def neighbours(b: Build, violations, enabled_rules=None, problems=()):
     """Violation-driven moves, in a stable order; pinned placements have no moves."""
     decisions = b.decisions
     skips = dict(decisions.skip)
@@ -1633,7 +1713,15 @@ def neighbours(b: Build, violations, enabled_rules=None):
     enabled_rules = SELECTION_RULES if enabled_rules is None else enabled_rules
     for v in sorted(violations, key=lambda v: (v.tier, v.rule, v.owners, v.code, v.message)):
         moves = []
-        if v.rule == "R-rt" and v.rule in enabled_rules:
+        if v.rule == "R-twin" and v.rule in enabled_rules:
+            # Copy either twin's decisions to the other, the first-named one first.
+            groups = [o[6:] for o in v.owners if o.startswith("group:")]
+            if len(groups) == 2:
+                for src, dst in (groups, groups[::-1]):
+                    move = twin_copy(b, src, dst)
+                    if move is not None:
+                        moves.append(move)
+        elif v.rule == "R-rt" and v.rule in enabled_rules:
             # Only the associated table owns these moves; the other node owner
             # may be its hub. Keep every unrelated pair on its current axis.
             on_x = (decisions.diag if decisions.diag is not None else
@@ -1673,6 +1761,12 @@ def neighbours(b: Build, violations, enabled_rules=None):
             if move not in seen:
                 seen.add(move)
                 yield move
+    if {"R-twin", "R-label"} <= set(enabled_rules):
+        # Group 3: an overlay title in conflict with text or a line moves to its other place.
+        for move in header_flips(b, problems, [v for v in violations if v.rule in enabled_rules]):
+            if move not in seen:
+                seen.add(move)
+                yield move
 
 
 def redraw_routes(b: Build, decisions, source: str) -> Build:
@@ -1697,6 +1791,10 @@ def selection_changes(before, after):
     if after.diag != before.diag:
         pairs = [" / ".join(sorted(p)) for p in sorted(after.diag or (), key=lambda p: tuple(sorted(p)))]
         changes.append("diagonal pairs on x: " + ", ".join(pairs))
+    old_overlay = dict(before.overlay)
+    for gid, place in after.overlay:
+        if place != old_overlay.get(gid):
+            changes.append(f"overlay {gid} header {place}")
     if after.place != before.place:
         changes.append(f"note place={after.place}")
     return "; ".join(changes)
@@ -1746,11 +1844,14 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
     base_decisions = b.decisions
     shared = _budget if _budget is not None else {"count": 0, "index": 0}
     best, index, count = default, shared["index"], shared["count"]
-    if "R-rt" in rule_guard.enabled_rules and any(v.rule == "R-rt" for v in first):
-        # A new group's greedy move can leave the previous group's better drawing
+    later = [k for k, group in enumerate(RULE_GROUPS) if k and group <= rule_guard.enabled_rules
+             and any(v.rule in group for v in first)]
+    if later:
+        # A new group's greedy move can leave the previous groups' better drawing
         # unreachable. Keep that winner as the incumbent, sharing one fixed budget.
+        earlier = frozenset().union(*RULE_GROUPS[:later[-1]]) & rule_guard.enabled_rules
         previous = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
-                             enabled_rules=rule_guard.enabled_rules - {"R-rt"},
+                             enabled_rules=earlier,
                              min_text_size=rule_guard.min_text_size)
         previous._checked = rule_guard._checked
         previous._problems = rule_guard._problems
@@ -1857,7 +1958,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
             current.routing_alternatives = alternatives
             current._alternative_edges = wanted
         round_best, round_score, round_index = best, score, index
-        proposals = [(current, d) for d in neighbours(current, violations, rule_guard.enabled_rules)]
+        proposals = [(current, d) for d in neighbours(current, violations, rule_guard.enabled_rules,
+                                                      problems=best[3])]
         for origin, decisions in proposals:
             if decisions in tried:
                 continue

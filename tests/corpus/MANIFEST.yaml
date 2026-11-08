@@ -1141,6 +1141,11 @@ cases:
     rules: [R-border]
     what: "6-node ALB trunk crosses the next AZ subnet header; LINE IN HEADER / R-border B2"
     bad: {R-border: {slide: edge:3, slide-no-title: edge:3}}   # B2: the remaining ALB trunk leg passes through AZ2's subnet title; budgeted candidates cannot clear it; try routing hints or subnet pad / min_w / min_h
+  # Inspection VPC의 AZ 1과 AZ 2가 행 순서를 위아래로 뒤집어 그려집니다(timing 테스트 e2e tgw-gwlb-inspection: AZ 1은 흐름 행이 위·appliance 행이 아래, AZ 2는 반대).
+  # rules.py 미검출: twin_classes가 두 AZ를 twin으로 보지 않습니다. AZ 제목이 다르고(Availability Zone 1 / 2, az는 TWIN_NAMED가 아님) AZ 안의 행 순서도 다릅니다(Public subnet이 AZ 1에서는 첫 행, AZ 2에서는 둘째 행). 둘 다 같아야 twin입니다.
+  - path: qa/timing-mirrored-az-rows.layout.yaml
+    rules: [R-twin]
+    what: "4-node reduction: one VPC's AZ 1 stacks Public over Appliance subnet, AZ 2 Appliance over Public; rules.py 미검출"
 examples:
   # alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
   - path: ../../docs/examples/specs/alb-reference-architecture.layout.yaml
@@ -1151,9 +1156,8 @@ examples:
   - path: ../../docs/examples/specs/bedrock-dx-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-fit]
     what: "Claude Code on Amazon Bedrock over Direct Connect: on-premises PC → DX → VGW → VPC endpoints in Seoul (+ us-west-2 option B), with a step legend pane"
-    good: [R-flow]
+    good: [R-flow, R-label]   # ticket 07: on a slide selection skips edge:2's next routing alternative, so 'DNS :53' sits right of its vertical line (L1 gone); bus drop badges 4-6 sit by their drops
     bad:
-      R-label: {slide: edge:2, slide-no-title: edge:2}   # bus drop badges 4-6 sit by their drops (one net with the bus); on a slide 'DNS :53' goes left of its vertical line (the engine warns: no room right of it)
       R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}   # document 5.60px < 11px; slides 4.35 / 4.88pt < 8pt
   # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
   - path: ../../docs/examples/specs/centralized-egress.layout.yaml
