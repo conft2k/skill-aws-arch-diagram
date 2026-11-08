@@ -134,6 +134,28 @@ python3 ~/.claude/skills/skill-aws-arch-diagram/scripts/fetch_icons.py
   older viewers fall back to the embedded PNGs. Slides use Arial and Malgun Gothic
   (맑은 고딕) by default; change them with `--font` / `--ea-font`.
 
+## How it works
+
+![How it works: a request → Claude Code writes a spec → Trellis (load, solve, note, route, check, rule verdict) → export.py writes SVG, PNG and PPTX](docs/how-it-works.png)
+
+This is the flow for a new diagram. Changing or converting an existing diagram edits the
+SVG draft directly, without a spec (SKILL.md's draft path).
+
+1. Claude follows SKILL.md: it reads the request, finds the closest example spec and the
+   icon names, and writes a layout spec. The spec has no coordinates, only named columns
+   and rows, containers, nodes, edges and the note.
+2. Trellis, the layout engine, computes every coordinate with room for the planned routes,
+   places the note, draws the connectors into a draft SVG, then judges
+   it in process with `check_layout` and the rule checker (`rules.py`). It solves again with
+   other gaps or routes while problems remain, and keeps the candidate drawing that best
+   follows the rules.
+3. Each remaining problem comes back with the spec item behind it (`spec:`) and a change to
+   try (`try:`), and remaining rule violations come at the end of the summary; Claude edits
+   the spec and runs it again.
+4. On `Layout OK` with no rule violation, `export.py` writes SVG, PNG and PPTX, and Claude checks the PNG.
+
+The diagram labels are in Korean.
+
 ## Layout
 
 ```
@@ -148,7 +170,7 @@ docs/examples/specs/         one layout spec per reference example plus the skel
                              `example.layout.yaml`; each regenerates its example's layout
                              (`slides/`: the slide examples' specs)
 scripts/find_icon.py         fuzzy lookup: `find_icon.py alb igw "s3 gateway endpoint"`
-scripts/layout.py            the layout engine: spec -> draft SVG; computes every coordinate,
+scripts/layout.py            Trellis, the layout engine: spec -> draft SVG; computes every coordinate,
                              runs check_layout with feedback rounds, and names the spec item
                              and a spec change to try for each problem
 scripts/layout_spec.py       load and validate a spec: schema, defaults, `per` templates, edge
@@ -162,6 +184,8 @@ scripts/layout_note.py       the note (step legend): panel / pane / lines placem
 scripts/layout_model.py      the engine's data model and module contract
 scripts/layout_const.py      engine constants: mode tables, group styles, text, line and note
                              numbers
+scripts/rules.py             judges the user rules (flow, route table placement, twins, labels,
+                             text size, subnet borders); the engine picks candidates by it
 scripts/export.py            drafts -> any of SVG / PNG / PPTX (+ slide previews); checks
                              every draft first and writes nothing if one fails
 scripts/embed.py             inline bundle: refs as base64; fails on unknown/external refs
@@ -180,7 +204,9 @@ scripts/outfile.py           write outputs with a plain open() once every result
                              refuse an output that is the input or one open() could not write
 ```
 
-### Drawing a new diagram with the layout engine
+### Drawing a new diagram with the layout engine (Trellis)
+
+The layout engine is called Trellis. Its entry point is `scripts/layout.py`, and "the engine" in this document means Trellis.
 
 A new diagram is drawn from a layout spec, with no coordinates. Copy the closest example's
 spec from [`docs/examples/specs/`](docs/examples/specs/) and edit its column and row

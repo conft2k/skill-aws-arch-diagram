@@ -1,0 +1,80 @@
+# How skill-aws-arch-diagram draws a new diagram: the user's request goes to Claude Code, which reads the references and
+# examples, looks up icon names, writes a layout spec and runs Trellis (scripts/layout.py); the draft and its
+# summary come back to Claude Code until "Layout OK" with no rule violation, then export.py writes the SVG, PNG and PPTX, and Claude
+# Code looks at the PNG.
+# Changing or converting an existing diagram takes SKILL.md's draft path instead and is not shown.
+# A process figure, not AWS infrastructure: generic resource icons and generic group boxes, no AWS Cloud / Region.
+name: how-it-works
+mode: document
+# README column is ~880px: keep the canvas near 1000px with 12px text (≈10.5px there) instead of enlarging fonts
+text_scale: off
+# Tracks (Claude Code is the hub on [a, r1]: request in from the left, reading up, spec down, export right):
+#   r0:  what Claude Code reads and looks up (one box, one arrow into it)
+#   r1:  User -> Claude Code -> the export lane (export.py -> embed.py -> SVG -> PNG)
+#   pp:  the PPTX branch of the export lane
+#   r2:  the spec under Claude Code, then Trellis' six stages left -> right
+#   r3:  the draft + summary under the last stage; it goes back along the bottom and up into Claude Code
+# Node labels say the role (14px), sub-captions the file name (12px), so the shared columns stay narrow.
+cols: [u, a, b, c, d, e, f, g]
+rows: [r0, r1, pp, {id: r2, min_gap_before: 215}, r3]
+
+groups:
+  - {id: refs,    type: generic, label: Claude Code가 읽고 찾는 것}
+  - {id: trellis, type: generic, label: 레이아웃 엔진 Trellis · scripts/layout.py}
+
+nodes:
+  - {id: user,     icon: resource/User, label: 사용자, sub: [새 구성도의, 구성 설명], at: [u, r1]}
+  - {id: claude,   icon: resource/Client, label: Claude Code, sub: SKILL.md 순서대로, at: [a, r1]}
+  - {id: guide,    icon: resource/Folder, label: 가이드 · spec 형식, sub: references/, in: refs, at: [a, r0]}
+  - {id: examples, icon: resource/Folders, label: 예제 spec, sub: docs/examples/specs/, in: refs, at: [b, r0]}
+  - {id: findicon, icon: resource/Magnifying-Glass, label: 아이콘 찾기, sub: find_icon.py, in: refs, at: [c, r0]}
+  - {id: icons,    icon: resource/JSON-Script, label: 공식 아이콘 번들, sub: assets/icons.json, in: refs, at: [d, r0]}
+  - {id: export,   icon: resource/Toolkit, label: 내보내기, sub: export.py, at: [b, r1]}
+  - {id: embed,    icon: resource/SDK, label: 아이콘 base64, sub: embed.py, at: [c, r1]}
+  - {id: svg,      icon: resource/Document, label: SVG, sub: 아이콘 포함, at: [d, r1]}
+  - {id: png,      icon: resource/Multimedia, label: PNG, at: [e, r1]}
+  - {id: s2p,      icon: resource/Programming-Language, label: PPTX 변환, sub: svg2pptx.py, at: [c, pp]}
+  - {id: pptx,     icon: resource/Documents, label: PPTX, sub: 편집 가능, at: [d, pp]}
+  - {id: spec,     icon: resource/Source-Code, label: 레이아웃 spec, sub: "*.layout.yaml", at: [a, r2]}
+  - {id: lspec,    icon: resource/Data-Table, label: 읽기 · 검증, sub: layout_spec.py, in: trellis, at: [b, r2]}
+  - {id: lsolve,   icon: resource/Gear, label: 좌표 풀이, sub: layout_solve.py, in: trellis, at: [c, r2]}
+  - {id: lroute,   icon: resource/Data-Stream, label: 연결선 · 라벨 · 단계, sub: layout_route.py, in: trellis, at: [e, r2]}
+  - {id: lnote,    icon: resource/Chat, label: 노트, sub: layout_note.py, in: trellis, at: [d, r2]}
+  - {id: check,    icon: resource/Alert, label: 검사, sub: check_layout.py, in: trellis, at: [f, r2]}
+  - {id: rules,    icon: resource/Shield, label: 규칙 판정, sub: rules.py, in: trellis, at: [g, r2]}
+  - {id: draft,    icon: resource/Logs, label: draft SVG + 요약, sub: [Layout OK · 남은 위반, "또는 spec: · try: 줄"], at: [g, r3]}
+
+edges:
+  - {e: "user -> claude", verb: 요청, step: 1}
+  - {e: "claude -> refs", verb: 읽기 · 조회, step: 2}
+  - {e: "findicon -> icons"}
+  - {e: "claude -> spec", verb: 작성, step: 3}
+  - {e: "spec -> lspec", step: 4}
+  - {e: "lspec -> lsolve"}
+  - {e: "lsolve -> lnote"}
+  - {e: "lnote -> lroute"}
+  - {e: "lroute -> check"}
+  - {e: "check -> rules"}
+  - {e: "check ..> lsolve", verb: 피드백 라운드, from_side: bottom, to_side: bottom, shape: VHV}
+  - {e: "rules ..> lsolve", verb: 더 나은 후보 다시 풀이, from_side: top, to_side: top, shape: VHV}
+  - {e: "rules -> draft"}
+  - {e: "draft ..> claude", verb: spec 고쳐 다시 실행, step: 5, from_side: left, to_side: left, shape: HVH}
+  - {e: "claude -> export", verb: OK · 위반 없음, step: 6}
+  - {e: "export -> embed"}
+  - {e: "embed -> svg"}
+  - {e: "svg -> png"}
+  - {e: "export -> s2p"}
+  - {e: "s2p -> pptx"}
+  # PNG back into Claude Code's right side under the export arrow: down from PNG, left in the corridor above
+  # Trellis (below the PPTX branch), up in the gap between Claude Code and export.py
+  - {e: "png ..> claude", verb: 보고 확인, step: 7, points: [[png.cx, png.label.y1+6], [png.cx, trellis.y0-16], ["gap(a,b)", trellis.y0-16], ["gap(a,b)", claude.cy+12], [claude.x1+4, claude.cy+12]]}
+
+note:
+  steps:
+    - ["사용자 → Claude Code", "새 구성도의 구성을 설명하면 Claude Code가 SKILL.md의 순서대로 진행합니다. 이미 있는 그림을 고치거나 변환할 때는 spec 없이 SVG 초안을 직접 고칩니다."]
+    - ["Claude Code → 참조", "references/의 가이드와 spec 형식, docs/examples/specs/의 가장 가까운 예제 spec을 읽고, find_icon.py로 assets/icons.json에서 아이콘 이름을 찾습니다."]
+    - ["Claude Code → 레이아웃 spec", "좌표 없이 열·행 트랙, 그룹 중첩, 연결선, 단계, 노트만 적은 *.layout.yaml을 씁니다."]
+    - ["레이아웃 spec → Trellis", "layout.py가 spec을 읽어 검증하고, 연결선 경로에 필요한 공간을 넣어 좌표를 풀고, 노트를 놓은 뒤 연결선·라벨·단계 번호를 그리고 check_layout.py로 검사합니다. 문제가 남으면 피드백 라운드로 다시 풀고, rules.py 판정에서 더 나은 후보가 있으면 그 그림을 다시 풉니다."]
+    - ["draft → Claude Code", "draft SVG와 요약(Layout OK와 남은 규칙 위반, 또는 문제마다 spec: · try: 줄)이 돌아오고, Claude Code가 spec을 고쳐 다시 실행합니다."]
+    - ["Claude Code → export.py", "Layout OK이고 규칙 위반이 없으면 export.py가 embed.py로 아이콘을 base64로 넣은 SVG와 PNG를, svg2pptx.py로 편집 가능한 PPTX를 씁니다."]
+    - ["PNG → Claude Code", "Claude Code가 PNG를 직접 열어 겹침, 잘림, 잘못된 아이콘이 없는지 확인합니다."]

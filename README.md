@@ -128,6 +128,24 @@ python3 ~/.claude/skills/skill-aws-arch-diagram/scripts/fetch_icons.py
   뷰어는 함께 넣은 PNG를 보여 줍니다. 슬라이드 글꼴은 기본이 Arial과 맑은 고딕이며 `--font` /
   `--ea-font`로 바꿀 수 있습니다.
 
+## 동작 구조
+
+![동작 구조: 사용자 요청 → Claude Code가 spec 작성 → Trellis(spec 읽기, 좌표 풀이, 노트, 연결선, 검사, 규칙 판정) → export.py로 SVG·PNG·PPTX](docs/how-it-works.png)
+
+새 구성도를 그리는 흐름입니다. 이미 있는 구성도를 고치거나 변환할 때는 spec 없이 SVG 초안을 직접
+고칩니다(SKILL.md의 draft 경로).
+
+1. Claude가 SKILL.md 순서대로 요청을 읽고, 가장 가까운 예제 spec과 아이콘 이름을 찾아 레이아웃
+   spec을 씁니다. spec에는 좌표가 없고 열·행 이름, 컨테이너, 노드, 연결선, 노트만 있습니다.
+2. 레이아웃 엔진 Trellis가 연결선 경로에 필요한 공간을 넣어 모든 좌표를 계산하고, 노트를 놓은 뒤
+   연결선을 그려 초안 SVG를 만듭니다. 같은 프로세스에서 `check_layout`과 규칙 검사기(`rules.py`)로
+   판정해, 문제가 남으면 간격이나 경로를 바꿔 다시 풀고, 배치를 조금씩 바꾼 후보 그림 중 규칙을 가장
+   잘 지킨 그림을 고릅니다.
+3. 남은 문제마다 원인이 된 spec 항목(`spec:`)과 시도할 변경(`try:`)이 돌아오고, 남은 규칙 위반은
+   요약 끝에 나옵니다. Claude가 spec을 고쳐 다시 돌립니다.
+4. `Layout OK`이고 규칙 위반이 없으면 `export.py`가 SVG, PNG, PPTX를 만들고, Claude가 PNG를 보고
+   마지막으로 확인합니다.
+
 ## 구성
 
 ```
@@ -141,7 +159,7 @@ assets/icons.json            아이콘 857개를 담은 JSON 번들 (세트: ser
 docs/examples/specs/         참조 예제마다 하나인 레이아웃 spec과 골격 `example.layout.yaml`;
                              각 spec이 그 예제의 레이아웃을 다시 만듦 (`slides/`: 슬라이드 예제용)
 scripts/find_icon.py         이름으로 아이콘 찾기: `find_icon.py alb igw "s3 gateway endpoint"`
-scripts/layout.py            레이아웃 엔진: spec -> 초안 SVG; 모든 좌표를 계산하고 check_layout을
+scripts/layout.py            레이아웃 엔진 Trellis: spec -> 초안 SVG; 모든 좌표를 계산하고 check_layout을
                              피드백 라운드와 함께 돌려 문제마다 spec 항목과 고칠 점을 출력
 scripts/layout_spec.py       spec 읽기·검증: 스키마, 기본값, `per` 템플릿, 연결선 문자열, 아이콘 이름
 scripts/layout_solve.py      제약 풀이: 차이 제약의 최장 경로로 트랙·그룹·노드 좌표 계산
@@ -149,6 +167,8 @@ scripts/layout_route.py      연결선 라우팅: 모양 선택, 경로에 필�
 scripts/layout_note.py       노트(단계 범례): panel / pane / lines 중 위치, 크기, 요소
 scripts/layout_model.py      엔진의 데이터 모델과 모듈 간 계약
 scripts/layout_const.py      엔진 상수: 모드 표, 그룹 스타일, 글자·선·노트 수치
+scripts/rules.py             사용자 규칙(흐름, 라우팅 테이블 위치, 쌍둥이 구조, 라벨, 글자 크기,
+                             서브넷 경계) 판정; 엔진이 후보 그림을 고를 때 씀
 scripts/export.py            초안 -> SVG / PNG / PPTX 중 원하는 형식 (+ 슬라이드 미리보기);
                              모든 초안을 먼저 검사하고 하나라도 실패하면 아무것도 쓰지 않음
 scripts/embed.py             bundle: 참조를 base64로 넣음; 모르는 참조·외부 참조와
@@ -166,7 +186,9 @@ scripts/outfile.py           결과를 메모리에서 모두 만든 뒤 평범�
                              쓰기 금지 폴더의 새 파일)면 아무것도 쓰지 않고 거부
 ```
 
-### 레이아웃 엔진으로 새 구성도 그리기
+### 레이아웃 엔진(Trellis)으로 새 구성도 그리기
+
+레이아웃 엔진의 이름은 Trellis입니다. 실행 파일은 `scripts/layout.py`이고, 이 문서에서 "엔진"은 Trellis를 뜻합니다.
 
 새 구성도는 좌표를 쓰지 않고 레이아웃 spec으로 그립니다. [`docs/examples/specs/`](docs/examples/specs/)에서
 가장 가까운 예제의 spec을 복사하고 열·행 트랙, 컨테이너, 노드, 연결선, 노트를 고칩니다.

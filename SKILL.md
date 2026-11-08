@@ -59,7 +59,7 @@ PowerPoint" → PPTX; both when asked. With no hint, deliver an SVG and its PNG.
 Follow these steps in order. Don't skip the icon lookup — guessing names is the
 main failure mode, and replacing a missing icon with a text box is the second.
 
-A new diagram goes through the layout engine: you write the spec, the engine computes
+A new diagram goes through Trellis, the layout engine: you write the spec, the engine computes
 every coordinate. Changing or converting an existing diagram, and a layout the engine
 cannot express (`references/layout_spec.md`, "What the engine cannot do yet"), take
 [the draft path](#the-draft-path) instead from step 2 on.
@@ -532,7 +532,7 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
 - `references/layout_spec.md` — the layout spec format on one page: keys, CLI output, common patterns, what the engine cannot do yet and the way out.
 - `references/quick_reference.md` — every number and rule for drawing on one page (read this first).
 - `references/diagram_guide.md` — conventions, colors, VPC resources, the draft subset and skeleton, with the reasoning and edge cases (read the sections your diagram touches).
-- `scripts/layout.py` — the layout engine: spec (`<name>.layout.yaml`) → checked draft SVG, with `spec:` / `try:` lines under each remaining problem and a last line that names any remaining rule violations after "Layout OK" or the problem count (`--explain` prints what set each track). Its modules: `layout_spec.py` (load and validate a spec; `python3 scripts/layout_spec.py x.layout.yaml` checks one alone), `layout_solve.py` (track and container geometry), `layout_route.py` (edges, labels, badges), `layout_note.py` (the note), `layout_model.py` (data model and module contract), `layout_const.py` (numbers and group styles).
+- `scripts/layout.py` — Trellis, the layout engine: spec (`<name>.layout.yaml`) → checked draft SVG, with `spec:` / `try:` lines under each remaining problem and a last line that names any remaining rule violations after "Layout OK" or the problem count (`--explain` prints what set each track). Its modules: `layout_spec.py` (load and validate a spec; `python3 scripts/layout_spec.py x.layout.yaml` checks one alone), `layout_solve.py` (track and container geometry), `layout_route.py` (edges, labels, badges), `layout_note.py` (the note), `layout_model.py` (data model and module contract), `layout_const.py` (numbers and group styles).
 - `scripts/find_icon.py` — fuzzy lookup → `set/name` reference (with AWS abbreviation aliases).
 - `scripts/check_layout.py` — flag lines over labels/icons, overlapping or too-close labels, text under 12px, short arrowheads, trunks hugging a border, connectors off the canvas or detouring out of the box both their ends are in, titles off their header row, CIDRs off their line, circled-digit legends, services written as connector labels. A problem with a computed correction carries a `fix:` line under it; `--fix` applies the deterministic ones to the draft in place; the last line is `N problems (M auto-fixable with --fix)` or "Layout OK".
 - `scripts/export.py` — check drafts and write any of SVG, PNG and PPTX in one step.

@@ -60,6 +60,10 @@ _Avoid_: caption, footer
 
 ## Drawing
 
+**Trellis**:
+The layout engine: it reads a spec, computes every coordinate and draws the draft. "The engine" in these documents means Trellis.
+_Avoid_: layout script, renderer, generator
+
 **Draft**:
 The SVG the engine draws from a spec, before icons are embedded.
 _Avoid_: output, render, preview

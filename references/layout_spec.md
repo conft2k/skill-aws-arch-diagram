@@ -1,7 +1,7 @@
 # Layout spec reference
 
 A spec (`<name>.layout.yaml`) declares *what* the diagram holds and *which track* each
-thing sits on; `scripts/layout.py` computes every coordinate and writes a draft that
+thing sits on; Trellis, the layout engine (`scripts/layout.py`), computes every coordinate and writes a draft that
 already passes `check_layout.py`. You write tracks, nesting and edges — never a pixel.
 Start from the closest `docs/examples/specs/*.layout.yaml` (every one regenerates its
 example; `docs/examples/specs/slides/` for a slide) and change it. The guide's rules still decide the content (which icons, which
