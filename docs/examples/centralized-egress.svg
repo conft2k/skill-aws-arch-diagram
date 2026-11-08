@@ -227,55 +227,55 @@
     <text x="1730" y="607" font-size="14" text-anchor="middle" fill="#232F3E">Internet</text>
   </g>
   <g id="edge:0">
-    <line x1="181" y1="220" x2="260" y2="220" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="181" y1="220" x2="260" y2="220" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="0.0"/>
   </g>
   <g id="edge:1">
-    <line x1="181" y1="408" x2="260" y2="408" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="181" y1="408" x2="260" y2="408" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="0.1"/>
   </g>
   <g id="edge:2">
-    <polyline points="316,220 601,220 601,557 643,557" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="316,220 601,220 601,557 643,557" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="1"/>
   </g>
   <g id="edge:3">
-    <polyline points="316,408 601,408 601,557" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+    <polyline points="316,408 601,408 601,557" fill="none" stroke="#232F3E" stroke-width="1.5" data-flow="1"/>
   </g>
   <g id="edge:4">
-    <line x1="181" y1="706" x2="260" y2="706" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="181" y1="706" x2="260" y2="706" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="2.0"/>
   </g>
   <g id="edge:5">
-    <line x1="181" y1="894" x2="260" y2="894" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="181" y1="894" x2="260" y2="894" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="2.1"/>
   </g>
   <g id="edge:6">
-    <polyline points="316,706 601,706 601,573 643,573" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="316,706 601,706 601,573 643,573" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="3"/>
   </g>
   <g id="edge:7">
-    <polyline points="316,894 601,894 601,573" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+    <polyline points="316,894 601,894 601,573" fill="none" stroke="#232F3E" stroke-width="1.5" data-flow="3"/>
   </g>
   <g id="edge:8">
-    <polyline points="699,557 743.5,557 743.5,408 1022,408" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="699,557 743.5,557 743.5,408 1022,408" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="4.0"/>
   </g>
   <g id="edge:9">
-    <polyline points="699,573 743.5,573 743.5,706 1022,706" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="699,573 743.5,573 743.5,706 1022,706" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="5.0"/>
   </g>
   <g id="edge:10">
-    <line x1="1078" y1="408" x2="1206" y2="408" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="1078" y1="408" x2="1206" y2="408" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="6.0"/>
   </g>
   <g id="edge:11">
-    <line x1="1078" y1="706" x2="1206" y2="706" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="1078" y1="706" x2="1206" y2="706" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="6.1"/>
   </g>
   <g id="edge:12">
-    <line x1="1262" y1="408" x2="1394" y2="408" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="1262" y1="408" x2="1394" y2="408" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="7.0"/>
   </g>
   <g id="edge:13">
-    <line x1="1262" y1="706" x2="1394" y2="706" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="1262" y1="706" x2="1394" y2="706" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="7.1"/>
   </g>
   <g id="edge:14">
-    <polyline points="1450,408 1550,408 1550,565 1598,565" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <polyline points="1450,408 1550,408 1550,565 1598,565" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="8"/>
   </g>
   <g id="edge:15">
-    <polyline points="1450,706 1550,706 1550,565" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+    <polyline points="1450,706 1550,706 1550,565" fill="none" stroke="#232F3E" stroke-width="1.5" data-flow="8"/>
   </g>
   <g id="edge:16">
-    <line x1="1654" y1="565" x2="1702" y2="565" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="1654" y1="565" x2="1702" y2="565" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)" data-flow="9.0"/>
   </g>
   <g id="edge:2:label">
     <text x="512.5" y="211" font-size="12" text-anchor="middle" fill="#545B64">VPC attachment</text>

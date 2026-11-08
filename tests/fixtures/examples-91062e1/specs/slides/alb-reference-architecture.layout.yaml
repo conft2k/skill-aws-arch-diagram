@@ -1,0 +1,38 @@
+# ALB 3-tier slide: Users → IGW → internet-facing ALB → one ASG / target group over two AZs → RDS Multi-AZ, with Route 53 and the regional services (ACM, WAF, CloudWatch, S3) in one column right of the VPC
+name: alb-reference-architecture
+mode: slide
+cols: [users, {id: r53, flow: true, align: top}, igw, pub, app1, app2, {id: db, min_w: 112}, {id: svc, flow: 110}]   # r53, svc: flow columns (no rows of their own)
+rows: [az1, main, az2]
+
+groups:
+  - {id: cloud,  type: cloud, pad_left: 5, pad_right: 5}   # 5, not 8, on the sides: the 6px keep the canvas ≤ 1108 wide once the VPC holds the replication label
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc,    type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region, pad_right: 63}   # room right of the replication line for its label (≥ 63, else it sits on the line)
+  - {id: az,     type: az, in: vpc, per: [az1, az2]}
+  - {id: pubsn,  type: public, label: Public subnet, in: az}
+  - {id: appsn,  type: private, label: App subnet, in: az}
+  - {id: dbsn,   type: private, label: DB subnet, in: az}
+  - {id: asg,    type: asg, label: ASG · target group, over: [ec2a.*, ec2b.*], header: right}
+
+nodes:
+  - {id: users, icon: resource/Users, label: Users, at: [users, main]}
+  - {id: r53,   icon: service/Amazon-Route-53, label: Route 53, sub: alias → ALB, in: cloud, col: r53}   # top of the Cloud, left of the Region
+  - {id: acm,   icon: service/AWS-Certificate-Manager, label: ACM, sub: 인증서, in: region, col: svc}   # stacked top → bottom, centered in the Region
+  - {id: waf,   icon: service/AWS-WAF, label: AWS WAF, sub: Web ACL, in: region, col: svc}
+  - {id: cw,    icon: service/Amazon-CloudWatch, label: CloudWatch, sub: 지표 · 경보, in: region, col: svc}
+  - {id: s3,    icon: service/Amazon-Simple-Storage-Service, label: S3, sub: 액세스 로그, in: region, col: svc}
+  - {id: nat,   icon: resource/Amazon-VPC_NAT-Gateway, label: NAT gateway, in: pubsn, col: pub}
+  - {id: ec2a,  icon: service/Amazon-EC2, label: EC2, in: appsn, col: app1}
+  - {id: ec2b,  icon: service/Amazon-EC2, label: EC2, in: appsn, col: app2}
+  - {id: rds,   icon: service/Amazon-RDS, label: {1: RDS Primary, 2: RDS Standby}, in: dbsn, col: db}
+  - {id: alb,   icon: resource/Elastic-Load-Balancing_Application-Load-Balancer, label: ALB, in: vpc, at: [pub, main]}
+  - {id: igw,   icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
+
+edges:
+  - {e: "users -> igw", label: "HTTPS :443"}
+  - {e: "igw -> alb"}
+  - {e: "alb -> asg", label: "HTTP :80"}
+  - {e: "asg -> rds.1", label: SQL}
+  - {e: "users ..> r53", verb: DNS 조회, shape: VH}   # up out of Users, then into Route 53 (Route 53 sits above the Cloud's rows and Users' right side is taken, so rule 5 picks VH too)
+  - {e: "asg ..> nat.*", verb: 아웃바운드}
+  - {e: "rds.1 ..> rds.2", verb: 동기식 복제, shape: HVH, from_side: right, to_side: right, bend_x: "rds.1.x1+28"}   # out of and back into the right side; the bend clears the RDS label (conservative width) and keeps 12px from the DB subnet border (db min_w 112)

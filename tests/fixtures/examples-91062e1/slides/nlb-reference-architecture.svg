@@ -1,0 +1,114 @@
+<svg viewBox="0 0 1020 538" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#232F3E"/>
+    </marker>
+  </defs>
+  <rect width="1020" height="538" fill="#FFFFFF"/>
+
+  <!-- ===== Users (outside AWS), on the main traffic line y=300 ===== -->
+  <image href="bundle:resource/Users" x="12" y="276" width="48" height="48"/>
+  <text x="36" y="342" font-size="14" text-anchor="middle" fill="#232F3E">Users</text>
+
+  <!-- ===== AWS Cloud ===== -->
+  <rect x="136" y="4" width="876" height="526" fill="none" stroke="#232F3E" stroke-width="2"/>
+  <image href="bundle:group/AWS-Cloud-logo_32" x="136" y="4" width="32" height="32"/>
+  <text x="178" y="26" font-size="15" fill="#232F3E" font-weight="600">AWS Cloud</text>
+
+  <!-- ===== global service: Route 53 inside the AWS Cloud, in a strip left of the Region ===== -->
+  <image href="bundle:service/Amazon-Route-53" x="166" y="182" width="48" height="48"/>
+  <text x="190" y="248" font-size="14" text-anchor="middle" fill="#232F3E">Route 53</text>
+  <text x="190" y="264" font-size="12" text-anchor="middle" fill="#545B64">Alias → NLB</text>
+
+  <!-- ===== Region ===== -->
+  <rect x="248" y="38" width="748" height="484" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+  <image href="bundle:group/Region_32" x="248" y="38" width="24" height="24"/>
+  <text x="280" y="56" font-size="14" fill="#00A4A6" font-weight="600">Region</text>
+
+  <!-- regional services: a column beside the VPC (no room for a row above it on a slide),
+       one per AZ row / gap, on the same grid as the nodes (y = 182 / 276 / 412) -->
+  <image href="bundle:service/AWS-Certificate-Manager" x="894" y="182" width="48" height="48"/>
+  <text x="918" y="248" font-size="14" text-anchor="middle" fill="#232F3E">ACM</text>
+  <text x="918" y="264" font-size="12" text-anchor="middle" fill="#545B64">TLS 리스너 인증서</text>
+
+  <image href="bundle:service/Amazon-CloudWatch" x="894" y="276" width="48" height="48"/>
+  <text x="918" y="342" font-size="14" text-anchor="middle" fill="#232F3E">CloudWatch</text>
+  <text x="918" y="358" font-size="12" text-anchor="middle" fill="#545B64">지표 · 경보</text>
+
+  <image href="bundle:service/Amazon-Simple-Storage-Service" x="894" y="412" width="48" height="48"/>
+  <text x="918" y="478" font-size="14" text-anchor="middle" fill="#232F3E">S3</text>
+  <text x="918" y="494" font-size="12" text-anchor="middle" fill="#545B64">NLB 액세스 로그</text>
+
+  <!-- ===== VPC ===== -->
+  <rect x="280" y="68" width="560" height="446" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="280" y="68" width="24" height="24"/>
+  <text x="312" y="86" font-size="14" fill="#8C4FFF" font-weight="600">VPC</text>
+  <text x="312" y="102" font-size="12" fill="#232F3E">10.0.0.0/16</text>
+
+  <!-- ===== AZ rows, both 152 high with 114px subnets (86px gap 268–354 holds the IGW → NLB → targets line at y=300;
+       IGW mask 276–346 keeps 8px from both AZ borders). AZ 1 nodes sit at subnet.y + 36, 8px below the ASG header
+       that spans both rows; AZ 2 nodes at subnet.y + 28, so the ASG bottom keeps 8px from their labels ===== -->
+  <rect x="292" y="116" width="536" height="152" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="304" y="134" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 1</text>
+  <rect x="292" y="354" width="536" height="152" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="304" y="372" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 2</text>
+
+  <!-- tier columns: public (304–464) → app (488–816) -->
+  <rect x="304" y="146" width="160" height="114" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="304" y="146" width="24" height="24"/>
+  <text x="336" y="164" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+  <rect x="488" y="146" width="328" height="114" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="488" y="146" width="24" height="24"/>
+  <text x="520" y="164" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+
+  <rect x="304" y="384" width="160" height="114" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="304" y="384" width="24" height="24"/>
+  <text x="336" y="402" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+  <rect x="488" y="384" width="328" height="114" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="488" y="384" width="24" height="24"/>
+  <text x="520" y="402" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+
+  <!-- NAT gateways: zonal, one per AZ -->
+  <image href="bundle:resource/Amazon-VPC_NAT-Gateway" x="360" y="182" width="48" height="48"/>
+  <text x="384" y="248" font-size="14" text-anchor="middle" fill="#232F3E">NAT gateway</text>
+  <image href="bundle:resource/Amazon-VPC_NAT-Gateway" x="360" y="412" width="48" height="48"/>
+  <text x="384" y="478" font-size="14" text-anchor="middle" fill="#232F3E">NAT gateway</text>
+
+  <!-- ===== one Auto Scaling group / target group spanning both AZ rows ===== -->
+  <rect x="612" y="154" width="192" height="336" fill="none" stroke="#ED7100" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <image href="bundle:group/Auto-Scaling-group_32" x="612" y="154" width="24" height="24"/>
+  <text x="644" y="172" font-size="14" fill="#ED7100" font-weight="600">ASG · target group</text>
+  <image href="bundle:service/Amazon-EC2" x="644" y="182" width="48" height="48"/>
+  <text x="668" y="248" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <image href="bundle:service/Amazon-EC2" x="736" y="182" width="48" height="48"/>
+  <text x="760" y="248" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <image href="bundle:service/Amazon-EC2" x="644" y="412" width="48" height="48"/>
+  <text x="668" y="478" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <image href="bundle:service/Amazon-EC2" x="736" y="412" width="48" height="48"/>
+  <text x="760" y="478" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+
+  <!-- ===== one NLB, in the gap between the AZ rows, in the public-tier column ===== -->
+  <image href="bundle:resource/Elastic-Load-Balancing_Network-Load-Balancer" x="360" y="276" width="48" height="48"/>
+  <text x="384" y="342" font-size="14" text-anchor="middle" fill="#232F3E">NLB</text>
+
+  <!-- ===== IGW on the VPC left border (280 - 24 = 256), on the same line ===== -->
+  <rect x="256" y="276" width="48" height="70" fill="#FFFFFF"/>
+  <image href="bundle:resource/Amazon-VPC_Internet-Gateway" x="256" y="276" width="48" height="48"/>
+  <text x="280" y="342" font-size="14" text-anchor="middle" fill="#232F3E">IGW</text>
+
+  <!-- main path, all pointing right: Users → IGW → NLB (TLS terminated, ACM cert) → target group -->
+  <line x1="64" y1="300" x2="252" y2="300" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="98" y="291" font-size="12" text-anchor="middle" fill="#232F3E">TLS :443</text>
+  <line x1="308" y1="300" x2="356" y2="300" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="412" y1="300" x2="608" y2="300" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="510" y="291" font-size="12" text-anchor="middle" fill="#232F3E">TCP :8080</text>
+
+  <!-- secondary, dashed: DNS lookup, outbound via the NAT gateway in the same AZ -->
+  <polyline points="36,272 36,206 162,206" fill="none" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="98" y="198" font-size="12" text-anchor="middle" fill="#545B64">DNS 조회</text>
+  <line x1="608" y1="206" x2="412" y2="206" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="548" y="198" font-size="12" text-anchor="middle" fill="#545B64">아웃바운드</text>
+  <line x1="608" y1="436" x2="412" y2="436" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="548" y="428" font-size="12" text-anchor="middle" fill="#545B64">아웃바운드</text>
+
+</svg>

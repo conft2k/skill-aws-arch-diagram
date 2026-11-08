@@ -40,7 +40,7 @@ What it enforces:
 
 Finished diagrams in [`docs/examples/`](docs/examples/) (SVG + PNG), drawn with the skill
 and used as its starting layouts. [`reference-architectures.pptx`](docs/examples/reference-architectures.pptx)
-holds the first five as slides, re-laid out to fit 16:9 with text at 10pt or larger (9.9pt on the GWLB slide);
+holds the first five as slides, re-laid out to fit 16:9 with text at 10pt or larger;
 their SVGs and a render of each slide are in [`docs/examples/slides/`](docs/examples/slides/).
 
 | NLB | ALB |

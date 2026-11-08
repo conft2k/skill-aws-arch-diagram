@@ -3,8 +3,8 @@
 
     python3 tests/test_layout_model.py
 
-Every example in docs/examples (documents and slides) and the docs/example.svg skeleton is
-turned back into a draft in memory (embed.unembed) and measured: group border styles,
+Every example in docs/examples (documents and slides) and the docs/example.svg skeleton, as
+frozen at 91062e1 in tests/fixtures/examples-91062e1/ with its spec, is turned back into a draft in memory (embed.unembed) and measured: group border styles,
 header geometry, node label stacks, masks, top insets, AZ gaps, step badges and the note.
 Also checks the small helpers in layout_model and that mirrored constants still equal
 check_layout's. Needs PyYAML for the examples' overlay membership.
@@ -27,8 +27,11 @@ import layout_spec  # noqa: E402
 from layout_text import font_context, svg_factor, svg_steps  # noqa: E402
 
 NS = "{http://www.w3.org/2000/svg}"
-DOCS = sorted((ROOT / "docs/examples").glob("*.svg")) + [ROOT / "docs/example.svg"]
-SLIDES = sorted((ROOT / "docs/examples/slides").glob("*.svg"))
+# The examples as drawn at 91062e1, frozen: the module under test is checked against fixed
+# reference geometry, so redrawing docs/examples with a newer engine does not move it.
+EXAMPLES = ROOT / "tests/fixtures/examples-91062e1"
+DOCS = sorted(p for p in EXAMPLES.glob("*.svg") if p.name != "example.svg") + [EXAMPLES / "example.svg"]
+SLIDES = sorted((EXAMPLES / "slides").glob("*.svg"))
 
 
 def num(v):
@@ -43,7 +46,7 @@ class Draft:
         assert not problems, problems
         self.name, self.mode = path.stem if path.parent.name != "slides" else "slides/" + path.stem, mode
         self.root = ET.fromstring(out)
-        spec_dir = ROOT / "docs/examples/specs"
+        spec_dir = EXAMPLES / "specs"
         if path.parent.name == "slides":
             spec_dir /= "slides"
         spec = layout_spec.load(spec_dir / (path.stem + ".layout.yaml"), mode=mode)

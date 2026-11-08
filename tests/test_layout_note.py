@@ -3,7 +3,8 @@
 
     python3 tests/test_layout_note.py
 
-Each example in docs/examples (7 documents, 5 slides) is turned back into a draft in memory
+Each example in docs/examples (7 documents, 5 slides), as frozen at 91062e1 in
+tests/fixtures/examples-91062e1/, is turned back into a draft in memory
 (embed.unembed). From it the test reads the AWS Cloud box, the top-level groups and nodes,
 the drawing box (group rects, icons, node label stacks) and the note's own text, builds a
 Spec and a Geometry by hand, calls block() and compares:
@@ -57,7 +58,7 @@ class Draft:
     """One example: rects, images, texts, circles in absolute coordinates."""
 
     def __init__(self, name, mode):
-        p = ROOT / "docs/examples" / ("slides" if mode == "slide" else "") / f"{name}-reference-architecture.svg"
+        p = ROOT / "tests/fixtures/examples-91062e1" / ("slides" if mode == "slide" else "") / f"{name}-reference-architecture.svg"
         out, _, problems = embed.unembed(p.read_text(encoding="utf-8"))
         assert not problems, problems
         self.name, self.mode = name, mode

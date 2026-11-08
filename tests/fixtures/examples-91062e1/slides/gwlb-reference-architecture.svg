@@ -1,0 +1,145 @@
+<svg viewBox="0 0 1108 544" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#232F3E"/>
+    </marker>
+    <marker id="arrowStart" markerWidth="10" markerHeight="10" refX="0" refY="3" orient="auto">
+      <path d="M8,0 L0,3 L8,6 Z" fill="#232F3E"/>
+    </marker>
+  </defs>
+  <rect width="1108" height="544" fill="#FFFFFF"/>
+
+  <!-- Slide-sized layout (1108 × 544 incl. the note) of the document version.
+       Main line y=288 shared by Users, the IGW and the GWLB. AZ gap 256–342 (86px: IGW mask 264–334,
+       8px from both AZ rows; step badge 2 sits between the two VPCs, clear of the AZ boxes).
+       Nodes sit 28px below the subnet top (header geometry); AZ rows 144 / 152px (AZ 2 subnets are 8px
+       taller so the ASG bottom keeps 8px from the labels inside it). Note below the AWS Cloud box. -->
+
+  <!-- ===== Users (outside AWS) ===== -->
+  <image href="bundle:resource/Users" x="8" y="264" width="48" height="48"/>
+  <text x="32" y="330" font-size="14" text-anchor="middle" fill="#232F3E">Users</text>
+
+  <!-- ===== AWS Cloud ===== -->
+  <rect x="140" y="2" width="964" height="516" fill="none" stroke="#232F3E" stroke-width="2"/>
+  <image href="bundle:group/AWS-Cloud-logo_32" x="140" y="2" width="32" height="32"/>
+  <text x="182" y="24" font-size="15" fill="#232F3E" font-weight="600">AWS Cloud</text>
+
+  <!-- ===== Region ===== -->
+  <rect x="160" y="36" width="936" height="474" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+  <image href="bundle:group/Region_32" x="160" y="36" width="24" height="24"/>
+  <text x="192" y="54" font-size="14" fill="#00A4A6" font-weight="600">Region</text>
+
+  <!-- ===================== Application VPC (service consumer) ===================== -->
+  <rect x="220" y="66" width="482" height="436" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="220" y="66" width="24" height="24"/>
+  <text x="252" y="84" font-size="14" fill="#8C4FFF" font-weight="600">Application VPC</text>
+  <text x="252" y="100" font-size="12" fill="#232F3E">10.0.0.0/16</text>
+
+  <rect x="240" y="112" width="442" height="144" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="252" y="130" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 1</text>
+  <rect x="240" y="342" width="442" height="152" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="252" y="360" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 2</text>
+
+  <!-- tier columns: GWLBe subnet (252–496, public: 0.0.0.0/0 → IGW) → app subnet (520–670,
+       private: 0.0.0.0/0 → GWLBe). GWLBe sits right of the header labels so the vertical
+       connectors (x=404, x=452) never cross them. -->
+  <rect x="252" y="142" width="244" height="106" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="252" y="142" width="24" height="24"/>
+  <text x="284" y="160" font-size="14" fill="#7AA116" font-weight="600">GWLBe subnet</text>
+  <rect x="520" y="142" width="150" height="106" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="520" y="142" width="24" height="24"/>
+  <text x="552" y="160" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+
+  <rect x="252" y="372" width="244" height="114" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="252" y="372" width="24" height="24"/>
+  <text x="284" y="390" font-size="14" fill="#7AA116" font-weight="600">GWLBe subnet</text>
+  <rect x="520" y="372" width="150" height="114" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="520" y="372" width="24" height="24"/>
+  <text x="552" y="390" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+
+  <!-- GWLB endpoints: zonal, one per AZ -->
+  <image href="bundle:resource/Amazon-VPC_Endpoints" x="428" y="170" width="48" height="48"/>
+  <text x="452" y="236" font-size="14" text-anchor="middle" fill="#232F3E">GWLBe</text>
+  <image href="bundle:resource/Amazon-VPC_Endpoints" x="428" y="400" width="48" height="48"/>
+  <text x="452" y="466" font-size="14" text-anchor="middle" fill="#232F3E">GWLBe</text>
+
+  <!-- application servers -->
+  <image href="bundle:service/Amazon-EC2" x="571" y="170" width="48" height="48"/>
+  <text x="595" y="236" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <image href="bundle:service/Amazon-EC2" x="571" y="400" width="48" height="48"/>
+  <text x="595" y="466" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+
+  <!-- IGW on the Application VPC left border, on the main line -->
+  <rect x="196" y="264" width="48" height="70" fill="#FFFFFF"/>
+  <image href="bundle:resource/Amazon-VPC_Internet-Gateway" x="196" y="264" width="48" height="48"/>
+  <text x="220" y="330" font-size="14" text-anchor="middle" fill="#232F3E">IGW</text>
+
+  <!-- ===================== Security VPC (service provider) ===================== -->
+  <rect x="734" y="66" width="354" height="436" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="734" y="66" width="24" height="24"/>
+  <text x="766" y="84" font-size="14" fill="#8C4FFF" font-weight="600">Security VPC</text>
+  <text x="766" y="100" font-size="12" fill="#232F3E">10.1.0.0/16</text>
+
+  <rect x="754" y="112" width="314" height="144" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="766" y="130" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 1</text>
+  <rect x="754" y="342" width="314" height="152" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="766" y="360" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 2</text>
+
+  <rect x="766" y="142" width="294" height="106" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="766" y="142" width="24" height="24"/>
+  <text x="798" y="160" font-size="14" fill="#00A4A6" font-weight="600">Appliance subnet</text>
+  <rect x="766" y="372" width="294" height="114" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="766" y="372" width="24" height="24"/>
+  <text x="798" y="390" font-size="14" fill="#00A4A6" font-weight="600">Appliance subnet</text>
+
+  <!-- one appliance Auto Scaling group spanning both AZ rows, 8px inside the subnet borders;
+       badge and label left of the appliance icons, 8px clear of them and of the labels -->
+  <rect x="928" y="150" width="124" height="328" fill="none" stroke="#ED7100" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <image href="bundle:group/Auto-Scaling-group_32" x="928" y="150" width="24" height="24"/>
+  <text x="960" y="168" font-size="14" fill="#ED7100" font-weight="600">ASG</text>
+  <image href="bundle:service/Amazon-EC2" x="996" y="170" width="48" height="48"/>
+  <text x="1020" y="236" font-size="14" text-anchor="middle" fill="#232F3E">방화벽</text>
+  <image href="bundle:service/Amazon-EC2" x="996" y="400" width="48" height="48"/>
+  <text x="1020" y="466" font-size="14" text-anchor="middle" fill="#232F3E">방화벽</text>
+
+  <!-- one GWLB, in the gap between the AZ rows; left of centre so the GENEVE hop has room for its label -->
+  <image href="bundle:resource/Elastic-Load-Balancing_Gateway-Load-Balancer" x="782" y="264" width="48" height="48"/>
+  <text x="806" y="330" font-size="14" text-anchor="middle" fill="#232F3E">GWLB</text>
+
+  <!-- ===== main path, pointing right: IGW → GWLBe → EC2 (after inspection) ===== -->
+  <polyline points="248,288 404,288 404,194 424,194" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <polyline points="248,288 404,288 404,424 424,424" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="480" y1="194" x2="567" y2="194" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="480" y1="424" x2="567" y2="424" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== inspection detour (both directions) ===== -->
+  <!-- GWLBe ⇄ GWLB runs over PrivateLink (no protocol label); same two-way arrow in both AZs,
+       each entering the GWLB separately 8px above / below its centre -->
+  <polyline points="778,280 452,280 452,244" fill="none" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <polyline points="778,296 452,296 452,396" fill="none" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <!-- GENEVE is only GWLB ⇄ appliances -->
+  <line x1="834" y1="288" x2="926" y2="288" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <text x="880" y="280" font-size="12" text-anchor="middle" fill="#232F3E">GENEVE :6081</text>
+
+  <!-- numbered steps -->
+  <circle cx="326" cy="274" r="10" fill="#232F3E"/><text x="326" y="278" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <circle cx="718" cy="266" r="10" fill="#232F3E"/><text x="718" y="270" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <circle cx="880" cy="302" r="10" fill="#232F3E"/><text x="880" y="306" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <circle cx="544" cy="180" r="10" fill="#232F3E"/><text x="544" y="184" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+  <circle cx="544" cy="410" r="10" fill="#232F3E"/><text x="544" y="414" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+
+  <!-- outside AWS: Users → IGW -->
+  <line x1="60" y1="288" x2="192" y2="288" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="98" y="279" font-size="12" text-anchor="middle" fill="#232F3E">HTTPS :443</text>
+
+  <!-- note (step legend uses the diagram's badges): badge cy = AWS Cloud bottom + 18, left-aligned with the AWS Cloud's left edge,
+       items 20px apart (text end → next badge edge, check_layout's text widths); canvas ends 4px below the baseline -->
+  <circle cx="150" cy="536" r="10" fill="#232F3E"/><text x="150" y="540" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <text x="168" y="540" font-size="12" fill="#545B64">IGW → GWLBe (인그레스 라우팅)</text>
+  <circle cx="386.4" cy="536" r="10" fill="#232F3E"/><text x="386.4" y="540" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <text x="404.4" y="540" font-size="12" fill="#545B64">GWLBe ⇄ GWLB</text>
+  <circle cx="519" cy="536" r="10" fill="#232F3E"/><text x="519" y="540" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <text x="537" y="540" font-size="12" fill="#545B64">GWLB ⇄ 방화벽 (검사 후 GWLB → GWLBe로 반환)</text>
+  <circle cx="850.8" cy="536" r="10" fill="#232F3E"/><text x="850.8" y="540" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+  <text x="868.8" y="540" font-size="12" fill="#545B64">GWLBe → EC2</text>
+</svg>

@@ -1,0 +1,36 @@
+# NLB mutual TLS: client → IGW → NLB (nlb-sg, trust store from S3) → same-AZ EC2 in backend-sg, with a left legend pane
+name: nlb-mtls-reference-architecture
+mode: document
+cols: [client, igw, pub, app, svc]
+rows: [az1, main, az2]
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: vpc,    type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}
+  - {id: az,     type: az, in: vpc, per: [az1, az2]}
+  - {id: pubsn,  type: public, label: Public subnet, cidr: {1: 10.0.0.0/24, 2: 10.0.1.0/24}, in: az, span: {cols: [pub, pub]}}   # span: the public subnets hold no node; they cover the NLB's column
+  - {id: appsn,  type: private, label: Private subnet, cidr: {1: 10.0.10.0/24, 2: 10.0.11.0/24}, in: az}
+  - {id: besg,   type: sg, label: backend-sg, in: appsn}
+  - {id: nlbsg,  type: sg, label: nlb-sg, in: vpc}
+
+nodes:
+  - {id: client, icon: resource/Client, label: 클라이언트, sub: "curl · openssl s_client", at: [client, main]}
+  - {id: acm,    icon: service/AWS-Certificate-Manager, label: ACM, sub: 서버 인증서, in: region, at: [svc, az1]}
+  - {id: ts,     icon: service/Elastic-Load-Balancing, label: ELB trust store, sub: "CA 번들 · CRL", in: region, at: [svc, main]}
+  - {id: s3,     icon: service/Amazon-Simple-Storage-Service, label: S3, sub: "ca-bundle.pem · crl.pem", in: region, at: [svc, az2]}
+  - {id: ec2,    icon: service/Amazon-EC2, label: EC2, sub: "HTTP :80", in: besg, col: app}
+  - {id: nlb,    icon: resource/Elastic-Load-Balancing_Network-Load-Balancer, label: NLB, sub: [":443 TLS · mTLS verify", ":8443 TLS · 대조군"], in: nlbsg, at: [pub, main]}
+  - {id: igw,    icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
+
+edges:
+  - {e: "s3 ..> ts", step: 1}
+  - {e: "client -> igw", label: "HTTPS :443", step: 2}
+  - {e: "igw -> nlb"}
+  - {e: "nlb -> besg.*", trunk: true, label: "TCP :80", step: 3, step_at: ["besg.1.x0-22", "row.main"], label_at: {x: "besg.1.x0-4", y: "row.main+4", anchor: start}}   # trunk: one stem, a vertical trunk and an arrow into each backend-sg (split trunk); step_at/label_at: badge 3 and "TCP :80" sit on the main line right of the trunk (the one allowed override), not on a branch
+
+note:
+  steps:
+    - [S3 → 신뢰 저장소, "S3의 CA 번들(ca-bundle.pem)과 CRL(crl.pem)로 ELB 신뢰 저장소를 만들어 :443 리스너에 연결합니다."]
+    - [클라이언트 → NLB, "NLB :443이 클라이언트 인증서를 신뢰 체인 → 만료 → CRL → ID 필터 순서로 검사하고, 하나라도 실패하면 TLS alert로 끊습니다."]
+    - [NLB → EC2, "통과한 연결만 대상 그룹 backend-tg의 같은 AZ EC2(HTTP :80)로 보냅니다. 교차 영역이 꺼져 있어 AZ마다 대상이 있어야 하고, 클라이언트 인증서는 전달되지 않습니다."]

@@ -1,0 +1,123 @@
+<svg viewBox="0 0 1104 524" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
+  <rect width="1104" height="524" fill="#FFFFFF"/>
+
+  <!-- Slide layout (≤ 1108 × 540 on a titled slide, note included), compact version of
+       docs/examples/tgw-reference-architecture.svg: attachments are the only lines (solid 1.5px,
+       no arrowheads); each attachment type is named once; the TGW route tables are nodes under
+       their TGW; step badges 1–4 show one representative flow (on-premises → DR VPC).
+       8px container paddings, 100px column pitch in Region A. Main line y=254. -->
+
+  <!-- ===== On-premises (CIDR as sub-caption: the header can't hold it) ===== -->
+  <rect x="16" y="196" width="156" height="132" fill="none" stroke="#7D8998" stroke-width="2"/>
+  <image href="bundle:group/Corporate-data-center_32" x="16" y="196" width="24" height="24"/>
+  <text x="48" y="214" font-size="14" fill="#7D8998" font-weight="600">On-premises</text>
+  <image href="bundle:resource/Amazon-VPC_Customer-Gateway" x="78" y="230" width="48" height="48"/>
+  <text x="102" y="296" font-size="14" text-anchor="middle" fill="#232F3E">Customer gateway</text>
+  <text x="102" y="312" font-size="12" text-anchor="middle" fill="#545B64">192.168.0.0/16</text>
+
+  <!-- ===== the Internet: Site-to-Site VPN runs as IPsec tunnels over it ===== -->
+  <image href="bundle:resource/Internet" x="206" y="230" width="48" height="48"/>
+  <text x="230" y="296" font-size="14" text-anchor="middle" fill="#232F3E">Internet</text>
+  <line x1="130" y1="254" x2="202" y2="254" stroke="#232F3E" stroke-width="1.5"/>
+  <line x1="258" y1="254" x2="308" y2="254" stroke="#232F3E" stroke-width="1.5"/>
+  <text x="283" y="248" font-size="12" text-anchor="middle" fill="#232F3E">IPsec</text>
+
+  <!-- Site-to-Site VPN outside the AWS Cloud; its VPN attachment line runs into TGW A
+       (step 2 and the type label side by side above the line) -->
+  <image href="bundle:service/AWS-Site-to-Site-VPN" x="312" y="230" width="48" height="48"/>
+  <text x="336" y="296" font-size="14" text-anchor="middle" fill="#232F3E">Site-to-Site VPN</text>
+  <line x1="364" y1="254" x2="542" y2="254" stroke="#232F3E" stroke-width="1.5"/>
+  <text x="445" y="248" font-size="12" fill="#545B64">VPN attachment</text>
+
+  <!-- ===== AWS Cloud ===== -->
+  <rect x="406" y="16" width="682" height="482" fill="none" stroke="#232F3E" stroke-width="2"/>
+  <image href="bundle:group/AWS-Cloud-logo_32" x="406" y="16" width="32" height="32"/>
+  <text x="448" y="38" font-size="15" fill="#232F3E" font-weight="600">AWS Cloud</text>
+
+  <!-- ===== Region A: hub and spoke (VPCs 10.1-10.4, summary 10.0.0.0/13); columns 470 / 570 / 670 ===== -->
+  <rect x="414" y="56" width="302" height="434" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+  <image href="bundle:group/Region_32" x="414" y="56" width="24" height="24"/>
+  <text x="446" y="74" font-size="14" fill="#00A4A6" font-weight="600">Region ap-northeast-2</text>
+
+  <image href="bundle:service/AWS-Transit-Gateway" x="546" y="230" width="48" height="48"/>
+  <text x="570" y="296" font-size="14" text-anchor="middle" fill="#232F3E">Transit Gateway A</text>
+
+  <image href="bundle:service/Amazon-Virtual-Private-Cloud" x="446" y="96" width="48" height="48"/>
+  <text x="470" y="162" font-size="14" text-anchor="middle" fill="#232F3E">Services VPC</text>
+  <text x="470" y="178" font-size="12" text-anchor="middle" fill="#545B64">10.1.0.0/16</text>
+  <image href="bundle:service/Amazon-Virtual-Private-Cloud" x="646" y="96" width="48" height="48"/>
+  <text x="670" y="162" font-size="14" text-anchor="middle" fill="#232F3E">Prod VPC</text>
+  <text x="670" y="178" font-size="12" text-anchor="middle" fill="#545B64">10.2.0.0/16</text>
+  <image href="bundle:service/Amazon-Virtual-Private-Cloud" x="446" y="364" width="48" height="48"/>
+  <text x="470" y="430" font-size="14" text-anchor="middle" fill="#232F3E">Dev VPC</text>
+  <text x="470" y="446" font-size="12" text-anchor="middle" fill="#545B64">10.3.0.0/16</text>
+  <image href="bundle:service/Amazon-Virtual-Private-Cloud" x="646" y="364" width="48" height="48"/>
+  <text x="670" y="430" font-size="14" text-anchor="middle" fill="#232F3E">Test VPC</text>
+  <text x="670" y="446" font-size="12" text-anchor="middle" fill="#545B64">10.4.0.0/16</text>
+
+  <!-- TGW A route table: a property of the TGW, so no line; directly below it on the TGW column -->
+  <image href="bundle:resource/Amazon-Route-53_Route-Table" x="546" y="364" width="48" height="48"/>
+  <text x="570" y="430" font-size="14" text-anchor="middle" fill="#232F3E">TGW A RT</text>
+  <text x="570" y="446" font-size="12" text-anchor="middle" fill="#545B64">VPC·VPN 경로 전파</text>
+  <text x="570" y="462" font-size="12" text-anchor="middle" fill="#545B64">10.16.0.0/13 → peering</text>
+
+  <!-- spokes (one line per VPC attachment); the top ones bend at y=214 and end below the CIDR caption.
+       The attachment type is named once, on the Services VPC spoke. -->
+  <polyline points="560,226 560,214 470,214 470,186" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+  <polyline points="580,226 580,214 670,214 670,186" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+  <polyline points="560,304 560,332 470,332 470,360" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+  <polyline points="580,304 580,332 670,332 670,360" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+  <text x="522" y="206" font-size="12" text-anchor="middle" fill="#545B64">VPC attachment</text>
+
+  <!-- ===== main line: inter-Region TGW peering. The peering attachment is the VPC peering
+       connection icon on the line, in the gap between the two Regions (it belongs to neither);
+       the attachment type is its sub-caption. ===== -->
+  <line x1="598" y1="254" x2="756" y2="254" stroke="#232F3E" stroke-width="1.5"/>
+  <line x1="812" y1="254" x2="932" y2="254" stroke="#232F3E" stroke-width="1.5"/>
+  <image href="bundle:resource/Amazon-VPC_Peering-Connection" x="760" y="230" width="48" height="48"/>
+  <text x="784" y="296" font-size="14" text-anchor="middle" fill="#232F3E">TGW peering</text>
+  <text x="784" y="312" font-size="12" text-anchor="middle" fill="#545B64">peering attachment</text>
+
+  <!-- ===== Region B: DR and Analytics VPCs above TGW B, its route table below (VPCs 10.16-10.17, summary 10.16.0.0/13) ===== -->
+  <rect x="852" y="56" width="228" height="434" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+  <image href="bundle:group/Region_32" x="852" y="56" width="24" height="24"/>
+  <text x="884" y="74" font-size="14" fill="#00A4A6" font-weight="600">Region ap-northeast-1</text>
+
+  <image href="bundle:service/AWS-Transit-Gateway" x="936" y="230" width="48" height="48"/>
+  <text x="960" y="296" font-size="14" text-anchor="middle" fill="#232F3E">Transit Gateway B</text>
+
+  <image href="bundle:service/Amazon-Virtual-Private-Cloud" x="876" y="96" width="48" height="48"/>
+  <text x="900" y="162" font-size="14" text-anchor="middle" fill="#232F3E">DR VPC</text>
+  <text x="900" y="178" font-size="12" text-anchor="middle" fill="#545B64">10.16.0.0/16</text>
+  <image href="bundle:service/Amazon-Virtual-Private-Cloud" x="996" y="96" width="48" height="48"/>
+  <text x="1020" y="162" font-size="14" text-anchor="middle" fill="#232F3E">Analytics VPC</text>
+  <text x="1020" y="178" font-size="12" text-anchor="middle" fill="#545B64">10.17.0.0/16</text>
+
+  <!-- TGW B RT: the summary routes wrap to a second line to keep Region B narrow -->
+  <image href="bundle:resource/Amazon-Route-53_Route-Table" x="936" y="364" width="48" height="48"/>
+  <text x="960" y="430" font-size="14" text-anchor="middle" fill="#232F3E">TGW B RT</text>
+  <text x="960" y="446" font-size="12" text-anchor="middle" fill="#545B64">VPC 경로 전파</text>
+  <text x="960" y="462" font-size="12" text-anchor="middle" fill="#545B64">10.0.0.0/13 · 192.168.0.0/16</text>
+  <text x="960" y="478" font-size="12" text-anchor="middle" fill="#545B64">→ peering</text>
+
+  <polyline points="950,226 950,214 900,214 900,186" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+  <polyline points="970,226 970,214 1020,214 1020,186" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+
+  <!-- numbered steps (same placement as the document version): bottom 4px above each hop's own line -->
+  <circle cx="283" cy="268" r="10" fill="#232F3E"/><text x="283" y="272" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <circle cx="429" cy="240" r="10" fill="#232F3E"/><text x="429" y="244" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <circle cx="738" cy="240" r="10" fill="#232F3E"/><text x="738" y="244" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <circle cx="925" cy="200" r="10" fill="#232F3E"/><text x="925" y="204" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+
+  <!-- note (plain lines): one flowed step-legend row, left-aligned with the AWS Cloud (badge cx = 416,
+       text at 434), first badge cy = Cloud bottom + 18, 20px from each item's text end to the next badge;
+       canvas ends 4px below the baseline -->
+  <circle cx="416" cy="516" r="10" fill="#232F3E"/><text x="416" y="520" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <text x="434" y="520" font-size="12" fill="#545B64">CGW → VPN (IPsec, BGP)</text>
+  <circle cx="614.6" cy="516" r="10" fill="#232F3E"/><text x="614.6" y="520" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <text x="632.6" y="520" font-size="12" fill="#545B64">VPN → TGW A</text>
+  <circle cx="740.6" cy="516" r="10" fill="#232F3E"/><text x="740.6" y="520" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <text x="758.6" y="520" font-size="12" fill="#545B64">TGW A → TGW B (정적 경로)</text>
+  <circle cx="954.2" cy="516" r="10" fill="#232F3E"/><text x="954.2" y="520" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+  <text x="972.2" y="520" font-size="12" fill="#545B64">TGW B → DR VPC</text>
+</svg>

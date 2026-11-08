@@ -1,0 +1,185 @@
+<svg viewBox="0 0 1514 1072" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#232F3E"/></marker></defs>
+<rect width="1514" height="1072" fill="#FFFFFF"/>
+<rect x="496" y="16" width="1002" height="1040" fill="none" stroke="#232F3E" stroke-width="2"/>
+<image href="bundle:group/AWS-Cloud-logo_32" x="496" y="16" width="32" height="32"/>
+<text x="538" y="38" font-size="15" font-weight="600" fill="#232F3E">AWS Cloud</text>
+<image href="bundle:service/AWS-Direct-Connect" x="392" y="800" width="48" height="48"/>
+<text x="416" y="866" font-size="14" text-anchor="middle" fill="#232F3E">Direct Connect</text>
+<text x="416" y="882" font-size="12" text-anchor="middle" fill="#545B64">private VIF · BGP</text>
+<image href="bundle:resource/AWS-Direct-Connect_Gateway" x="530" y="800" width="48" height="48"/>
+<text x="554" y="866" font-size="14" text-anchor="middle" fill="#232F3E">DX gateway</text>
+<text x="554" y="882" font-size="12" text-anchor="middle" fill="#545B64">글로벌 리소스</text>
+<line x1="444" y1="824" x2="526" y2="824" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="616" y="50" width="626" height="314" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+<image href="bundle:group/Region_32" x="616" y="50" width="24" height="24"/>
+<text x="648" y="68" font-size="14" font-weight="600" fill="#00A4A6">Region us-west-2 (옵션 B)</text>
+<rect x="656" y="86" width="386" height="262" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+<image href="bundle:group/Virtual-private-cloud-VPC_32" x="656" y="86" width="24" height="24"/>
+<text x="688" y="104" font-size="14" font-weight="600" fill="#8C4FFF">VPC</text>
+<text x="688" y="120" font-size="12" fill="#232F3E">10.1.0.0/16</text>
+<rect x="720" y="132" width="306" height="204" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+<text x="732" y="150" font-size="14" font-weight="600" fill="#00A4A6">Availability Zone 1</text>
+<rect x="732" y="162" width="282" height="166" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+<image href="bundle:group/Private-subnet_32" x="732" y="162" width="24" height="24"/>
+<text x="764" y="180" font-size="14" font-weight="600" fill="#00A4A6">Private subnet</text>
+<text x="764" y="196" font-size="12" fill="#232F3E">10.1.1.0/24</text>
+<image href="bundle:resource/Amazon-Route-53_Resolver" x="786" y="250" width="48" height="48"/>
+<text x="810" y="316" font-size="14" text-anchor="middle" fill="#232F3E">Resolver inbound</text>
+<image href="bundle:resource/Amazon-VPC_Endpoints" x="916" y="250" width="48" height="48"/>
+<text x="940" y="316" font-size="14" text-anchor="middle" fill="#232F3E">bedrock-runtime</text>
+<line x1="692" y1="214" x2="940" y2="214" stroke="#232F3E" stroke-width="1.5"/>
+<line x1="810" y1="214" x2="810" y2="246" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="940" y1="214" x2="940" y2="246" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="680" y1="214" x2="692" y2="214" stroke="#232F3E" stroke-width="1.5"/>
+<line x1="964" y1="274" x2="1118" y2="274" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="632" y="190" width="48" height="72" fill="#FFFFFF"/>
+<image href="bundle:resource/Amazon-VPC_VPN-Gateway" x="632" y="190" width="48" height="48"/>
+<text x="656" y="256" font-size="14" text-anchor="middle" fill="#232F3E">VGW</text>
+<image href="bundle:service/Amazon-Bedrock" x="1122" y="250" width="48" height="48"/>
+<text x="1146" y="316" font-size="14" text-anchor="middle" fill="#232F3E">Amazon Bedrock</text>
+<text x="1146" y="332" font-size="12" text-anchor="middle" fill="#545B64">in-Region · us. 프로파일</text>
+<rect x="616" y="396" width="866" height="644" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+<image href="bundle:group/Region_32" x="616" y="396" width="24" height="24"/>
+<text x="648" y="414" font-size="14" font-weight="600" fill="#00A4A6">Region ap-northeast-2 (서울)</text>
+<rect x="656" y="432" width="626" height="494" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+<image href="bundle:group/Virtual-private-cloud-VPC_32" x="656" y="432" width="24" height="24"/>
+<text x="688" y="450" font-size="14" font-weight="600" fill="#8C4FFF">VPC</text>
+<text x="688" y="466" font-size="12" fill="#232F3E">10.0.0.0/16</text>
+<rect x="720" y="478" width="506" height="204" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+<text x="732" y="496" font-size="14" font-weight="600" fill="#00A4A6">Availability Zone 1</text>
+<rect x="732" y="508" width="482" height="166" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+<image href="bundle:group/Private-subnet_32" x="732" y="508" width="24" height="24"/>
+<text x="764" y="526" font-size="14" font-weight="600" fill="#00A4A6">Private subnet</text>
+<text x="764" y="542" font-size="12" fill="#232F3E">10.0.1.0/24</text>
+<image href="bundle:resource/Amazon-Route-53_Resolver" x="786" y="596" width="48" height="48"/>
+<text x="810" y="662" font-size="14" text-anchor="middle" fill="#232F3E">Resolver inbound</text>
+<image href="bundle:resource/Amazon-VPC_Endpoints" x="896" y="596" width="48" height="48"/>
+<text x="920" y="662" font-size="14" text-anchor="middle" fill="#232F3E">sts</text>
+<image href="bundle:resource/Amazon-VPC_Endpoints" x="1006" y="596" width="48" height="48"/>
+<text x="1030" y="662" font-size="14" text-anchor="middle" fill="#232F3E">bedrock</text>
+<image href="bundle:resource/Amazon-VPC_Endpoints" x="1116" y="596" width="48" height="48"/>
+<text x="1140" y="662" font-size="14" text-anchor="middle" fill="#232F3E">bedrock-runtime</text>
+<line x1="692" y1="560" x2="1140" y2="560" stroke="#232F3E" stroke-width="1.5"/>
+<line x1="810" y1="560" x2="810" y2="592" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="920" y1="560" x2="920" y2="592" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<circle cx="898" cy="576" r="10" fill="#232F3E"/><text x="898" y="580" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+<line x1="1030" y1="560" x2="1030" y2="592" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<circle cx="1008" cy="576" r="10" fill="#232F3E"/><text x="1008" y="580" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">5</text>
+<line x1="1140" y1="560" x2="1140" y2="592" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<circle cx="1118" cy="576" r="10" fill="#232F3E"/><text x="1118" y="580" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">6</text>
+<rect x="720" y="710" width="506" height="204" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+<text x="732" y="728" font-size="14" font-weight="600" fill="#00A4A6">Availability Zone 2</text>
+<rect x="732" y="740" width="482" height="166" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+<image href="bundle:group/Private-subnet_32" x="732" y="740" width="24" height="24"/>
+<text x="764" y="758" font-size="14" font-weight="600" fill="#00A4A6">Private subnet</text>
+<text x="764" y="774" font-size="12" fill="#232F3E">10.0.2.0/24</text>
+<image href="bundle:resource/Amazon-Route-53_Resolver" x="786" y="828" width="48" height="48"/>
+<text x="810" y="894" font-size="14" text-anchor="middle" fill="#232F3E">Resolver inbound</text>
+<image href="bundle:resource/Amazon-VPC_Endpoints" x="896" y="828" width="48" height="48"/>
+<text x="920" y="894" font-size="14" text-anchor="middle" fill="#232F3E">sts</text>
+<image href="bundle:resource/Amazon-VPC_Endpoints" x="1006" y="828" width="48" height="48"/>
+<text x="1030" y="894" font-size="14" text-anchor="middle" fill="#232F3E">bedrock</text>
+<image href="bundle:resource/Amazon-VPC_Endpoints" x="1116" y="828" width="48" height="48"/>
+<text x="1140" y="894" font-size="14" text-anchor="middle" fill="#232F3E">bedrock-runtime</text>
+<line x1="692" y1="792" x2="1140" y2="792" stroke="#232F3E" stroke-width="1.5"/>
+<line x1="810" y1="792" x2="810" y2="824" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="920" y1="792" x2="920" y2="824" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="1030" y1="792" x2="1030" y2="824" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="1140" y1="792" x2="1140" y2="824" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="680" y1="824" x2="692" y2="824" stroke="#232F3E" stroke-width="1.5"/>
+<line x1="692" y1="560" x2="692" y2="824" stroke="#232F3E" stroke-width="1.5"/>
+<polyline points="1164,620 1254,620 1254,852 1164,852" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+<line x1="1254" y1="696" x2="1358" y2="696" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="632" y="800" width="48" height="72" fill="#FFFFFF"/>
+<image href="bundle:resource/Amazon-VPC_VPN-Gateway" x="632" y="800" width="48" height="48"/>
+<text x="656" y="866" font-size="14" text-anchor="middle" fill="#232F3E">VGW</text>
+<image href="bundle:service/Amazon-Bedrock" x="1362" y="672" width="48" height="48"/>
+<text x="1386" y="738" font-size="14" text-anchor="middle" fill="#232F3E">Amazon Bedrock</text>
+<text x="1386" y="754" font-size="12" text-anchor="middle" fill="#545B64">Claude (global. 프로파일)</text>
+<image href="bundle:resource/AWS-Identity-Access-Management_AWS-STS" x="1362" y="828" width="48" height="48"/>
+<text x="1386" y="894" font-size="14" text-anchor="middle" fill="#232F3E">AWS STS</text>
+<text x="1386" y="910" font-size="12" text-anchor="middle" fill="#545B64">자격 증명 · sts 엔드포인트</text>
+<image href="bundle:service/AWS-IAM-Identity-Center" x="684" y="942" width="48" height="48"/>
+<text x="708" y="1008" font-size="14" text-anchor="middle" fill="#232F3E">IAM Identity Center</text>
+<text x="708" y="1024" font-size="12" text-anchor="middle" fill="#545B64">aws sso login</text>
+<image href="bundle:service/AWS-CloudTrail" x="1362" y="942" width="48" height="48"/>
+<text x="1386" y="1008" font-size="14" text-anchor="middle" fill="#232F3E">AWS CloudTrail</text>
+<text x="1386" y="1024" font-size="12" text-anchor="middle" fill="#545B64">호출 로그 (소스 리전)</text>
+<line x1="578" y1="824" x2="628" y2="824" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<polyline points="554,800 554,214 628,214" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<circle cx="532" cy="598" r="10" fill="#232F3E"/><text x="532" y="602" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">8</text>
+<rect x="1266" y="218" width="216" height="112" fill="none" stroke="#7D8998" stroke-width="1.5" stroke-dasharray="6,4"/>
+<text x="1278" y="236" font-size="14" font-weight="600" fill="#7D8998">목적지 리전 (global)</text>
+<image href="bundle:service/Amazon-Bedrock" x="1350" y="250" width="48" height="48"/>
+<text x="1374" y="316" font-size="14" text-anchor="middle" fill="#232F3E">Amazon Bedrock</text>
+<line x1="1386" y1="672" x2="1386" y2="334" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+<circle cx="1364" cy="363" r="10" fill="#232F3E"/><text x="1364" y="367" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">7</text>
+<text x="1396" y="367" font-size="12" fill="#232F3E">AWS 네트워크</text>
+<rect x="16" y="676" width="320" height="254" fill="none" stroke="#7D8998" stroke-width="2"/>
+<image href="bundle:group/Corporate-data-center_32" x="16" y="676" width="24" height="24"/>
+<text x="48" y="694" font-size="14" font-weight="600" fill="#7D8998">On-premises</text>
+<image href="bundle:resource/Client" x="98" y="800" width="48" height="48"/>
+<text x="122" y="866" font-size="14" text-anchor="middle" fill="#232F3E">개발자 PC</text>
+<text x="122" y="882" font-size="12" text-anchor="middle" fill="#545B64">Claude Code</text>
+<text x="122" y="898" font-size="12" text-anchor="middle" fill="#545B64">CLAUDE_CODE_USE_BEDROCK=1</text>
+<text x="122" y="914" font-size="12" text-anchor="middle" fill="#545B64">AWS_REGION=ap-northeast-2</text>
+<image href="bundle:resource/Server" x="212" y="712" width="48" height="48"/>
+<text x="236" y="778" font-size="14" text-anchor="middle" fill="#232F3E">사내 DNS</text>
+<image href="bundle:resource/Amazon-VPC_Customer-Gateway" x="262" y="800" width="48" height="48"/>
+<text x="286" y="866" font-size="14" text-anchor="middle" fill="#232F3E">고객 라우터</text>
+<line x1="146" y1="824" x2="258" y2="824" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<polyline points="122,800 122,736 208,736" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<circle cx="139" cy="722" r="10" fill="#232F3E"/><text x="139" y="726" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+<text x="178" y="727" font-size="12" text-anchor="middle" fill="#232F3E">DNS :53</text>
+<polyline points="260,736 286,736 286,796" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="310" y1="824" x2="388" y2="824" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="204" y="818" font-size="12" text-anchor="middle" fill="#232F3E">HTTPS :443</text>
+<circle cx="364" cy="810" r="10" fill="#232F3E"/><text x="364" y="814" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+<polyline points="146,836 232,836 232,966 388,966" fill="none" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+<image href="bundle:resource/Internet" x="392" y="942" width="48" height="48"/>
+<text x="416" y="1008" font-size="14" text-anchor="middle" fill="#232F3E">Internet</text>
+<line x1="444" y1="966" x2="680" y2="966" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+<circle cx="263" cy="952" r="10" fill="#232F3E"/><text x="263" y="956" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+<text x="323" y="957" font-size="12" text-anchor="middle" fill="#232F3E">HTTPS (프록시)</text>
+<rect x="16" y="16" width="456" height="636" fill="#F8F9F9" stroke="#D5DBDB" stroke-width="1"/>
+<circle cx="38" cy="38" r="10" fill="#232F3E"/><text x="38" y="42" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+<text x="56" y="42" font-size="12" font-weight="600" fill="#232F3E">PC → IAM Identity Center</text>
+<text x="56" y="62" font-size="12" fill="#545B64">aws sso login은 사내 프록시 → 인터넷입니다(VPC 엔드포인트</text>
+<text x="56" y="78" font-size="12" fill="#545B64">미지원). CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1로</text>
+<text x="56" y="94" font-size="12" fill="#545B64">업데이트·텔레메트리·릴리스 노트를 끕니다(Bedrock에선 지표·오류</text>
+<text x="56" y="110" font-size="12" fill="#545B64">보고가 이미 꺼짐).</text>
+<circle cx="38" cy="134" r="10" fill="#232F3E"/><text x="38" y="138" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+<text x="56" y="138" font-size="12" font-weight="600" fill="#232F3E">PC → 사내 DNS → Resolver inbound</text>
+<text x="56" y="158" font-size="12" fill="#545B64">*.ap-northeast-2.amazonaws.com과 us-west-2 이름을 inbound</text>
+<text x="56" y="174" font-size="12" fill="#545B64">엔드포인트로 조건부 전달. Private DNS로</text>
+<text x="56" y="190" font-size="12" fill="#545B64">bedrock-runtime.ap-northeast-2.amazonaws.com 등 → ENI IP.</text>
+<circle cx="38" cy="214" r="10" fill="#232F3E"/><text x="38" y="218" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+<text x="56" y="218" font-size="12" font-weight="600" fill="#232F3E">PC → Direct Connect → VGW</text>
+<text x="56" y="238" font-size="12" fill="#545B64">private VIF → DX 게이트웨이 → VGW, VPC 사설 IP로</text>
+<text x="56" y="254" font-size="12" fill="#545B64">HTTPS :443. private VIF는 퍼블릭 엔드포인트에 닿지 않습니다.</text>
+<circle cx="38" cy="278" r="10" fill="#232F3E"/><text x="38" y="282" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+<text x="56" y="282" font-size="12" font-weight="600" fill="#232F3E">sts 엔드포인트</text>
+<text x="56" y="302" font-size="12" fill="#545B64">SDK 자격 증명 체인의 GetCallerIdentity · AssumeRole.</text>
+<circle cx="38" cy="326" r="10" fill="#232F3E"/><text x="38" y="330" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">5</text>
+<text x="56" y="330" font-size="12" font-weight="600" fill="#232F3E">bedrock 엔드포인트</text>
+<text x="56" y="350" font-size="12" fill="#545B64">ListInferenceProfiles · GetInferenceProfile로 global.</text>
+<text x="56" y="366" font-size="12" fill="#545B64">프로파일 확인. ANTHROPIC_BEDROCK_REGION_PREFIX=global</text>
+<text x="56" y="382" font-size="12" fill="#545B64">(ap-* 기본값 apac.) 또는 global. 모델 ID.</text>
+<circle cx="38" cy="406" r="10" fill="#232F3E"/><text x="38" y="410" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">6</text>
+<text x="56" y="410" font-size="12" font-weight="600" fill="#232F3E">bedrock-runtime 엔드포인트 → Bedrock</text>
+<text x="56" y="430" font-size="12" fill="#545B64">InvokeModelWithResponseStream(Invoke API, Converse 아님),</text>
+<text x="56" y="446" font-size="12" fill="#545B64">스트리밍 응답은 같은 경로. IAM: bedrock:InvokeModel ·</text>
+<text x="56" y="462" font-size="12" fill="#545B64">InvokeModelWithResponseStream과 5의 두 API.</text>
+<circle cx="38" cy="486" r="10" fill="#232F3E"/><text x="38" y="490" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">7</text>
+<text x="56" y="490" font-size="12" font-weight="600" fill="#232F3E">Bedrock → 목적지 리전</text>
+<text x="56" y="510" font-size="12" fill="#545B64">서울의 현재 Claude는 global 프로파일만(in-Region · geo 없음).</text>
+<text x="56" y="526" font-size="12" fill="#545B64">AWS 네트워크 안에서 라우팅, CloudTrail은 서울. IAM · SCP:</text>
+<text x="56" y="542" font-size="12" fill="#545B64">프로파일 ARN과 arn:aws:bedrock:::foundation-model/*을</text>
+<text x="56" y="558" font-size="12" fill="#545B64">aws:RequestedRegion = &quot;unspecified&quot;로 허용.</text>
+<circle cx="38" cy="582" r="10" fill="#232F3E"/><text x="38" y="586" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">8</text>
+<text x="56" y="586" font-size="12" font-weight="600" fill="#232F3E">DX 게이트웨이 → us-west-2 VPC</text>
+<text x="56" y="606" font-size="12" fill="#545B64">같은 DX 게이트웨이의 두 번째 VGW. AWS_REGION=us-west-2 →</text>
+<text x="56" y="622" font-size="12" fill="#545B64">bedrock-runtime.us-west-2.amazonaws.com, in-Region · us.</text>
+<text x="56" y="638" font-size="12" fill="#545B64">프로파일. AZ마다 같은 ENI(그림은 AZ 1).</text>
+</svg>

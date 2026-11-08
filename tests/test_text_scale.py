@@ -294,7 +294,7 @@ def test_structure_allows_scaled_note_reflow_but_checks_its_content(tmp_path):
     import compare_structure as compare
     import embed
     original, _, problems = embed.unembed(
-        (ROOT / "docs/examples/nlb-mtls-reference-architecture.svg").read_text())
+        (ROOT / "tests/fixtures/examples-91062e1/nlb-mtls-reference-architecture.svg").read_text())   # unscaled, as drawn at 91062e1
     assert not problems
     orig_path = tmp_path / "orig.svg"
     orig_path.write_text(original)

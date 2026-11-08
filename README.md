@@ -36,7 +36,7 @@ AWS가 만들거나 보증한 도구가 아닙니다. 아이콘은 AWS 소유이
 
 [`docs/examples/`](docs/examples/)에 이 skill로 그린 완성 구성도(SVG + PNG)가 있고, 새 구성도의
 시작 레이아웃으로 씁니다. [`reference-architectures.pptx`](docs/examples/reference-architectures.pptx)에는
-앞의 다섯 개가 슬라이드로 들어 있습니다. 슬라이드에는 16:9에 맞게 다시 배치한 판을 썼고(글자는 10pt 이상, GWLB 슬라이드만 9.9pt),
+앞의 다섯 개가 슬라이드로 들어 있습니다. 슬라이드에는 16:9에 맞게 다시 배치한 판을 썼고(글자는 10pt 이상),
 그 SVG와 슬라이드별 렌더는 [`docs/examples/slides/`](docs/examples/slides/)에 있습니다.
 
 | NLB | ALB |

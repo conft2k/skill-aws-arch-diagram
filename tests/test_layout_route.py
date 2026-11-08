@@ -3,7 +3,7 @@
 
     python3 tests/test_layout_route.py
 
-Specs come from docs/examples/specs/*.layout.yaml (layout_spec.load); the Geometry is built
+Specs and drafts are the examples as frozen at 91062e1 in tests/fixtures/examples-91062e1/: specs/*.layout.yaml (layout_spec.load); the Geometry is built
 here straight from each example's draft (embed.unembed in memory): node icons, label lines
 and masks, group rects and headers, track centers — no solver involved. The router's
 lines, labels and badges are then checked against the coordinates the examples use
@@ -36,12 +36,15 @@ import layout_spec  # noqa: E402
 from layout_text import font_context, scaled_spec, svg_factor, svg_steps  # noqa: E402
 
 NS = "{http://www.w3.org/2000/svg}"
-SPECS = ROOT / "docs/examples/specs"
+# The examples as drawn at 91062e1, frozen: the module under test is checked against fixed
+# reference geometry, so redrawing docs/examples with a newer engine does not move it.
+EXAMPLES = ROOT / "tests/fixtures/examples-91062e1"
+SPECS = EXAMPLES / "specs"
 NAMES = ["alb", "nfw", "tgw", "nlb", "gwlb", "nlb-mtls", "example"]
 
 
 def draft_path(name):
-    return ROOT / "docs/example.svg" if name == "example" else ROOT / f"docs/examples/{name}-reference-architecture.svg"
+    return EXAMPLES / "example.svg" if name == "example" else EXAMPLES / f"{name}-reference-architecture.svg"
 
 
 def spec_path(name):

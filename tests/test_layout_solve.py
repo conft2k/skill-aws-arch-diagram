@@ -6,7 +6,7 @@
 Specs are built here as layout_model dataclasses (no W1 loader): the ALB example (flow row,
 ASG overlay, IGW on the left border, two AZs), the NFW example (two spoke VPCs, TGW,
 inspection VPC AZ template, IGW on the right border) and a minimal VPC. Solved coordinates
-are compared with the examples' drafts (docs/examples/*.svg after embed.unembed): the y
+are compared with the examples' drafts as frozen at 91062e1 (tests/fixtures/examples-91062e1/*.svg): the y
 chain of insets exactly or within the design's tolerance, x within wider bounds (the engine
 reserves 0.6 em per Latin character where the hand-made examples used ≈ 0.55 em and routes
 are not planned here). Also: every constraint holds in the result, positive cycles are
@@ -368,7 +368,7 @@ def flowcol_spec(mode="slide", pitch=100, align="center", n=4):
 
 class Draft:
     def __init__(self, name):
-        src = (ROOT / "docs/examples" / f"{name}.svg").read_text(encoding="utf-8")
+        src = (ROOT / "tests/fixtures/examples-91062e1" / f"{name}.svg").read_text(encoding="utf-8")   # the example as drawn at 91062e1
         out, _, problems = embed.unembed(src)
         assert not problems, problems
         root = ET.fromstring(out)

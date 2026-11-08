@@ -1,0 +1,134 @@
+<svg viewBox="0 0 1110 846" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#232F3E"/>
+    </marker>
+  </defs>
+  <rect width="1110" height="846" fill="#FFFFFF"/>
+
+  <!-- ===== Users (outside AWS), on the main traffic line y=477 ===== -->
+  <image href="bundle:resource/Users" x="16" y="453" width="48" height="48"/>
+  <text x="40" y="519" font-size="14" text-anchor="middle" fill="#232F3E">Users</text>
+
+  <!-- ===== AWS Cloud ===== -->
+  <rect x="150" y="16" width="944" height="754" fill="none" stroke="#232F3E" stroke-width="2"/>
+  <image href="bundle:group/AWS-Cloud-logo_32" x="150" y="16" width="32" height="32"/>
+  <text x="192" y="38" font-size="15" fill="#232F3E" font-weight="600">AWS Cloud</text>
+
+  <!-- global service: Route 53 inside the AWS Cloud, in a strip left of the Region -->
+  <image href="bundle:service/Amazon-Route-53" x="179" y="88" width="48" height="48"/>
+  <text x="203" y="154" font-size="14" text-anchor="middle" fill="#232F3E">Route 53</text>
+  <text x="203" y="170" font-size="12" text-anchor="middle" fill="#545B64">alias → ALB</text>
+
+  <!-- ===== Region ===== -->
+  <rect x="252" y="56" width="826" height="698" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+  <image href="bundle:group/Region_32" x="252" y="56" width="24" height="24"/>
+  <text x="284" y="74" font-size="14" fill="#00A4A6" font-weight="600">Region</text>
+
+  <!-- regional services row, 160px grid -->
+  <image href="bundle:service/AWS-Certificate-Manager" x="399" y="88" width="48" height="48"/>
+  <text x="423" y="154" font-size="14" text-anchor="middle" fill="#232F3E">ACM</text>
+  <text x="423" y="170" font-size="12" text-anchor="middle" fill="#545B64">HTTPS 리스너 인증서</text>
+
+  <image href="bundle:service/AWS-WAF" x="559" y="88" width="48" height="48"/>
+  <text x="583" y="154" font-size="14" text-anchor="middle" fill="#232F3E">AWS WAF</text>
+  <text x="583" y="170" font-size="12" text-anchor="middle" fill="#545B64">ALB에 연결한 Web ACL</text>
+
+  <image href="bundle:service/Amazon-CloudWatch" x="719" y="88" width="48" height="48"/>
+  <text x="743" y="154" font-size="14" text-anchor="middle" fill="#232F3E">CloudWatch</text>
+  <text x="743" y="170" font-size="12" text-anchor="middle" fill="#545B64">지표 · 경보</text>
+
+  <image href="bundle:service/Amazon-Simple-Storage-Service" x="879" y="88" width="48" height="48"/>
+  <text x="903" y="154" font-size="14" text-anchor="middle" fill="#232F3E">S3</text>
+  <text x="903" y="170" font-size="12" text-anchor="middle" fill="#545B64">ALB 액세스 로그</text>
+
+  <!-- ===== VPC ===== -->
+  <rect x="290" y="186" width="772" height="552" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="290" y="186" width="24" height="24"/>
+  <text x="322" y="204" font-size="14" fill="#8C4FFF" font-weight="600">VPC</text>
+  <text x="322" y="220" font-size="12" fill="#232F3E">10.0.0.0/16</text>
+
+  <!-- ===== AZ rows (subnets at AZ.y + 30, 16px padding; gap 422–532 = 110px holds the IGW → ALB → targets line at y=477) ===== -->
+  <rect x="306" y="232" width="740" height="190" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="318" y="250" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 1</text>
+  <rect x="306" y="532" width="740" height="190" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="318" y="550" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 2</text>
+
+  <!-- tier columns: public (322–470) → app (490–836) → DB (856–1030) -->
+  <rect x="322" y="262" width="148" height="144" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="322" y="262" width="24" height="24"/>
+  <text x="354" y="280" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+  <rect x="490" y="262" width="346" height="144" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="490" y="262" width="24" height="24"/>
+  <text x="522" y="280" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+  <rect x="856" y="262" width="174" height="144" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="856" y="262" width="24" height="24"/>
+  <text x="888" y="280" font-size="14" fill="#00A4A6" font-weight="600">DB subnet</text>
+
+  <rect x="322" y="562" width="148" height="144" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="322" y="562" width="24" height="24"/>
+  <text x="354" y="580" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+  <rect x="490" y="562" width="346" height="144" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="490" y="562" width="24" height="24"/>
+  <text x="522" y="580" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+  <rect x="856" y="562" width="174" height="144" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="856" y="562" width="24" height="24"/>
+  <text x="888" y="580" font-size="14" fill="#00A4A6" font-weight="600">DB subnet</text>
+
+  <!-- NAT gateways: zonal, one per AZ -->
+  <image href="bundle:resource/Amazon-VPC_NAT-Gateway" x="371" y="318" width="48" height="48"/>
+  <text x="395" y="384" font-size="14" text-anchor="middle" fill="#232F3E">NAT gateway</text>
+  <image href="bundle:resource/Amazon-VPC_NAT-Gateway" x="371" y="618" width="48" height="48"/>
+  <text x="395" y="684" font-size="14" text-anchor="middle" fill="#232F3E">NAT gateway</text>
+
+  <!-- ===== one Auto Scaling group / target group spanning both AZ rows ===== -->
+  <rect x="616" y="288" width="200" height="408" fill="none" stroke="#ED7100" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <image href="bundle:group/Auto-Scaling-group_32" x="616" y="288" width="24" height="24"/>
+  <text x="648" y="306" font-size="14" fill="#ED7100" font-weight="600">ASG · target group</text>
+  <image href="bundle:service/Amazon-EC2" x="648" y="318" width="48" height="48"/>
+  <text x="672" y="384" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <image href="bundle:service/Amazon-EC2" x="748" y="318" width="48" height="48"/>
+  <text x="772" y="384" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <image href="bundle:service/Amazon-EC2" x="648" y="618" width="48" height="48"/>
+  <text x="672" y="684" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <image href="bundle:service/Amazon-EC2" x="748" y="618" width="48" height="48"/>
+  <text x="772" y="684" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+
+  <!-- RDS Multi-AZ: primary in AZ1, standby in AZ2 -->
+  <image href="bundle:service/Amazon-RDS" x="952" y="318" width="48" height="48"/>
+  <text x="976" y="384" font-size="14" text-anchor="middle" fill="#232F3E">RDS Primary</text>
+  <image href="bundle:service/Amazon-RDS" x="952" y="618" width="48" height="48"/>
+  <text x="976" y="684" font-size="14" text-anchor="middle" fill="#232F3E">RDS Standby</text>
+
+  <!-- ===== one ALB, in the gap between the AZ rows, in the public-tier column ===== -->
+  <image href="bundle:resource/Elastic-Load-Balancing_Application-Load-Balancer" x="371" y="453" width="48" height="48"/>
+  <text x="395" y="519" font-size="14" text-anchor="middle" fill="#232F3E">ALB</text>
+
+  <!-- ===== IGW on the VPC left border (290 - 24 = 266), on the same line ===== -->
+  <rect x="266" y="453" width="48" height="72" fill="#FFFFFF"/>
+  <image href="bundle:resource/Amazon-VPC_Internet-Gateway" x="266" y="453" width="48" height="48"/>
+  <text x="290" y="519" font-size="14" text-anchor="middle" fill="#232F3E">IGW</text>
+
+  <!-- main path, all pointing right: Users → IGW → ALB → target group → RDS primary -->
+  <line x1="68" y1="477" x2="262" y2="477" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="106" y="468" font-size="12" text-anchor="middle" fill="#232F3E">HTTPS :443</text>
+  <line x1="318" y1="477" x2="367" y2="477" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="423" y1="477" x2="612" y2="477" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="517" y="468" font-size="12" text-anchor="middle" fill="#232F3E">HTTP :80</text>
+  <line x1="820" y1="342" x2="948" y2="342" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="886" y="334" font-size="12" text-anchor="middle" fill="#232F3E">SQL</text>
+
+  <!-- secondary, dashed: DNS lookup, outbound via the NAT gateway in the same AZ, Multi-AZ replication -->
+  <polyline points="40,449 40,112 175,112" fill="none" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="100" y="104" font-size="12" text-anchor="middle" fill="#545B64">DNS 조회</text>
+  <line x1="612" y1="342" x2="423" y2="342" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="553" y="334" font-size="12" text-anchor="middle" fill="#545B64">아웃바운드</text>
+  <line x1="612" y1="642" x2="423" y2="642" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="553" y="634" font-size="12" text-anchor="middle" fill="#545B64">아웃바운드</text>
+  <line x1="976" y1="392" x2="976" y2="614" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <text x="986" y="481" font-size="12" text-anchor="start" fill="#545B64">동기식 복제</text>
+
+  <!-- note panel: full canvas width minus 16px each side (x=16, w=1078), 16px below the AWS Cloud box; one summary row, baseline panel.y + 26, canvas ends 16px below the panel -->
+  <rect x="16" y="786" width="1078" height="44" fill="#F8F9F9" stroke="#D5DBDB" stroke-width="1"/>
+  <text x="28" y="812" font-size="12" fill="#545B64">Internet-facing ALB · 두 AZ에 걸친 단일 관리형 로드 밸런서 · AWS WAF 연결 · RDS Multi-AZ</text>
+</svg>

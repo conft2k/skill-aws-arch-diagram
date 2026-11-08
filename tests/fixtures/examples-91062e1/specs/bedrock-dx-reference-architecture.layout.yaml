@@ -1,0 +1,86 @@
+# Claude Code on Amazon Bedrock over Direct Connect: on-premises PC → DX → VGW → VPC endpoints in Seoul (+ us-west-2 option B), with a step legend pane
+name: bedrock-dx-reference-architecture
+mode: document
+cols: [pc, dns, rtr, dx, dxgw, vgw, res, sts, bed, br, ext]
+rows: [w, s1, smid, dnsr, link, s2, sbot]   # dnsr / link: the draft's 사내 DNS (736) and PC → VGW chain (824) sit on their own lines, apart from beds (696) and the AZ 2 icons (852)
+
+groups:
+  - {id: onprem, type: onprem, label: On-premises}
+  - {id: cloud,  type: cloud}
+  - {id: rw,   type: region, label: Region us-west-2 (옵션 B), in: cloud}
+  - {id: vpcw, type: vpc, label: VPC, cidr: 10.1.0.0/16, in: rw}
+  - {id: azw,  type: az, label: Availability Zone 1, in: vpcw}
+  - {id: snw,  type: private, label: Private subnet, cidr: 10.1.1.0/24, in: azw, pad_top: 88}   # pad_top 88: room above the endpoints for the bus (icon top − 36, below the CIDR line), as the draft
+  - {id: dst,  type: generic, label: 목적지 리전 (global), dash: "6,4", in: cloud}
+  - {id: rs,   type: region, label: Region ap-northeast-2 (서울), in: cloud}
+  - {id: vpcs, type: vpc, label: VPC, cidr: 10.0.0.0/16, in: rs}
+  - {id: az,   type: az, in: vpcs, per: [s1, s2]}
+  - {id: sn,   type: private, label: Private subnet, cidr: {1: 10.0.1.0/24, 2: 10.0.2.0/24}, in: az, pad_top: 88}   # pad_top 88: the bus row above the endpoints (draft subnet.y + 52, icons + 88)
+
+nodes:
+  - {id: pc,   icon: resource/Client, label: 개발자 PC, sub: [Claude Code, CLAUDE_CODE_USE_BEDROCK=1, AWS_REGION=ap-northeast-2], in: onprem, at: [pc, link]}
+  - {id: dns,  icon: resource/Server, label: 사내 DNS, in: onprem, at: [dns, dnsr]}
+  - {id: rtr,  icon: resource/Amazon-VPC_Customer-Gateway, label: 고객 라우터, in: onprem, at: [rtr, link]}
+  - {id: dx,   icon: service/AWS-Direct-Connect, label: Direct Connect, sub: private VIF · BGP, at: [dx, link]}
+  - {id: inet, icon: resource/Internet, label: Internet, at: [dx, sbot]}
+  - {id: dxgw, icon: resource/AWS-Direct-Connect_Gateway, label: DX gateway, sub: 글로벌 리소스, in: cloud, at: [dxgw, link]}
+  - {id: vgww, icon: resource/Amazon-VPC_VPN-Gateway, label: VGW, on: vpcw, at: [vgw, w], dy: -60}   # MVP: bus height; the draft's VGW center = bus y = Resolver/endpoint icon top − 36, so the stub, bus and drops below stay one connected line
+  - {id: resw, icon: resource/Amazon-Route-53_Resolver, label: Resolver inbound, in: snw, at: [res, w]}
+  - {id: brw,  icon: resource/Amazon-VPC_Endpoints, label: bedrock-runtime, in: snw, at: [sts, w]}
+  - {id: bedw, icon: service/Amazon-Bedrock, label: Amazon Bedrock, sub: in-Region · us. 프로파일, in: rw, at: [br, w]}
+  - {id: bdst, icon: service/Amazon-Bedrock, label: Amazon Bedrock, in: dst, at: [ext, w]}
+  - {id: vgws, icon: resource/Amazon-VPC_VPN-Gateway, label: VGW, on: vpcs, at: [vgw, link]}
+  - {id: res,  icon: resource/Amazon-Route-53_Resolver, label: Resolver inbound, in: sn, col: res}
+  - {id: sts,  icon: resource/Amazon-VPC_Endpoints, label: sts, in: sn, col: sts}
+  - {id: bed,  icon: resource/Amazon-VPC_Endpoints, label: bedrock, in: sn, col: bed}
+  - {id: br,   icon: resource/Amazon-VPC_Endpoints, label: bedrock-runtime, in: sn, col: br}
+  - {id: beds, icon: service/Amazon-Bedrock, label: Amazon Bedrock, sub: Claude (global. 프로파일), in: rs, at: [ext, smid]}
+  - {id: stss, icon: resource/AWS-Identity-Access-Management_AWS-STS, label: AWS STS, sub: 자격 증명 · sts 엔드포인트, in: rs, at: [ext, s2]}
+  - {id: idc,  icon: service/AWS-IAM-Identity-Center, label: IAM Identity Center, sub: aws sso login, in: rs, at: [vgw..res, sbot]}
+  - {id: ct,   icon: service/AWS-CloudTrail, label: AWS CloudTrail, sub: 호출 로그 (소스 리전), in: rs, at: [ext, sbot]}
+
+edges:
+  - {e: "pc ..> inet", label: HTTPS (프록시), step: 1, from_side: right}   # the draft leaves PC's right side (port +12 under HTTPS :443); the default VH would leave from under the 4-line sub-caption
+  - {e: "inet ..> idc"}
+  - {e: "pc -> dns", label: "DNS :53", step: 2}
+  - {e: "dns -> rtr"}
+  - {e: "pc -> rtr", label: "HTTPS :443"}
+  - {e: "rtr -> dx", step: 3}
+  - {e: "dx -> dxgw"}
+  - {e: "dxgw -> vgws"}
+  - {e: "dxgw -> vgww", step: 8}
+  # MVP: phase-2 `fork: bus` (vgws -> res.*, sts.*, bed.*, br.*) drawn as the draft's 12 separate lines: stub, vertical trunk, one bus per AZ, one drop per endpoint
+  - {e: "vgws -- vpcs", points: [["vgws.x1", "vgws.cy"], ["vgws.x1+12", "vgws.cy"]]}             # MVP: bus stub out of the VGW
+  - {e: "vgws -- vpcs", points: [["vgws.x1+12", "res.1.y0-36"], ["vgws.x1+12", "res.2.y0-36"]]}  # MVP: vertical trunk joining the AZ 1 and AZ 2 buses; the stub meets it at the VGW's height (the VGW sits in the row between the AZs)
+  - {e: "vgws -- sn.1", points: [["vgws.x1+12", "res.1.y0-36"], ["br.1.cx", "res.1.y0-36"]]}     # MVP: AZ 1 bus, 32 above the icons
+  - {e: "vgws -> res.1", points: [["res.1.cx", "res.1.y0-36"], ["res.1.cx", "res.1.y0-4"]]}      # MVP: drop
+  - {e: "vgws -> sts.1", points: [["sts.1.cx", "sts.1.y0-36"], ["sts.1.cx", "sts.1.y0-4"]], step: 4}   # MVP: drop
+  - {e: "vgws -> bed.1", points: [["bed.1.cx", "bed.1.y0-36"], ["bed.1.cx", "bed.1.y0-4"]], step: 5}   # MVP: drop
+  - {e: "vgws -> br.1", points: [["br.1.cx", "br.1.y0-36"], ["br.1.cx", "br.1.y0-4"]], step: 6}        # MVP: drop
+  - {e: "vgws -- sn.2", points: [["vgws.x1+12", "res.2.y0-36"], ["br.2.cx", "res.2.y0-36"]]}     # MVP: AZ 2 bus
+  - {e: "vgws -> res.2", points: [["res.2.cx", "res.2.y0-36"], ["res.2.cx", "res.2.y0-4"]]}      # MVP: drop
+  - {e: "vgws -> sts.2", points: [["sts.2.cx", "sts.2.y0-36"], ["sts.2.cx", "sts.2.y0-4"]]}      # MVP: drop
+  - {e: "vgws -> bed.2", points: [["bed.2.cx", "bed.2.y0-36"], ["bed.2.cx", "bed.2.y0-4"]]}      # MVP: drop
+  - {e: "vgws -> br.2", points: [["br.2.cx", "br.2.y0-36"], ["br.2.cx", "br.2.y0-4"]]}           # MVP: drop
+  # MVP: phase-2 `fork: bus` (vgww -> resw, brw) as the draft's 4 lines; the bus runs at the VGW's own height (see vgww dy)
+  - {e: "vgww -- vpcw", points: [["vgww.x1", "vgww.cy"], ["vgww.x1+12", "vgww.cy"]]}             # MVP: bus stub
+  - {e: "vgww -- snw", points: [["vgww.x1+12", "vgww.cy"], ["brw.cx", "vgww.cy"]]}               # MVP: bus
+  - {e: "vgww -> resw", points: [["resw.cx", "vgww.cy"], ["resw.cx", "resw.y0-4"]]}              # MVP: drop
+  - {e: "vgww -> brw", points: [["brw.cx", "vgww.cy"], ["brw.cx", "brw.y0-4"]]}                  # MVP: drop
+  # the draft joins br.1 and br.2 with one headless polyline and runs a separate arrow from the joint to beds; `trunk: true` would instead draw br.1 → beds with the head and br.2 → joint
+  - {e: "br.1 -- br.2", points: [["br.1.x1", "br.1.cy"], ["gap(br,ext)", "br.1.cy"], ["gap(br,ext)", "br.2.cy"], ["br.2.x1", "br.2.cy"]]}   # points: the trunk joining both bedrock-runtime endpoints
+  - {e: "br.1 -> beds", points: [["gap(br,ext)", "beds.cy"], ["beds.x0-4", "beds.cy"]]}          # points: arrow from the trunk joint to Bedrock (starts on no icon, as in the draft)
+  - {e: "brw -> bedw"}
+  - {e: "beds ..> dst", label: AWS 네트워크, label_at: right, step: 7, step_at: gap}   # ends on the 목적지 리전 box (draft: 4 below its border, not at the icon); label_at right: the draft puts it right of the vertical line (default would be below, as the hop has a badge); step_at gap: badge between the Seoul Region top and the box
+
+note:
+  # place auto → pane: the On-premises column left of the Cloud has room for it above (width auto = that column, draft 456)
+  steps:
+    - ["PC → IAM Identity Center", "aws sso login은 사내 프록시 → 인터넷입니다(VPC 엔드포인트 미지원). CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1로 업데이트·텔레메트리·릴리스 노트를 끕니다(Bedrock에선 지표·오류 보고가 이미 꺼짐)."]
+    - ["PC → 사내 DNS → Resolver inbound", "*.ap-northeast-2.amazonaws.com과 us-west-2 이름을 inbound 엔드포인트로 조건부 전달. Private DNS로 bedrock-runtime.ap-northeast-2.amazonaws.com 등 → ENI IP."]
+    - ["PC → Direct Connect → VGW", "private VIF → DX 게이트웨이 → VGW, VPC 사설 IP로 HTTPS\u00A0:443. private VIF는 퍼블릭 엔드포인트에 닿지 않습니다."]
+    - ["sts 엔드포인트", "SDK 자격 증명 체인의 GetCallerIdentity · AssumeRole."]
+    - ["bedrock 엔드포인트", "ListInferenceProfiles · GetInferenceProfile로 global. 프로파일 확인. ANTHROPIC_BEDROCK_REGION_PREFIX=global (ap-* 기본값 apac.) 또는 global. 모델 ID."]
+    - ["bedrock-runtime 엔드포인트 → Bedrock", "InvokeModelWithResponseStream(Invoke API, Converse 아님), 스트리밍 응답은 같은 경로. IAM: bedrock:InvokeModel · InvokeModelWithResponseStream과 5의 두 API."]
+    - ["Bedrock → 목적지 리전", "서울의 현재 Claude는 global 프로파일만(in-Region · geo 없음). AWS 네트워크 안에서 라우팅, CloudTrail은 서울. IAM · SCP: 프로파일 ARN과 arn:aws:bedrock:::foundation-model/*을 aws:RequestedRegion\u00A0=\u00A0\"unspecified\"로 허용."]
+    - ["DX 게이트웨이 → us-west-2 VPC", "같은 DX 게이트웨이의 두 번째 VGW. AWS_REGION=us-west-2 → bedrock-runtime.us-west-2.amazonaws.com, in-Region · us. 프로파일. AZ마다 같은 ENI(그림은 AZ\u00A01)."]

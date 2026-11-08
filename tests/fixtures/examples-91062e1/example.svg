@@ -1,0 +1,80 @@
+<svg viewBox="0 0 670 594" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
+  <!-- one arrowhead marker, reused by every connector; arrowStart is its mirror for
+       two-way links (marker-start), since cairosvg ignores orient="auto-start-reverse" -->
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#232F3E"/>
+    </marker>
+    <marker id="arrowStart" markerWidth="10" markerHeight="10" refX="0" refY="3" orient="auto">
+      <path d="M8,0 L0,3 L8,6 Z" fill="#232F3E"/>
+    </marker>
+  </defs>
+  <rect width="670" height="594" fill="#FFFFFF"/>
+
+  <!-- AWS Cloud boundary -->
+  <rect x="16" y="16" width="638" height="562" fill="none" stroke="#232F3E" stroke-width="2"/>
+  <image href="bundle:group/AWS-Cloud-logo_32" x="16" y="16" width="32" height="32"/>
+  <text x="58" y="38" font-size="15" fill="#232F3E" font-weight="600">AWS Cloud</text>
+
+  <!-- Region: 20px inside the Cloud, below its header -->
+  <rect x="36" y="56" width="598" height="502" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+  <image href="bundle:group/Region_32" x="36" y="56" width="24" height="24"/>
+  <text x="68" y="74" font-size="14" fill="#00A4A6" font-weight="600">Region ap-northeast-2</text>
+
+  <!-- VPC: left edge at x=96 leaves room for the IGW mask (72–120) inside the Region -->
+  <rect x="96" y="88" width="518" height="450" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="96" y="88" width="24" height="24"/>
+  <text x="128" y="106" font-size="14" fill="#8C4FFF" font-weight="600">VPC</text>
+  <text x="128" y="122" font-size="12" fill="#232F3E">10.0.0.0/16</text>
+
+  <!-- AZs as rows (label only, long dashes); the 86px gap between them (288–374) — the slide minimum; a document uses ≥110 — holds
+       the main line y=320: IGW → ALB → target group -->
+  <rect x="106" y="134" width="498" height="154" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="118" y="152" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 1</text>
+  <rect x="106" y="374" width="498" height="154" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="118" y="392" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 2</text>
+
+  <!-- tiers as columns: public subnet (118–264) → app subnet (276–592), one of each per AZ.
+       The public subnets hold the ALB's per-AZ nodes, which are not drawn: the ALB is one node. -->
+  <rect x="118" y="164" width="146" height="116" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="118" y="164" width="24" height="24"/>
+  <text x="150" y="182" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+  <rect x="276" y="164" width="316" height="116" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="276" y="164" width="24" height="24"/>
+  <text x="308" y="182" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+
+  <rect x="118" y="404" width="146" height="116" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="118" y="404" width="24" height="24"/>
+  <text x="150" y="422" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+  <rect x="276" y="404" width="316" height="116" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="276" y="404" width="24" height="24"/>
+  <text x="308" y="422" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+
+  <!-- one Auto Scaling group / target group spanning both AZs, 8px inside the app subnets and
+       right of their headers (so its border crosses no header); zonal EC2 instances stay per AZ -->
+  <rect x="400" y="172" width="184" height="340" fill="none" stroke="#ED7100" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <image href="bundle:group/Auto-Scaling-group_32" x="400" y="172" width="24" height="24"/>
+  <text x="432" y="190" font-size="14" fill="#ED7100" font-weight="600">ASG · target group</text>
+
+  <!-- nodes: every node icon uses the same S=48; 14px labels, baseline 18px below the icon (icon.y + 66) -->
+  <image href="bundle:service/Amazon-EC2" x="468" y="202" width="48" height="48"/>
+  <text x="492" y="268" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <image href="bundle:service/Amazon-EC2" x="468" y="434" width="48" height="48"/>
+  <text x="492" y="500" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+
+  <!-- one ALB (a managed multi-AZ service), in the gap between the AZ rows, in the public column -->
+  <image href="bundle:resource/Elastic-Load-Balancing_Application-Load-Balancer" x="167" y="296" width="48" height="48"/>
+  <text x="191" y="362" font-size="14" text-anchor="middle" fill="#232F3E">ALB</text>
+
+  <!-- Internet gateway centered on the VPC left border (96 - 48/2 = 72), on the main line.
+       Label "IGW" (≈ 25px) is narrower than the icon → mask_w = 48, mask_h = S + 24 = 72 (70 on a slide),
+       8px clear of both AZ rows and 36px clear of the Region border at x=36. -->
+  <rect x="72" y="296" width="48" height="72" fill="#FFFFFF"/>
+  <image href="bundle:resource/Amazon-VPC_Internet-Gateway" x="72" y="296" width="48" height="48"/>
+  <text x="96" y="362" font-size="14" text-anchor="middle" fill="#232F3E">IGW</text>
+
+  <!-- connectors on the main line, all pointing right; the first starts at the IGW's inner half,
+       the second ends at the target group box (one arrow to the group, not one per instance) -->
+  <line x1="124" y1="320" x2="163" y2="320" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="219" y1="320" x2="396" y2="320" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+</svg>

@@ -97,8 +97,7 @@ cp ${CLAUDE_SKILL_DIR}/docs/examples/specs/nfw-reference-architecture.layout.yam
 | `../example.svg` | `example.layout.yaml` | the minimal skeleton: one VPC, 2 AZs, ALB, ASG of two EC2, IGW (slide spacing) | a topology none of the above resembles |
 
 `slides/` holds slide-size versions of the NLB, ALB, GWLB, NFW and TGW examples
-(`slides/*.svg`, ≤ 1108 × 544, text ≥ 10pt on a titled slide except 9.9pt on the GWLB
-slide), the deck made from them (`reference-architectures.pptx`) and a render of each
+(`slides/*.svg`, ≤ 1107 × 540, text ≥ 10pt on a titled slide), the deck made from them (`reference-architectures.pptx`) and a render of each
 slide (`slides/*.png`). For a deck start from the `slides/` version. They have no spec:
 for a slide either write a slide spec (`mode: slide`, see `layout_spec.md`) or take the
 draft path from the `slides/` SVG.

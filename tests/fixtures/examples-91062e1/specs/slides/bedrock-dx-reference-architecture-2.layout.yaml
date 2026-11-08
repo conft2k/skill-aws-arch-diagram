@@ -1,0 +1,47 @@
+# Slide 2/2: us-west-2 option B uses the SAME global DX gateway and a second VGW; Seoul's VGW and global inference path are on slide 1.
+# As in the document, only AZ1 is drawn; the endpoint ENIs repeat in each AZ.
+# Omitted to keep text >=10pt: exact CIDRs, full CLI environment/telemetry settings, DNS suffix/hostname lists and API/IAM policy details; the document spec keeps these operational details. AWS_REGION=us-west-2 and the in-Region/us. profile choice are retained because they distinguish this option.
+name: bedrock-dx-reference-architecture-2
+mode: slide
+cols: [pc, rtr, dx, dxgw, vgw, res, br, svc]
+rows: [dnsr, main, sso]
+
+groups:
+  - {id: onprem, type: onprem, label: On-premises}
+  - {id: cloud, type: cloud}
+  - {id: rw, type: region, label: us-west-2 · 옵션 B, in: cloud}
+  - {id: vpcw, type: vpc, label: VPC, in: rw}
+  - {id: azw, type: az, label: AZ1 (다른 AZ 동일), in: vpcw}
+  - {id: snw, type: private, label: Private subnet, in: azw, pad_top: 76}
+  - {id: rs, type: region, label: 서울 · SSO, in: cloud}
+
+nodes:
+  - {id: pc, icon: resource/Client, label: 개발자 PC, sub: [Claude Code, AWS_REGION=us-west-2], in: onprem, at: [pc, main]}
+  - {id: dns, icon: resource/Server, label: 사내 DNS, in: onprem, at: [rtr, dnsr]}
+  - {id: rtr, icon: resource/Amazon-VPC_Customer-Gateway, label: 고객 라우터, in: onprem, at: [rtr, main]}
+  - {id: dx, icon: service/AWS-Direct-Connect, label: Direct Connect, sub: private VIF · BGP, at: [dx, main]}
+  - {id: inet, icon: resource/Internet, label: Internet, sub: 프록시 경유, at: [dx, sso]}
+  - {id: dxgw, icon: resource/AWS-Direct-Connect_Gateway, label: DX gateway, sub: slide 1과 동일, in: cloud, at: [dxgw, main]}
+  - {id: vgww, icon: resource/Amazon-VPC_VPN-Gateway, label: VGW, on: vpcw, at: [vgw, main], dy: -60}
+  - {id: resw, icon: resource/Amazon-Route-53_Resolver, label: Inbound DNS, in: snw, at: [res, main]}
+  - {id: brw, icon: resource/Amazon-VPC_Endpoints, label: bedrock-runtime, in: snw, at: [br, main]}
+  - {id: bedw, icon: service/Amazon-Bedrock, label: Bedrock, sub: in-Region · us. 프로파일, in: rw, at: [svc, main]}
+  - {id: idc, icon: service/AWS-IAM-Identity-Center, label: IAM Identity Center, sub: aws sso login, in: rs, at: [res, sso]}
+
+edges:
+  - {e: "pc ..> inet", label: HTTPS}
+  - {e: "inet ..> idc"}
+  - {e: "pc -> dns", label: "DNS :53"}
+  - {e: "dns -> rtr"}
+  - {e: "pc -> rtr", label: "HTTPS :443"}
+  - {e: "rtr -> dx"}
+  - {e: "dx -> dxgw"}
+  - {e: "dxgw -> vgww"}
+  - {e: "vgww -- snw", points: [["vgww.x1", "vgww.cy"], ["brw.cx", "vgww.cy"]]}
+  - {e: "vgww -> resw", points: [["resw.cx", "vgww.cy"], ["resw.cx", "resw.y0-4"]]}
+  - {e: "vgww -> brw", points: [["brw.cx", "vgww.cy"], ["brw.cx", "brw.y0-4"]]}
+  - {e: "brw -> bedw"}
+
+note:
+  place: lines
+  summary: "동일 DX gateway → 두 번째 VGW · Private DNS → ENI IP · 응답 동일 경로 · SSO: 인터넷 (VPCE 미지원)"

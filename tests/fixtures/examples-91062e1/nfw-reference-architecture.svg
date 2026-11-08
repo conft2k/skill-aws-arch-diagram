@@ -1,0 +1,169 @@
+<svg viewBox="0 0 1520 876" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#232F3E"/>
+    </marker>
+    <marker id="arrowStart" markerWidth="10" markerHeight="10" refX="0" refY="3" orient="auto">
+      <path d="M8,0 L0,3 L8,6 Z" fill="#232F3E"/>
+    </marker>
+  </defs>
+  <rect width="1520" height="876" fill="#FFFFFF"/>
+
+  <!-- Centralized model: spoke VPCs → TGW → inspection VPC (TGW subnet → firewall subnet
+       → public subnet with NAT) → IGW. AZ1 row cy=222, gap/main line y=382, AZ2 row cy=542. -->
+
+  <!-- ===== AWS Cloud ===== -->
+  <rect x="16" y="16" width="1404" height="688" fill="none" stroke="#232F3E" stroke-width="2"/>
+  <image href="bundle:group/AWS-Cloud-logo_32" x="16" y="16" width="32" height="32"/>
+  <text x="58" y="38" font-size="15" fill="#232F3E" font-weight="600">AWS Cloud</text>
+
+  <!-- ===== Region ===== -->
+  <rect x="36" y="56" width="1364" height="628" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+  <image href="bundle:group/Region_32" x="36" y="56" width="24" height="24"/>
+  <text x="68" y="74" font-size="14" fill="#00A4A6" font-weight="600">Region ap-northeast-2</text>
+
+  <!-- ===== Spoke VPCs (workloads), aligned with the AZ rows ===== -->
+  <rect x="56" y="120" width="156" height="188" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="56" y="120" width="24" height="24"/>
+  <text x="88" y="138" font-size="14" fill="#8C4FFF" font-weight="600">VPC A</text>
+  <text x="88" y="154" font-size="12" fill="#232F3E">10.1.0.0/16</text>
+  <rect x="72" y="166" width="124" height="126" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="72" y="166" width="24" height="24"/>
+  <text x="104" y="184" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+  <image href="bundle:service/Amazon-EC2" x="110" y="198" width="48" height="48"/>
+  <text x="134" y="264" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <text x="134" y="280" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → TGW</text>
+
+  <rect x="56" y="440" width="156" height="188" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="56" y="440" width="24" height="24"/>
+  <text x="88" y="458" font-size="14" fill="#8C4FFF" font-weight="600">VPC B</text>
+  <text x="88" y="474" font-size="12" fill="#232F3E">10.2.0.0/16</text>
+  <rect x="72" y="486" width="124" height="126" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="72" y="486" width="24" height="24"/>
+  <text x="104" y="504" font-size="14" fill="#00A4A6" font-weight="600">App subnet</text>
+  <image href="bundle:service/Amazon-EC2" x="110" y="518" width="48" height="48"/>
+  <text x="134" y="584" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <text x="134" y="600" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → TGW</text>
+
+  <!-- ===== Transit Gateway and its two route tables, each beside the attachments it is associated with ===== -->
+  <image href="bundle:service/AWS-Transit-Gateway" x="408" y="358" width="48" height="48"/>
+  <text x="432" y="424" font-size="14" text-anchor="middle" fill="#232F3E">TGW</text>
+  <!-- Spoke RT (associated with the spoke VPC attachments): between the spoke VPCs and the TGW, inside the bracket the two spoke lines draw -->
+  <image href="bundle:resource/Amazon-Route-53_Route-Table" x="272" y="358" width="48" height="48"/>
+  <text x="296" y="424" font-size="14" text-anchor="middle" fill="#232F3E">Spoke RT</text>
+  <text x="296" y="440" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → 검사 VPC</text>
+  <!-- Firewall RT (associated with the inspection VPC attachment): between the TGW and the Inspection VPC, inside the bracket the two inspection lines draw -->
+  <image href="bundle:resource/Amazon-Route-53_Route-Table" x="508" y="358" width="48" height="48"/>
+  <text x="532" y="424" font-size="14" text-anchor="middle" fill="#232F3E">Firewall RT</text>
+  <text x="532" y="440" font-size="12" text-anchor="middle" fill="#545B64">VPC A · B 전파</text>
+
+  <!-- spoke attachments (two-way) into the TGW's left side; the attachment type is named once, above VPC A's spoke, right of badge 1 -->
+  <polyline points="216,222 380,222 380,374 404,374" fill="none" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <polyline points="216,542 380,542 380,390 404,390" fill="none" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <text x="265" y="214" font-size="12" fill="#545B64">VPC attachment</text>
+
+  <!-- ===== Inspection VPC ===== -->
+  <rect x="596" y="90" width="764" height="574" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="596" y="90" width="24" height="24"/>
+  <text x="628" y="108" font-size="14" fill="#8C4FFF" font-weight="600">Inspection VPC</text>
+  <text x="628" y="124" font-size="12" fill="#232F3E">100.64.0.0/16</text>
+
+  <rect x="616" y="136" width="640" height="188" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="628" y="154" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 1</text>
+  <rect x="616" y="456" width="640" height="188" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="628" y="474" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 2</text>
+
+  <!-- tier columns: TGW subnet (632–828) → firewall subnet (844–1024) → public subnet (1040–1244); corridor 1256–1360 holds the NAT → IGW trunk (x = 1284) and a 48px arrow into the IGW -->
+  <rect x="632" y="166" width="196" height="142" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="632" y="166" width="24" height="24"/>
+  <text x="664" y="184" font-size="14" fill="#00A4A6" font-weight="600">TGW subnet</text>
+  <rect x="844" y="166" width="180" height="142" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="844" y="166" width="24" height="24"/>
+  <text x="876" y="184" font-size="14" fill="#00A4A6" font-weight="600">Firewall subnet</text>
+  <rect x="1040" y="166" width="204" height="142" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="1040" y="166" width="24" height="24"/>
+  <text x="1072" y="184" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+
+  <rect x="632" y="486" width="196" height="142" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="632" y="486" width="24" height="24"/>
+  <text x="664" y="504" font-size="14" fill="#00A4A6" font-weight="600">TGW subnet</text>
+  <rect x="844" y="486" width="180" height="142" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="844" y="486" width="24" height="24"/>
+  <text x="876" y="504" font-size="14" fill="#00A4A6" font-weight="600">Firewall subnet</text>
+  <rect x="1040" y="486" width="204" height="142" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="1040" y="486" width="24" height="24"/>
+  <text x="1072" y="504" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+
+  <!-- zonal nodes with every route of their subnet's route table (return routes included) -->
+  <image href="bundle:resource/AWS-Transit-Gateway_Attachment" x="706" y="198" width="48" height="48"/>
+  <text x="730" y="264" font-size="14" text-anchor="middle" fill="#232F3E">TGW ENI</text>
+  <text x="730" y="280" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → 같은 AZ 방화벽</text>
+  <image href="bundle:resource/AWS-Network-Firewall_Endpoints" x="910" y="198" width="48" height="48"/>
+  <text x="934" y="264" font-size="14" text-anchor="middle" fill="#232F3E">Firewall endpoint</text>
+  <text x="934" y="280" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → 같은 AZ NAT</text>
+  <text x="934" y="296" font-size="12" text-anchor="middle" fill="#545B64">10.0.0.0/8 → TGW</text>
+  <image href="bundle:resource/Amazon-VPC_NAT-Gateway" x="1118" y="198" width="48" height="48"/>
+  <text x="1142" y="264" font-size="14" text-anchor="middle" fill="#232F3E">NAT gateway</text>
+  <text x="1142" y="280" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → IGW</text>
+  <text x="1142" y="296" font-size="12" text-anchor="middle" fill="#545B64">10.0.0.0/8 → 같은 AZ 방화벽</text>
+
+  <image href="bundle:resource/AWS-Transit-Gateway_Attachment" x="706" y="518" width="48" height="48"/>
+  <text x="730" y="584" font-size="14" text-anchor="middle" fill="#232F3E">TGW ENI</text>
+  <text x="730" y="600" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → 같은 AZ 방화벽</text>
+  <image href="bundle:resource/AWS-Network-Firewall_Endpoints" x="910" y="518" width="48" height="48"/>
+  <text x="934" y="584" font-size="14" text-anchor="middle" fill="#232F3E">Firewall endpoint</text>
+  <text x="934" y="600" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → 같은 AZ NAT</text>
+  <text x="934" y="616" font-size="12" text-anchor="middle" fill="#545B64">10.0.0.0/8 → TGW</text>
+  <image href="bundle:resource/Amazon-VPC_NAT-Gateway" x="1118" y="518" width="48" height="48"/>
+  <text x="1142" y="584" font-size="14" text-anchor="middle" fill="#232F3E">NAT gateway</text>
+  <text x="1142" y="600" font-size="12" text-anchor="middle" fill="#545B64">0.0.0.0/0 → IGW</text>
+  <text x="1142" y="616" font-size="12" text-anchor="middle" fill="#545B64">10.0.0.0/8 → 같은 AZ 방화벽</text>
+
+  <!-- one AWS Network Firewall (firewall + policy) across the AZs, in the gap, firewall column -->
+  <image href="bundle:service/AWS-Network-Firewall" x="910" y="358" width="48" height="48"/>
+  <text x="934" y="424" font-size="14" text-anchor="middle" fill="#232F3E">AWS Network Firewall</text>
+
+  <!-- IGW on the VPC right border (1360 - 24 = 1336), on the main line -->
+  <rect x="1336" y="358" width="48" height="72" fill="#FFFFFF"/>
+  <image href="bundle:resource/Amazon-VPC_Internet-Gateway" x="1336" y="358" width="48" height="48"/>
+  <text x="1360" y="424" font-size="14" text-anchor="middle" fill="#232F3E">IGW</text>
+
+  <!-- TGW ⇄ inspection VPC attachment (appliance mode), out of the TGW's top and bottom (below its label) to the ENI in each AZ, so the Firewall RT sits between them -->
+  <polyline points="432,354 432,222 702,222" fill="none" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <polyline points="432,432 432,542 702,542" fill="none" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <!-- TGW ENI ⇄ firewall endpoint; inspected VPC-to-VPC traffic returns to the TGW -->
+  <line x1="758" y1="222" x2="906" y2="222" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <line x1="758" y1="542" x2="906" y2="542" stroke="#232F3E" stroke-width="1.5" marker-start="url(#arrowStart)" marker-end="url(#arrow)"/>
+  <!-- firewall subnet RT 0.0.0.0/0 → NAT gateway -->
+  <line x1="962" y1="222" x2="1114" y2="222" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="962" y1="542" x2="1114" y2="542" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- NAT gateway → IGW: both AZs take the same default route to the same IGW, so the two lines
+       join in the corridor right of the AZ boxes and enter the IGW as one arrow on the main line -->
+  <polyline points="1170,222 1284,222 1284,382 1332,382" fill="none" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <polyline points="1170,542 1284,542 1284,382" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+
+  <!-- ===== the Internet, outside the AWS Cloud ===== -->
+  <image href="bundle:resource/Internet" x="1448" y="358" width="48" height="48"/>
+  <text x="1472" y="424" font-size="14" text-anchor="middle" fill="#232F3E">Internet</text>
+  <line x1="1388" y1="382" x2="1444" y2="382" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- numbered steps, just above each hop's own line in the AZ 1 row, at the middle of the longest piece between container borders (1 left of the VPC attachment label) -->
+  <circle cx="249" cy="208" r="10" fill="#232F3E"/><text x="249" y="212" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <circle cx="514" cy="208" r="10" fill="#232F3E"/><text x="514" y="212" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <circle cx="793" cy="208" r="10" fill="#232F3E"/><text x="793" y="212" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <circle cx="1077" cy="208" r="10" fill="#232F3E"/><text x="1077" y="212" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+  <circle cx="1207" cy="208" r="10" fill="#232F3E"/><text x="1207" y="212" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">5</text>
+
+  <!-- note panel: full canvas width minus 16px each side (x=16, w=1488), 16px below the AWS Cloud box; step rows 24px apart, first baseline panel.y + 26, canvas ends 16px below the panel -->
+  <rect x="16" y="720" width="1488" height="140" fill="#F8F9F9" stroke="#D5DBDB" stroke-width="1"/>
+  <circle cx="38" cy="742" r="10" fill="#232F3E"/><text x="38" y="746" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <text x="56" y="746" font-size="12" font-weight="600" fill="#232F3E">VPC → TGW</text><text x="179.4" y="746" font-size="12" fill="#545B64">VPC A·B의 App 서브넷 RT가 0.0.0.0/0을 TGW로 보내, VPC 간 트래픽과 인터넷행 트래픽이 모두 TGW로 들어옵니다.</text>
+  <circle cx="38" cy="766" r="10" fill="#232F3E"/><text x="38" y="770" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <text x="56" y="770" font-size="12" font-weight="600" fill="#232F3E">TGW → 검사 VPC</text><text x="179.4" y="770" font-size="12" fill="#545B64">Spoke VPC attachment에 연결된 Spoke RT의 0.0.0.0/0이 검사 VPC attachment를 가리킵니다. appliance mode로 한 흐름의 양방향이 같은 AZ를 지납니다.</text>
+  <circle cx="38" cy="790" r="10" fill="#232F3E"/><text x="38" y="794" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <text x="56" y="794" font-size="12" font-weight="600" fill="#232F3E">TGW ENI → 방화벽</text><text x="179.4" y="794" font-size="12" fill="#545B64">TGW 서브넷 RT 0.0.0.0/0 → 같은 AZ 방화벽 엔드포인트. 검사를 통과한 VPC 간 트래픽은 10.0.0.0/8 → TGW로 돌아가고, Firewall RT가 목적지 VPC로 보냅니다.</text>
+  <circle cx="38" cy="814" r="10" fill="#232F3E"/><text x="38" y="818" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+  <text x="56" y="818" font-size="12" font-weight="600" fill="#232F3E">방화벽 → NAT</text><text x="179.4" y="818" font-size="12" fill="#545B64">인터넷행 트래픽은 방화벽 서브넷 RT 0.0.0.0/0 → 같은 AZ NAT 게이트웨이로 가고, NAT가 출발지 주소를 퍼블릭 IP로 바꿉니다.</text>
+  <circle cx="38" cy="838" r="10" fill="#232F3E"/><text x="38" y="842" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">5</text>
+  <text x="56" y="842" font-size="12" font-weight="600" fill="#232F3E">NAT → IGW</text><text x="179.4" y="842" font-size="12" fill="#545B64">퍼블릭 서브넷 RT 0.0.0.0/0 → IGW로 인터넷에 나갑니다. 응답은 10.0.0.0/8 → 같은 AZ 방화벽을 거쳐 다시 검사된 뒤 VPC로 돌아옵니다.</text>
+</svg>

@@ -1,0 +1,109 @@
+<svg viewBox="0 0 1106 796" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Sans CJK KR', 'Pretendard', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#232F3E"/>
+    </marker>
+  </defs>
+  <rect width="1106" height="796" fill="#FFFFFF"/>
+  <!-- client outside AWS, on the main line, centered under the legend pane -->
+  <image href="bundle:resource/Client" x="152" y="392" width="48" height="48"/>
+  <text x="176" y="458" font-size="14" text-anchor="middle" fill="#232F3E">클라이언트</text>
+  <text x="176" y="474" font-size="12" text-anchor="middle" fill="#545B64">curl · openssl s_client</text>
+  <!-- ===== AWS Cloud ===== -->
+  <rect x="360" y="16" width="730" height="764" fill="none" stroke="#232F3E" stroke-width="2"/>
+  <image href="bundle:group/AWS-Cloud-logo_32" x="360" y="16" width="32" height="32"/>
+  <text x="402" y="38" font-size="15" fill="#232F3E" font-weight="600">AWS Cloud</text>
+  <rect x="376" y="56" width="698" height="708" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="3,3"/>
+  <image href="bundle:group/Region_32" x="376" y="56" width="24" height="24"/>
+  <text x="408" y="74" font-size="14" fill="#00A4A6" font-weight="600">Region</text>
+  <!-- regional services: a column right of the VPC — ACM on the AZ 1 row, trust store on the main line, S3 on the AZ 2 row -->
+  <image href="bundle:service/AWS-Certificate-Manager" x="950" y="238" width="48" height="48"/>
+  <text x="974" y="304" font-size="14" text-anchor="middle" fill="#232F3E">ACM</text>
+  <text x="974" y="320" font-size="12" text-anchor="middle" fill="#545B64">서버 인증서</text>
+  <image href="bundle:service/Elastic-Load-Balancing" x="950" y="392" width="48" height="48"/>
+  <text x="974" y="458" font-size="14" text-anchor="middle" fill="#232F3E">ELB trust store</text>
+  <text x="974" y="474" font-size="12" text-anchor="middle" fill="#545B64">CA 번들 · CRL</text>
+  <image href="bundle:service/Amazon-Simple-Storage-Service" x="950" y="618" width="48" height="48"/>
+  <text x="974" y="684" font-size="14" text-anchor="middle" fill="#232F3E">S3</text>
+  <text x="974" y="700" font-size="12" text-anchor="middle" fill="#545B64">ca-bundle.pem · crl.pem</text>
+  <!-- step 1: S3 → trust store (control path, dashed) -->
+  <line x1="974" y1="614" x2="974" y2="484" stroke="#232F3E" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <circle cx="952" cy="549" r="10" fill="#232F3E"/><text x="952" y="553" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <!-- ===== VPC ===== -->
+  <rect x="420" y="88" width="454" height="660" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+  <image href="bundle:group/Virtual-private-cloud-VPC_32" x="420" y="88" width="24" height="24"/>
+  <text x="452" y="106" font-size="14" fill="#8C4FFF" font-weight="600">VPC</text>
+  <text x="452" y="122" font-size="12" fill="#232F3E">10.0.0.0/16</text>
+  <!-- AZ rows; the 162px gap between them holds the IGW → NLB → target group line -->
+  <rect x="436" y="134" width="422" height="218" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="448" y="152" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 1</text>
+  <rect x="452" y="164" width="162" height="176" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="452" y="164" width="24" height="24"/>
+  <text x="484" y="182" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+  <text x="484" y="198" font-size="12" fill="#232F3E">10.0.0.0/24</text>
+  <rect x="674" y="164" width="168" height="176" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="674" y="164" width="24" height="24"/>
+  <text x="706" y="182" font-size="14" fill="#00A4A6" font-weight="600">Private subnet</text>
+  <text x="706" y="198" font-size="12" fill="#232F3E">10.0.10.0/24</text>
+  <rect x="690" y="210" width="136" height="122" fill="none" stroke="#DD344C" stroke-width="1.5"/>
+  <text x="702" y="228" font-size="14" fill="#DD344C" font-weight="600">backend-sg</text>
+  <image href="bundle:service/Amazon-EC2" x="734" y="238" width="48" height="48"/>
+  <text x="758" y="304" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <text x="758" y="320" font-size="12" text-anchor="middle" fill="#545B64">HTTP :80</text>
+  <line x1="642" y1="262" x2="686" y2="262" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="436" y="514" width="422" height="218" fill="none" stroke="#00A4A6" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="448" y="532" font-size="14" fill="#00A4A6" font-weight="600">Availability Zone 2</text>
+  <rect x="452" y="544" width="162" height="176" fill="none" stroke="#7AA116" stroke-width="1.5"/>
+  <image href="bundle:group/Public-subnet_32" x="452" y="544" width="24" height="24"/>
+  <text x="484" y="562" font-size="14" fill="#7AA116" font-weight="600">Public subnet</text>
+  <text x="484" y="578" font-size="12" fill="#232F3E">10.0.1.0/24</text>
+  <rect x="674" y="544" width="168" height="176" fill="none" stroke="#00A4A6" stroke-width="1.5"/>
+  <image href="bundle:group/Private-subnet_32" x="674" y="544" width="24" height="24"/>
+  <text x="706" y="562" font-size="14" fill="#00A4A6" font-weight="600">Private subnet</text>
+  <text x="706" y="578" font-size="12" fill="#232F3E">10.0.11.0/24</text>
+  <rect x="690" y="590" width="136" height="122" fill="none" stroke="#DD344C" stroke-width="1.5"/>
+  <text x="702" y="608" font-size="14" fill="#DD344C" font-weight="600">backend-sg</text>
+  <image href="bundle:service/Amazon-EC2" x="734" y="618" width="48" height="48"/>
+  <text x="758" y="684" font-size="14" text-anchor="middle" fill="#232F3E">EC2</text>
+  <text x="758" y="700" font-size="12" text-anchor="middle" fill="#545B64">HTTP :80</text>
+  <line x1="642" y1="642" x2="686" y2="642" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- target group backend-tg: the NLB forks to each AZ's instance through a trunk in the column gap (cross-zone off) -->
+  <polyline points="642,262 642,642" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+  <!-- one NLB in the AZ gap, in the public-tier column, inside its security group -->
+  <rect x="452" y="364" width="162" height="138" fill="none" stroke="#DD344C" stroke-width="1.5"/>
+  <text x="464" y="382" font-size="14" fill="#DD344C" font-weight="600">nlb-sg</text>
+  <image href="bundle:resource/Elastic-Load-Balancing_Network-Load-Balancer" x="509" y="392" width="48" height="48"/>
+  <text x="533" y="458" font-size="14" text-anchor="middle" fill="#232F3E">NLB</text>
+  <text x="533" y="474" font-size="12" text-anchor="middle" fill="#545B64">:443 TLS · mTLS verify</text>
+  <text x="533" y="490" font-size="12" text-anchor="middle" fill="#545B64">:8443 TLS · 대조군</text>
+  <!-- IGW on the VPC left border (x = 420 - 24), on the main line; 48×72 white mask under icon + label -->
+  <rect x="396" y="392" width="48" height="72" fill="#FFFFFF"/>
+  <image href="bundle:resource/Amazon-VPC_Internet-Gateway" x="396" y="392" width="48" height="48"/>
+  <text x="420" y="458" font-size="14" text-anchor="middle" fill="#232F3E">IGW</text>
+  <!-- main path: client → IGW → NLB (client certificate checked) → trunk → EC2 -->
+  <line x1="204" y1="416" x2="392" y2="416" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <circle cx="246" cy="402" r="10" fill="#232F3E"/><text x="246" y="406" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <text x="295" y="407" font-size="12" text-anchor="middle" fill="#232F3E">HTTPS :443</text>
+  <line x1="448" y1="416" x2="505" y2="416" stroke="#232F3E" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="561" y1="416" x2="642" y2="416" stroke="#232F3E" stroke-width="1.5"/>
+  <circle cx="668" cy="416" r="10" fill="#232F3E"/><text x="668" y="420" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <text x="686" y="420" font-size="12" fill="#232F3E">TCP :80</text>
+  <!-- legend pane: x=16, y = AWS Cloud y, steps only; the client sits below it on the main line -->
+  <rect x="16" y="16" width="320" height="268" fill="#F8F9F9" stroke="#D5DBDB" stroke-width="1"/>
+  <circle cx="38" cy="38" r="10" fill="#232F3E"/><text x="38" y="42" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <text x="56" y="42" font-size="12" fill="#232F3E" font-weight="600">S3 → 신뢰 저장소</text>
+  <text x="56" y="62" font-size="12" fill="#545B64">S3의 CA 번들(ca-bundle.pem)과</text>
+  <text x="56" y="78" font-size="12" fill="#545B64">CRL(crl.pem)로 ELB 신뢰 저장소를 만들어</text>
+  <text x="56" y="94" font-size="12" fill="#545B64">:443 리스너에 연결합니다.</text>
+  <circle cx="38" cy="118" r="10" fill="#232F3E"/><text x="38" y="122" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <text x="56" y="122" font-size="12" fill="#232F3E" font-weight="600">클라이언트 → NLB</text>
+  <text x="56" y="142" font-size="12" fill="#545B64">NLB :443이 클라이언트 인증서를 신뢰 체인 →</text>
+  <text x="56" y="158" font-size="12" fill="#545B64">만료 → CRL → ID 필터 순서로 검사하고,</text>
+  <text x="56" y="174" font-size="12" fill="#545B64">하나라도 실패하면 TLS alert로 끊습니다.</text>
+  <circle cx="38" cy="198" r="10" fill="#232F3E"/><text x="38" y="202" font-size="12" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <text x="56" y="202" font-size="12" fill="#232F3E" font-weight="600">NLB → EC2</text>
+  <text x="56" y="222" font-size="12" fill="#545B64">통과한 연결만 대상 그룹 backend-tg의 같은</text>
+  <text x="56" y="238" font-size="12" fill="#545B64">AZ EC2(HTTP :80)로 보냅니다. 교차 영역이</text>
+  <text x="56" y="254" font-size="12" fill="#545B64">꺼져 있어 AZ마다 대상이 있어야 하고,</text>
+  <text x="56" y="270" font-size="12" fill="#545B64">클라이언트 인증서는 전달되지 않습니다.</text>
+</svg>
