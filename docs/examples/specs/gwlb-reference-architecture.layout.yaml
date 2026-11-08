@@ -1,7 +1,7 @@
 # GWLB inspection: Users → IGW → GWLBe ⇄ GWLB ⇄ appliance ASG (Security VPC) → EC2, two AZs in two VPCs
 name: gwlb-reference-architecture
 mode: document
-cols: [users, igw, gwlbe, ec2, gwlb, fw]
+cols: [users, igw, gwlbe, {id: ec2, min_gap_before: 130}, gwlb, fw]
 rows: [az1, main, az2]
 
 groups:
@@ -27,7 +27,10 @@ nodes:
 edges:
   - {e: "users -> igw", label: "HTTPS :443"}
   - {e: "igw -> gwlbe.*", trunk: true, step: 1}
-  - {e: "gwlb <-> gwlbe.*", step: 2}
+  # step 2 meets GWLBe vertically (from below in AZ 1, from above in AZ 2), away from the
+  # GWLBe -> EC2 line; the upper one stops under the GWLBe name, which the engine's HV refuses
+  - {e: "gwlb <-> gwlbe.1", step: 2, points: [["gwlb.x0-4", "gwlb.cy-10"], ["gwlbe.1.cx-6", "gwlb.cy-10"], ["gwlbe.1.cx-6", "gwlbe.1.label.y1+6"]]}
+  - {e: "gwlb <-> gwlbe.2", points: [["gwlb.x0-4", "gwlb.cy+10"], ["gwlbe.2.cx+6", "gwlb.cy+10"], ["gwlbe.2.cx+6", "gwlbe.2.y0-4"]]}
   - {e: "gwlb <-> asg", label: "GENEVE :6081", step: 3}
   - {e: "gwlbe.* -> ec2.*", step: 4, step_each: true}
 

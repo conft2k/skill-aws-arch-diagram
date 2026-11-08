@@ -1,0 +1,27 @@
+# Source: docs/examples/specs/gwlb-reference-architecture.layout.yaml as at 91062e1, reduced
+# Step 2 HV up into gwlbe.1 is refused (its label), so the HVH fallback enters GWLBe's right side: the leg runs beside EC2 and 12px under GWLBe -> EC2, reading as GWLBe <-> EC2 (rules.py, check_layout: not flagged)
+name: ex-gwlb-step2-beside-ec2
+mode: document
+cols: [igw, gwlbe, ec2, gwlb]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud,   type: cloud}
+  - {id: appvpc,  type: vpc, label: Application VPC, in: cloud}
+  - {id: appaz,   type: az, in: appvpc, per: [az1, az2]}
+  - {id: gwlbesn, type: public, label: GWLBe subnet, in: appaz}
+  - {id: appsn,   type: private, label: App subnet, in: appaz}
+  - {id: secvpc,  type: vpc, label: Security VPC, in: cloud}
+nodes:
+  - {id: igw,   icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: appvpc, at: [igw, main]}
+  - {id: gwlbe, icon: resource/Amazon-VPC_Endpoints, label: GWLBe, in: gwlbesn, col: gwlbe}
+  - {id: ec2,   icon: service/Amazon-EC2, label: EC2, in: appsn, col: ec2}
+  - {id: gwlb,  icon: resource/Elastic-Load-Balancing_Gateway-Load-Balancer, label: GWLB, in: secvpc, at: [gwlb, main]}
+edges:
+  - {e: "igw -> gwlbe.*", trunk: true, step: 1}
+  - {e: "gwlb <-> gwlbe.*", step: 2}
+  - {e: "gwlbe.* -> ec2.*", step: 3, step_each: true}
+note:
+  steps:
+    - ["IGW → GWLBe", "a"]
+    - ["GWLBe ⇄ GWLB", "b"]
+    - ["GWLBe → EC2", "c"]
