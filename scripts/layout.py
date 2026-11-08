@@ -1222,6 +1222,8 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
         owners = list(v.owners)
         if v.rule == "R-fit":
             tip = "text_scale / shorten labels / rearrange tracks / split the diagram"
+        elif v.rule == "R-twin" and v.code == "TWR":
+            tip = v.message.split("try: ", 1)[1]      # the row order to write: no draft geometry
         else:
             problem = next((p for p in problems if p.iss.kind == check_kind.get(v.code)
                             and set(owners) <= set(p.owners)), None)

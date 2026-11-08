@@ -1142,10 +1142,16 @@ cases:
     what: "6-node ALB trunk crosses the next AZ subnet header; LINE IN HEADER / R-border B2"
     bad: {R-border: {slide: edge:3, slide-no-title: edge:3}}   # B2: the remaining ALB trunk leg passes through AZ2's subnet title; budgeted candidates cannot clear it; try routing hints or subnet pad / min_w / min_h
   # Inspection VPC의 AZ 1과 AZ 2가 행 순서를 위아래로 뒤집어 그려집니다(timing 테스트 e2e tgw-gwlb-inspection: AZ 1은 흐름 행이 위·appliance 행이 아래, AZ 2는 반대).
-  # rules.py 미검출: twin_classes가 두 AZ를 twin으로 보지 않습니다. AZ 제목이 다르고(Availability Zone 1 / 2, az는 TWIN_NAMED가 아님) AZ 안의 행 순서도 다릅니다(Public subnet이 AZ 1에서는 첫 행, AZ 2에서는 둘째 행). 둘 다 같아야 twin입니다.
+  # 두 AZ는 제목이 번호만 다르므로 twin 판정에서 제목이 같고, 행 순서만 다릅니다. 엔진은 spec의 행 순서를 그대로 그리므로 R-twin TWR(행 순서가 다른 twin)로 보고합니다.
   - path: qa/timing-mirrored-az-rows.layout.yaml
     rules: [R-twin]
-    what: "4-node reduction: one VPC's AZ 1 stacks Public over Appliance subnet, AZ 2 Appliance over Public; rules.py 미검출"
+    bad: {R-twin: group:azi2}   # TWR azi1 / azi2: rows b1, b2 hold Appliance over Public; try rows b2, b1
+    what: "4-node reduction: one VPC's AZ 1 stacks Public over Appliance subnet, AZ 2 Appliance over Public"
+  # 위 사례의 짝: 두 AZ가 같은 행 순서(Public 위, Appliance 아래)입니다. 제목이 번호만 다른 두 AZ가 twin이 되어 똑같이 그려집니다.
+  - path: qa/timing-same-order-az-rows.layout.yaml
+    rules: [R-twin]
+    good: [R-twin]
+    what: "companion of timing-mirrored-az-rows: AZ 1 and AZ 2 (titles differ by their number only) in one row order, drawn as twins"
   # gwlb 문서 예제(91062e1 spec) 축소본: GWLB → GWLBe의 step 2가 HV로 들어갈 길이 라벨에 막히면 HVH로 GWLBe 오른쪽 면에 붙어 EC2 바로 옆을 지나고, GWLBe → EC2 선 12px 아래에 붙어 GWLBe ⇄ EC2 연결처럼 읽힙니다.
   # rules.py 미검출: Layout OK, 모든 mode에서 위반 0.
   - path: qa/ex-gwlb-step2-beside-ec2.layout.yaml

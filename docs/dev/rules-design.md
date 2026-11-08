@@ -29,7 +29,7 @@ Bracket(A): hub h, associated edges A, others N. P_e drawn path oriented from h;
 Checked on goldens: nfw Spoke RT (296,382) inside spoke paths + chord x=216 (stacked x<216 is outside); nfw Firewall RT x=532 inside TGW top/bottom→ENI wedge; tgw TGW A RT inside hull of Dev/Test.
 
 ### R-twin
-Public `layout_solve.twin_classes(spec)` (today _Model.twin_sets/_twin_measures) + node centres rel. to twin L/T; violation if spread > 0.5 px (cost = spread). Negative half is a unit test of twin_classes.
+Public `layout_solve.twin_classes(spec)` (today _Model.twin_sets/_twin_measures) + node centres rel. to twin L/T; violation if spread > 0.5 px (cost = spread). Negative half is a unit test of twin_classes. TWR (user decision 2026-11-08): `layout_solve.twin_row_orders(spec)`, boxes that would be twins but for the order of their rows (an AZ's own title may differ by its number), tier 0, owners the box to match and the box, cost 1, with a `try:` row order; the engine does not reorder rows.
 
 ### R-label
 - L1: own nearest piece horizontal and box bottom ≤ line y with x overlap; or vertical and box x0 ≥ line x with y overlap; or masked[n] covers it and the piece passes under. Explicit label_at exempt.

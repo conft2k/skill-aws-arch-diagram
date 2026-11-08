@@ -570,6 +570,90 @@ class TwinRules(unittest.TestCase):
         self.assertEqual(rules.layout_solve.twin_classes(sp), [])
 
 
+def az_pair(first=("pub", "app"), second=("pub", "app"), labels=("AZ 1", "AZ 2")):
+    """One VPC, two AZs of a Public and an Appliance subnet with one node each; first /
+    second: each AZ's subnets top to bottom."""
+    icons = {"pub": "resource/Amazon-VPC_NAT-Gateway", "app": ICON}
+    groups = [{"id": "vpc", "type": "vpc", "label": "VPC"}]
+    nodes = []
+    rows = []
+    for k, (order, label) in enumerate(zip((first, second), labels), 1):
+        groups.append({"id": f"az{k}", "type": "az", "label": label, "in": "vpc"})
+        for j, kind in enumerate(order):
+            row = f"r{k}{j}"
+            rows.append(row)
+            groups.append({"id": f"{kind}{k}", "type": "public" if kind == "pub" else "private",
+                           "label": f"{kind} subnet", "in": f"az{k}"})
+            nodes.append({"id": f"n{kind}{k}", "icon": icons[kind], "label": kind, "in": f"{kind}{k}",
+                          "at": ["c", row]})
+    return {"name": "az", "mode": "document", "cols": ["c"], "rows": rows, "groups": groups,
+            "nodes": nodes, "edges": []}
+
+
+class TwinAzs(unittest.TestCase):
+    """AZ titles that differ only by their number do not keep AZs from twinning (layout_spec
+    groups → twins), and AZs that are twins but for their row order are an R-twin TWR."""
+
+    def classes(self, sp):
+        return sorted(sorted(m[0] for m in c) for c in rules.layout_solve.twin_classes(sp))
+
+    def test_numbered_az_titles_twin(self):
+        for labels in (("AZ 1", "AZ 2"), ("AZ a", "AZ b"), ("Availability Zone A", "Availability Zone C"),
+                       ("ap-northeast-2a", "ap-northeast-2c"), ("AZ1", "AZ2")):
+            with self.subTest(labels=labels):
+                sp, b = build(az_pair(labels=labels))
+                self.assertIn(["az1", "az2"], self.classes(sp))
+                self.assertEqual(rules.twin_rules(sp, b.geom), [])
+
+    def test_other_az_titles_do_not_twin(self):
+        sp, _ = build(az_pair(labels=("AZ 1", "Local Zone 1")))
+        self.assertNotIn(["az1", "az2"], self.classes(sp))
+
+    def test_numbered_titles_only_for_azs(self):
+        d = az_pair()
+        for g in d["groups"]:
+            if g["id"] in ("pub1", "pub2"):
+                g["label"] = f"Public subnet {g['id'][-1]}"
+        sp, _ = build(d)
+        self.assertNotIn(["pub1", "pub2"], self.classes(sp))
+
+    def test_row_order_reported_not_reordered(self):
+        sp, b = build(az_pair(second=("app", "pub")))
+        self.assertNotIn(["az1", "az2"], self.classes(sp))
+        self.assertEqual(rules.layout_solve.twin_row_orders(sp), [("az1", "az2", ["r10", "r11"], ["r21", "r20"])])
+        got = [v for v in rules.twin_rules(sp, b.geom) if v.code == "TWR"]
+        self.assertEqual(len(got), 1)
+        self.assertEqual((got[0].owners, got[0].tier), (("group:az1", "group:az2"), rules.TIER_HARD))
+        self.assertIn("try: in `rows:` put az2's rows in az1's order: r21, r20", got[0].message)
+        # the engine draws the spec's order: AZ 2's Appliance subnet stays above its Public one
+        self.assertLess(b.geom.groups["app2"].rect.y0, b.geom.groups["pub2"].rect.y0)
+
+    def test_row_order_needs_the_same_structure(self):
+        d = az_pair(second=("app", "pub"))
+        d["nodes"][-1]["icon"] = "service/AWS-Lambda"
+        sp, _ = build(d)
+        self.assertEqual(rules.layout_solve.twin_row_orders(sp), [])
+
+    def test_row_order_on_shared_rows(self):
+        # side by side on rows r0, r1: reordering `rows:` would move AZ 1 too, so the hint
+        # moves AZ 2's content instead
+        d = az_pair(second=("app", "pub"))
+        d["cols"], d["rows"] = ["c1", "c2"], ["r0", "r1"]
+        for n in d["nodes"]:
+            k, j = int(n["at"][1][1]), int(n["at"][1][2])
+            n["at"] = [f"c{k}", f"r{j}"]
+        sp, b = build(d)
+        self.assertEqual(rules.layout_solve.twin_row_orders(sp), [("az1", "az2", ["r0", "r1"], ["r1", "r0"])])
+        got = [v for v in rules.twin_rules(sp, b.geom) if v.code == "TWR"]
+        self.assertEqual(len(got), 1)
+        self.assertIn("try: move what az2 has on each row to the row that matches az1's order: r1 to r0, r0 to r1",
+                      got[0].message)
+
+    def test_twin_title_drops_only_the_number(self):
+        self.assertEqual(rules.layout_solve.twin_title("az", "AZ 1"), rules.layout_solve.twin_title("az", "AZ 7"))
+        self.assertNotEqual(rules.layout_solve.twin_title("az", "Seoul"), rules.layout_solve.twin_title("az", "Seouk"))
+
+
 class Score(unittest.TestCase):
     def test_hard_violations_first(self):
         geom = M.Geometry(mode="document", S=48, canvas_w=100, canvas_h=100, cols={}, rows={})

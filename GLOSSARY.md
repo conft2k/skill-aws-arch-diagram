@@ -40,7 +40,7 @@ One copy of a group made by `per:`, with the instance number in its id (`az.1`, 
 _Avoid_: clone, replica
 
 **Twins**:
-Boxes the engine judges to have the same structure, by the test in `references/layout_spec.md` (groups → twins). Template instances twin only with boxes of the same instance number. Twins are drawn the same size, with the same inner offsets.
+Boxes the engine judges to have the same structure, by the test in `references/layout_spec.md` (groups → twins). Template instances twin only with boxes of the same instance number; an AZ's own title may differ by its number. Twins are drawn the same size, with the same inner offsets. Boxes that would be twins but for the order of their rows are not twins: the engine keeps the spec's row order and R-twin reports them (TWR).
 _Avoid_: copies, mirrors
 
 **Route table**:

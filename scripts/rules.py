@@ -35,7 +35,11 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            inside none of the others. A table without `for:`, or without a hub and with
            other ends, is not judged.
   R-twin   twins (layout_solve.twin_classes: boxes of one structure) are drawn alike: each
-           measure, and each node centre from the twin's left / top edge, within TWIN_TOL.
+           measure, and each node centre from the twin's left / top edge, within TWIN_TOL
+           (TW). TWR boxes that would be twins but for the order of their rows
+           (layout_solve.twin_row_orders: the engine keeps the spec's row order), with the
+           row order to write; one per box out of the majority order (user decision
+           2026-11-08, after timing-mirrored-az-rows).
   R-label  L1 a connector label set (auto-placed: no label_at) sits above a horizontal or
            right of a vertical own piece it is within LABEL_REACH of (else the nearest), or
            on one over a background — any of them near a corner (user decision); L2 the step
@@ -711,6 +715,17 @@ def twin_rules(spec, geom) -> List[Violation]:
                 out.append(Violation("R-twin", (f"group:{a}", f"group:{b}"),
                                      f"TW {a} and {b} have one structure but are drawn {_f(spread)}px unlike on "
                                      f"{axis} ({what})", spread, code="TW"))
+    at = {r.id: k for k, r in enumerate(spec.rows)}
+    for a, b, rows_a, rows_b in layout_solve.twin_row_orders(spec):
+        if set(rows_a) & set(rows_b):    # shared rows: reordering `rows:` moves a's as well
+            top = sorted(rows_b, key=at.get)
+            moves = ", ".join(f"{r} to {t}" for r, t in zip(rows_b, top) if r != t)
+            tip = f"move what {b} has on each row to the row that matches {a}'s order: {moves}"
+        else:
+            tip = f"in `rows:` put {b}'s rows in {a}'s order: {', '.join(rows_b)} (like {', '.join(rows_a)})"
+        out.append(Violation("R-twin", (f"group:{a}", f"group:{b}"),
+                             f"TWR {a} and {b} have one structure but their rows are in another order, so they "
+                             f"read as two (the engine keeps the spec's row order); try: {tip}", code="TWR"))
     return out
 
 

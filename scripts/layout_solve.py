@@ -968,28 +968,34 @@ class _Model:
                         out.update(r)
         return sorted(rows), sorted(cols)
 
-    def _shape(self, gid, rank, root=False):
+    def _shape(self, gid, rank, root=False, free_rows=False):
         """(signature, its subtree's box ids, its nodes' ids, both in canonical order): the
-        group type tree with each box's type, title (not a named root's own: two App VPCs
-        are twins), CIDR line or not and track ranks, and per box its nodes' icons, caption
-        line counts and track ranks. Children come in signature order (spec order breaks
-        ties), so twins' boxes and nodes correspond by index."""
+        group type tree with each box's type, title (twin_title: not a named root's own, two
+        App VPCs are twins; an AZ root's own but for its number, AZ 1 and AZ 2), CIDR line
+        or not and track ranks, and per box its nodes' icons, caption line counts and track
+        ranks. Children come in signature order (spec order breaks ties), so twins' boxes and
+        nodes correspond by index. free_rows: each row range only by how many of the used
+        rows it spans, and none for the root's own (row_orders: twins but for the order of
+        their rows)."""
         g = self.spec.groups[gid]
         ry, rx = rank
 
-        def rel(r, rk):
-            return None if r is None else (rk[r[0]], rk[r[1]])
+        def rel(r, rk, free=False):
+            if r is None:
+                return None
+            return rk[r[1]] - rk[r[0]] if free else (rk[r[0]], rk[r[1]])
 
-        kids = sorted(((self._shape(c, rank), k) for k, c in enumerate(self.child_groups[gid])),
+        kids = sorted(((self._shape(c, rank, free_rows=free_rows), k) for k, c in enumerate(self.child_groups[gid])),
                       key=lambda it: (repr(it[0][0]), it[1]))
         nodes = []
         for k, nid in enumerate(self.child_nodes[gid] + self.border_of.get(gid, [])):
             n = self.spec.nodes[nid]
-            nodes.append(((n.icon, 1 + len(n.sub), rel(self.node_rng(nid, "y"), ry), rel(self.node_rng(nid, "x"), rx),
-                           bool(n.on), n.side if n.on else None), k, nid))
+            nodes.append(((n.icon, 1 + len(n.sub), rel(self.node_rng(nid, "y"), ry, free_rows),
+                           rel(self.node_rng(nid, "x"), rx), bool(n.on), n.side if n.on else None), k, nid))
         nodes.sort(key=lambda it: (repr(it[0]), it[1]))
-        label = None if root and g.type in TWIN_NAMED else g.label
-        sig = (g.type, label, bool(g.cidr), rel(self.group_rng(gid, "y"), ry), rel(self.group_rng(gid, "x"), rx),
+        label = twin_title(g.type, g.label) if root else g.label
+        own_y = None if root and free_rows else rel(self.group_rng(gid, "y"), ry, free_rows)
+        sig = (g.type, label, bool(g.cidr), own_y, rel(self.group_rng(gid, "x"), rx),
                tuple(sh[0] for sh, _ in kids), tuple(t for t, _, _ in nodes))
         order = [gid] + [d for (_, ds, _), _ in kids for d in ds]
         norder = [nid for _, _, nid in nodes] + [n for (_, _, ns), _ in kids for n in ns]
@@ -1058,6 +1064,69 @@ class _Model:
                                  order, oedges))
         self._twins = [v for v in classes.values() if len(v) > 1]
         return self._twins
+
+    def row_orders(self) -> List[Tuple[str, str, List[str], List[str]]]:
+        """Boxes that would be twins (twin_sets) but for the order of their rows, which the
+        engine keeps as the spec writes it: per box drawn in another order, (the box it
+        should match, the box, the first box's row ids in rank order, the second's in the
+        order that matches them). Among boxes alike with each row range taken only by its
+        length (_shape free_rows), the largest twin class (the first in spec order on a tie)
+        is the order to match; another box counts when its rows, reordered by the
+        correspondence of the two boxes' boxes and nodes, give exactly that class's
+        signature. Boxes an overlay reaches into are left out (their overlay's rows would
+        move as well)."""
+        loose: Dict[tuple, Dict[tuple, list]] = defaultdict(dict)
+        for g in self.tree:
+            rows, cols = self._tracks_used(g.id)
+            if not rows:
+                continue
+            rank = ({r: k for k, r in enumerate(rows)}, {c: k for k, c in enumerate(cols)})
+            sig, _, norder = self._shape(g.id, rank, root=True)
+            if self._overlay_shape(norder, (rows, cols))[0]:
+                continue
+            lsig, lorder, lnorder = self._shape(g.id, rank, root=True, free_rows=True)
+            inst = g.instance if g.template else None
+            loose[(repr(lsig), inst)].setdefault(repr(sig), []).append((g.id, rows, rank, lorder, lnorder))
+        out = []
+        for subs in loose.values():
+            if len(subs) < 2:
+                continue
+            classes = list(subs.values())
+            ref = max(classes, key=len)          # max keeps the first of equal lengths
+            a = ref[0]
+            for cls in classes:
+                if cls is ref:
+                    continue
+                for b in cls:
+                    pi = self._row_perm(a, b)
+                    if pi is not None:
+                        rows_b = [self.spec.rows[i].id for i in b[1]]
+                        out.append((a[0], b[0], [self.spec.rows[i].id for i in a[1]], [rows_b[pi[k]] for k in range(len(pi))]))
+        return out
+
+    def _row_perm(self, a, b) -> Optional[Dict[int, int]]:
+        """The rank permutation that maps box a's rows onto box b's (row_orders), read off
+        their corresponding boxes and nodes and checked on the full signature; None when
+        there is none or it is the identity."""
+        (ga, rows_a, rank_a, lorder_a, lnorder_a), (gb, rows_b, rank_b, lorder_b, lnorder_b) = a, b
+        if len(rows_a) != len(rows_b) or len(lorder_a) != len(lorder_b) or len(lnorder_a) != len(lnorder_b):
+            return None
+        pi: Dict[int, int] = {}
+        pairs = ([(self.group_rng(x, "y"), self.group_rng(y, "y")) for x, y in zip(lorder_a[1:], lorder_b[1:])]
+                 + [(self.node_rng(x, "y"), self.node_rng(y, "y")) for x, y in zip(lnorder_a, lnorder_b)])
+        for ra, rb in pairs:
+            if (ra is None) != (rb is None):
+                return None
+            for i in ((0, 1) if ra else ()):
+                k, v = rank_a[0][ra[i]], rank_b[0][rb[i]]
+                if pi.setdefault(k, v) != v:
+                    return None
+        n = len(rows_a)
+        if sorted(pi) != list(range(n)) or sorted(pi.values()) != list(range(n)) or all(k == v for k, v in pi.items()):
+            return None
+        moved = ({r: pi[k] for r, k in rank_a[0].items()}, rank_a[1])
+        sa, sb = self._shape(ga, moved, root=True)[0], self._shape(gb, rank_b, root=True)[0]
+        return pi if sa[:3] + sa[4:] == sb[:3] + sb[4:] else None
 
     def _twin_measures(self, axis, member) -> List[Tuple[str, str, str]]:
         """A twin's measures on this axis in corresponding order, each (a, b, what): b − a
@@ -1819,6 +1888,20 @@ AVOID_ROUNDS = 6        # solves spent keeping moved xy nodes off the siblings t
 TWIN_ROUNDS = 6         # solves per axis spent evening out twins (their measures at the class's largest)
 TWIN_WHY = "twins alike"
 TWIN_NAMED = ("vpc", "account", "region", "onprem", "cloud")   # a twin root's own title may differ
+TWIN_NUMBERED = ("az",)                                          # ... or differ by its number only
+# an AZ's number in its title: 1, 2a (a digit run, with a zone letter), or a last lone letter (AZ a, Zone C)
+_TWIN_NUMBER = re.compile(r"\d+[A-Za-z]?\b|(?<=\s)[A-Za-z]$")
+
+
+def twin_title(gtype: str, label: Optional[str]) -> Optional[str]:
+    """A twin root's title as the twin test compares it: none for a named root (VPC,
+    Account, Region, ...: two App VPCs twin), an AZ's without its number (AZ 1 and AZ 2,
+    AZ a and AZ b twin), any other box's as written."""
+    if gtype in TWIN_NAMED:
+        return None
+    if gtype in TWIN_NUMBERED and label:
+        return _TWIN_NUMBER.sub("#", label)
+    return label
 
 
 def _solve_x(m: _Model, extra: Sequence[Requirement]):
@@ -2528,6 +2611,14 @@ def twin_classes(spec: Spec) -> List[List[Tuple[str, Dict[str, List[Tuple[str, s
             row.append((gid, {axis: m._twin_measures(axis, mem) for axis in ("x", "y")}, norder))
         out.append(row)
     return out
+
+
+def twin_row_orders(spec: Spec) -> List[Tuple[str, str, List[str], List[str]]]:
+    """Boxes that would be twins but for the order of their rows (_Model.row_orders): per
+    box, (the box to match, the box, the first's row ids top to bottom, the second's in the
+    order that would match them). The engine draws rows in spec order and never reorders
+    them; the rule checker reports these. Read only."""
+    return _Model(spec).row_orders()
 
 
 def twin_maps(spec: Spec) -> List[Tuple[str, str, Dict[str, str]]]:
