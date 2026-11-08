@@ -195,6 +195,14 @@ def contains(outer, inner, tol=1.0):
 def seg_hits_box(p, q, b):
     """Liang–Barsky: does segment p→q pass through the interior of box b?"""
     x0, y0, x1, y1 = b
+    # Most routing/checking segments are orthogonal. Resolve their interior overlap
+    # directly, preserving boundary touches and zero-length interior points.
+    if p[0] == q[0]:
+        return (y0 < y1 and x0 < p[0] < x1 and
+                (p[1] > y0 or q[1] > y0) and (p[1] < y1 or q[1] < y1))
+    if p[1] == q[1]:
+        return (x0 < x1 and y0 < p[1] < y1 and
+                (p[0] > x0 or q[0] > x0) and (p[0] < x1 or q[0] < x1))
     dx, dy = q[0] - p[0], q[1] - p[1]
     t0, t1 = 0.0, 1.0
     for pk, qk in ((-dx, p[0] - x0), (dx, x1 - p[0]), (-dy, p[1] - y0), (dy, y1 - p[1])):

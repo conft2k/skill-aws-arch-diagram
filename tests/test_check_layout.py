@@ -849,5 +849,26 @@ class InLineClose(unittest.TestCase):
         self.assertFalse(CL.in_line_close(24 - 1e-9, crossed=True))
 
 
+class SegmentInteriorTests(unittest.TestCase):
+    def test_axis_aligned_segments_cross_the_interior_only(self):
+        box = (0, 0, 10, 10)
+        cases = [
+            ((-1, 5), (11, 5), True), ((5, -1), (5, 11), True),
+            ((-1, 0), (11, 0), False), ((0, -1), (0, 11), False),
+            ((-1, 10), (11, 10), False), ((10, -1), (10, 11), False),
+            ((-1, 5), (0, 5), False), ((5, -1), (5, 0), False),
+            ((0, 5), (1, 5), True), ((5, 0), (5, 1), True),
+            ((5, 5), (5, 5), True), ((0, 5), (0, 5), False),
+            ((-1, -1), (11, 11), True), ((-1, 1), (1, -1), False),
+        ]
+        for p, q, expected in cases:
+            for a, b in ((p, q), (q, p)):
+                with self.subTest(p=a, q=b):
+                    self.assertEqual(CL.seg_hits_box(a, b, box), expected)
+        self.assertFalse(CL.seg_hits_box((5, -1), (5, 11), (5, 0, 5, 10)))
+        self.assertFalse(CL.seg_hits_box((-1, 5), (11, 5), (5, 0, 5, 10)))
+        self.assertFalse(CL.seg_hits_box((5, -1), (5, 11), (0, 5, 10, 5)))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -115,7 +115,7 @@ One pass in which the engine reads a draft's check problems, adds space or routi
 _Avoid_: retry, repair loop
 
 **Candidate**:
-One complete drawing of a spec under one set of layout decisions. Candidates are compared by their verdicts after the replacement gates. For every rule group, the text-size limit excludes candidates whose effective text size is both below the medium's target (slide 10pt; document 11px in a 760px column) and below 90% of the completed default's; text at or above target follows the verdict regardless of shrink percentage. Later stages (feedback, header, fixed-answer and text-scale steps) also reject more than 1% text shrink from a held drawing whose effective text size is below target.
+One complete drawing of a spec under one set of layout decisions. Candidates are compared by their verdicts after the replacement gates. For every rule group, the text-size limit excludes candidates whose effective text size is both below the medium's target (slide 10pt; document 11px in a 760px column) and below 90% of the completed default's; text at or above target follows the verdict regardless of shrink percentage. Later stages (feedback, header, fixed-answer and text-scale steps), including those inside candidate construction, also reject more than 1% text shrink from a held drawing whose effective text size is below target.
 _Avoid_: attempt, variant
 
 **Verdict**:

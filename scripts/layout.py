@@ -130,8 +130,8 @@ class Build:
 class RuleGuard:
     """Share admission and verdicts; a checker bug never costs a draft.
 
-    candidate_build uses selection's fixed text floor while constructing an alternative.
-    Repairs of a held drawing additionally retain its below-target text within 1%.
+    Candidate selection uses the completed default's fixed text floor. Every repair
+    of a held drawing, including candidate construction, also retains text within 1%.
     """
 
     def __init__(self, protect: bool = True, selection: bool = False, build_cache=None,
@@ -168,11 +168,34 @@ class RuleGuard:
         if self.build_cache is None:
             return build(spec, extra, skip, place, source, **kwargs)
         decisions = kwargs.get("decisions") or layout_solve.Decisions()
+        # Match _build's effective inputs: explicit decisions and feedback dictionaries
+        # can describe the same solve. Their different spelling must not redraw it.
+        chosen_skip = dict(skip)
+        movable = {e.n for e in spec.edges if layout_route.skippable(e)}
+        chosen_skip.update((n, k) for n, k in decisions.skip if n in movable)
+        if decisions.place is not None and (spec.note is None or spec.note.place == "auto"):
+            place = decisions.place
+        decisions = dataclasses.replace(decisions, skip=tuple(sorted(chosen_skip.items())), place=place)
         key = (spec.font_factor, spec.font_steps,
-               tuple(tuple(vars(r).items()) for r in extra), tuple(sorted(skip.items())),
-               place, source, frozenset(kwargs.get("avoid_headers") or ()), decisions)
+               tuple(tuple(vars(r).items()) for r in extra),
+               source, frozenset(kwargs.get("avoid_headers") or ()), decisions,
+               bool(kwargs.get("collect_alternatives")))
         if key not in self.build_cache:
-            self.build_cache[key] = build(spec, extra, skip, place, source, **kwargs)
+            b = build(spec, extra, skip, place, source, **kwargs)
+            self.build_cache[key] = b
+            # The automatic diagonal fallback may already have drawn an explicit
+            # axis set. Pinning that same set needs no second solve.
+            alias = (*key[:-2], b.decisions, key[-1])
+            self.build_cache.setdefault(alias, b)
+            if (spec.note is not None and spec.note.place == "auto"
+                    and b.nb.place != "none" and b.decisions.place is None):
+                # For the same fonts/requirements, pinning the note where this solve
+                # already put it is identical. Preserve the explicit decision on a
+                # shallow copy so later font trials retain the caller's placement.
+                pinned = copy.copy(b)
+                pinned.decisions = dataclasses.replace(b.decisions, place=b.nb.place)
+                alias = (*key[:-2], pinned.decisions, key[-1])
+                self.build_cache.setdefault(alias, pinned)
         return self.build_cache[key]
 
     def failed(self, error):
@@ -238,14 +261,8 @@ class RuleGuard:
             # Build the historical complete default before it becomes an incumbent.
             # Its unfinished rounds are not replacements of a selected drawing.
             return True
-        if not self.accepts_text(after, new):
+        if not self.preserves_text(before, old, after, new, later=later):
             return False
-        if later and not self.candidate_build:
-            actual, _, target, _ = self.text(before.spec, old)[0]
-            if actual < target - 1e-9:
-                next_actual = self.text(after.spec, new)[0][0]
-                if next_actual < actual * REPAIR_TEXT_RETENTION - 1e-9:
-                    return False
         before_viol = self.check(before.spec, before.geom, old)
         after_viol = self.check(after.spec, after.geom, new)
         if before_viol is None or after_viol is None:
@@ -256,6 +273,15 @@ class RuleGuard:
         new_identity = any((v.rule, v.code, frozenset(v.owners)) not in identities
                            for v in after_hard)
         return not new_identity or len(after_hard) < len(before_hard)
+
+    def preserves_text(self, before: Build, old: bytes, after: Build, new: bytes, later=True):
+        if not self.accepts_text(after, new):
+            return False
+        if later:
+            actual, _, target, _ = self.text(before.spec, old)[0]
+            if actual < target - 1e-9:
+                return self.text(after.spec, new)[0][0] >= actual * REPAIR_TEXT_RETENTION - 1e-9
+        return True
 
     def accepts(self, before: Build, old: bytes, after: Build, new: bytes, later=True):
         """Later stages compare complete verdicts, with unavailable rules falling back."""
@@ -629,7 +655,20 @@ def fix_pass(data: bytes, scratch: Path, spec: Optional[Spec] = None,
 
 def fixed_build(b: Build, scratch: Path, rule_guard: Optional[RuleGuard] = None) -> Tuple[bytes, int]:
     """Reuse a build's identical fixed-answer pass during header repair and output."""
+    namespace = None if rule_guard is None else rule_guard._checked
+    policy = (None if rule_guard is None else
+              (rule_guard.protect, rule_guard.selection, rule_guard.enabled_rules,
+               rule_guard.min_text_size))
+    key = (id(namespace), policy)
+    records = getattr(b, "_fixed_results", {})
+    previous = records.get(key)
+    if previous is not None and previous[0] == b.svg:
+        b._fixed_draft = (b.svg, rule_guard, previous[2], key)
+        return previous[2]
     cached = getattr(b, "_fixed_draft", None)
+    if (cached is not None and cached[1] is rule_guard and len(cached) > 3
+            and cached[3] != key):
+        cached = None
     if cached is not None and cached[0] == b.svg and cached[1] is not rule_guard:
         previous = cached[1]
         if (previous is not None and not previous.protect and cached[2][0] == b.svg):
@@ -639,8 +678,13 @@ def fixed_build(b: Build, scratch: Path, rule_guard: Optional[RuleGuard] = None)
             b._fixed_draft = (b.svg, rule_guard, cached[2])
             return cached[2]
     if cached is None or cached[0] != b.svg or cached[1] is not rule_guard:
-        cached = (b.svg, rule_guard, fix_pass(b.svg, scratch, b.spec, b.geom, rule_guard))
+        cached = (b.svg, rule_guard, fix_pass(b.svg, scratch, b.spec, b.geom, rule_guard), key)
         b._fixed_draft = cached
+    if rule_guard is None or rule_guard.error is None:
+        # Keep the checker namespace alive too: an unrelated render cannot reuse an
+        # id or a repair accepted with a different floor/rule group.
+        records[key] = (b.svg, namespace, cached[2])
+        b._fixed_results = records
     return cached[2]
 
 
@@ -1372,7 +1416,8 @@ def render_checked(spec: Spec, source: str, scratch: Path, no_check: bool = Fals
                 if best is not None:
                     old = fixed_build(best[2], scratch, rule_guard)[0]
                     admitted = rule_guard.admits(best[2], old, b, data)
-                    if (not admitted and rule_guard.candidate_build and verdict is not None and any(
+                    if (not admitted and rule_guard.candidate_build and verdict is not None
+                            and rule_guard.preserves_text(best[2], old, b, data) and any(
                             p.iss.kind == "LINE IN HEADER" for p in rule_guard.problems(data))):
                         # A moved B2 is not an improvement. Finish its header repair
                         # without holding the intermediate drawing, then gate again.
@@ -1736,6 +1781,36 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
                 and rule_guard.admits(best[0], best[1], result[0], result[1], later=False)):
             best, score = result, candidate_score
     budget = MAX_CANDIDATES[b.spec.mode]
+    held_violations = rule_guard.check(best[0].spec, best[0].geom, best[1])
+    if (count < budget and not best[3] and any(v.rule == "R-flow" and v.code == "F5"
+                                             for v in held_violations)):
+        # An unambiguous badge can require another gap even when geometric checks
+        # pass. Compare one independent spacing Candidate with the completed default;
+        # do not adopt a shrinking feedback intermediate inside candidate replay.
+        extra = {(r.axis, r.a, r.b): copy.copy(r) for r in best[5]}
+        skip = dict(best[6])
+        if feedback(best[0], [], extra, skip):
+            count += 1
+            try:
+                cb = rule_guard.build(best[0].spec, list(extra.values()), skip,
+                                      best[0].nb.place if best[0].nb.place != "none" else None,
+                                      source, decisions=best[0].decisions,
+                                      avoid_headers=best[0].avoid_headers)
+                cd, fixed = fixed_build(cb, scratch, rule_guard)
+                cp = rule_guard.problems(cd)
+                candidate_score = rule_guard.verdict(cb, cd, cp)
+                all_after = rule_guard.verdict(cb, cd, cp, enabled=False)
+                all_before = rule_guard.verdict(best[0], best[1], best[3], enabled=False)
+                if (candidate_score is not None and all_after is not None and all_before is not None
+                        and candidate_score < score and all_after < all_before
+                        and candidate_score.checks <= score.checks
+                        and rule_guard.admits(best[0], best[1], cb, cd, later=False)):
+                    best = (cb, cd, fixed, cp, best[4] + 1, list(extra.values()), skip)
+                    score, index = candidate_score, count
+            except M.LayoutError:
+                pass
+            if rule_guard.error is not None:
+                return default, ["selection: default kept (rule checker unavailable)"]
     tried = {base_decisions, best[0].decisions}
     drafts = {data}
     while count < budget:
@@ -1765,8 +1840,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
             try:
                 skip_only = dataclasses.replace(decisions, skip=origin.decisions.skip) == origin.decisions
                 cb = (redraw_routes(origin, decisions, source) if skip_only else
-                      build(origin.spec, best[5], dict(decisions.skip), decisions.place,
-                            source, avoid_headers=origin.avoid_headers, decisions=decisions))
+                      rule_guard.build(origin.spec, best[5], dict(decisions.skip), decisions.place,
+                                       source, avoid_headers=origin.avoid_headers, decisions=decisions))
             except M.LayoutError:
                 if count >= budget:
                     break

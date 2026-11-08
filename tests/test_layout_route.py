@@ -1112,5 +1112,29 @@ class GroupPorts(unittest.TestCase):
         self.assertEqual((ports[(0, "b")], ports[(1, "a")]), (K.PORT_SIDE, -K.PORT_SIDE))
 
 
+class StaticSegmentCacheTests(unittest.TestCase):
+    def test_repeated_segments_keep_path_and_arrow_diagnostics(self):
+        spec = M.Spec("segment-cache")
+        geom = M.Geometry("document", 48, 400, 200, {}, {},
+                          nodes={"n": M.NodeGeom("n", 100, 100, M.Box(76, 76, 124, 124), [])})
+        ctx = R._Ctx(spec, geom)
+        points = [(50, 100), (150, 100)]
+        with unittest.mock.patch.object(CL, "seg_hits_box", wraps=CL.seg_hits_box) as hits:
+            original = R._line_problems(ctx, points, False, False)
+            self.assertTrue(any(p.startswith("LINE OVER ICON") for p in original))
+            checked = hits.call_count
+            self.assertEqual(R._line_problems(ctx, points, True, True), original)
+            self.assertEqual(hits.call_count, checked)
+        # Only static segment defects are cached; arrow and path checks are per route.
+        short = [(0, 0), (1, 0)]
+        self.assertEqual(R._line_problems(ctx, [(150, 100), (200, 100)], False, False), [])
+        self.assertEqual(R._line_problems(ctx, short, False, False), [])
+        self.assertIn("SHORT ARROW (end)", R._line_problems(ctx, short, False, True))
+        self.assertIn("doubles back", R._line_problems(ctx, [(0, 0), (20, 0), (1, 0)], False, False))
+        # A different solved drawing owns a separate obstacle cache.
+        empty = R._Ctx(spec, M.Geometry("document", 48, 400, 200, {}, {}))
+        self.assertEqual(R._line_problems(empty, points, False, False), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

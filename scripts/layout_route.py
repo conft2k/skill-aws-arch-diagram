@@ -980,6 +980,8 @@ class _Ctx:
         # obstacle tuples as _line_problems tests them (icons + 1, texts + LINE_CLEAR)
         self.icon_t = [(b.expand(1).t(), b) for b in self.icons]
         self.text_t = [(b.expand(K.LINE_CLEAR).t(), b) for b in self.texts]
+        self.segment_checks = {}  # static obstacles; shared legs recur across route candidates
+        self.obstacle_bands = {}  # many bends share a horizontal row or vertical column
         cloud = spec.cloud_id()
         self.cloud = geom.groups[cloud].rect if cloud in geom.groups else None
         # {(node id, side): [(edge n, end, port offset, spec line, trunk)]}: the ports the
@@ -1063,6 +1065,58 @@ def _len(p: Pt, q: Pt) -> float:
 # =======================================================================================
 # draw(): candidate validation
 
+def _segment_problems(ctx: _Ctx, p: Pt, q: Pt, headers: bool) -> Tuple[str, ...]:
+    """Cache only static obstacle tests, scoped to this solved drawing."""
+    key = (tuple(p), tuple(q), headers)
+    if key in ctx.segment_checks:
+        return ctx.segment_checks[key]
+    probs = []
+    x0, x1 = (p[0], q[0]) if p[0] <= q[0] else (q[0], p[0])
+    y0, y1 = (p[1], q[1]) if p[1] <= q[1] else (q[1], p[1])
+    horiz = abs(p[1] - q[1]) < 0.5
+    vert = abs(p[0] - q[0]) < 0.5
+    icons, texts, borders = ctx.icon_t, ctx.text_t, ctx.borders
+    # Exact orthogonal segments can only hit obstacles containing their fixed
+    # coordinate. Keep the existing tests/order within that smaller static set.
+    if p[1] == q[1] or p[0] == q[0]:
+        axis = 1 if p[1] == q[1] else 0
+        pos = p[axis]
+        band_key = (axis, pos)
+        if band_key not in ctx.obstacle_bands:
+            ctx.obstacle_bands[band_key] = (
+                [(t, b) for t, b in ctx.icon_t if t[axis] <= pos <= t[axis + 2]],
+                [(t, b) for t, b in ctx.text_t if t[axis] <= pos <= t[axis + 2]],
+                [b for b in ctx.borders if b[0] == ("h" if axis else "v")
+                 and abs(pos - b[1]) < K.HUG_CLEAR])
+        icons, texts, borders = ctx.obstacle_bands[band_key]
+    if headers:
+        for gid, b in ctx.headers:
+            if CL.segment_in_header({"p": p, "q": q}, b.t()):
+                probs.append(f"LINE IN HEADER {gid}")
+                break
+    for t, b in icons:
+        if t[0] <= x1 and x0 <= t[2] and t[1] <= y1 and y0 <= t[3] and CL.seg_hits_box(p, q, t):
+            probs.append(f"LINE OVER ICON ({b.x0:g},{b.y0:g})")
+            break
+    for t, b in texts:
+        if t[0] <= x1 and x0 <= t[2] and t[1] <= y1 and y0 <= t[3] and CL.seg_hits_box(p, q, t):
+            probs.append(f"LINE OVER TEXT ({b.x0:.0f},{b.y0:.0f})")
+            break
+    for ax, pos, lo, hi, gid in borders:
+        if horiz and ax == "h":
+            d, s0, s1 = abs(p[1] - pos), max(min(p[0], q[0]), lo), min(max(p[0], q[0]), hi)
+        elif vert and ax == "v":
+            d, s0, s1 = abs(p[0] - pos), max(min(p[1], q[1]), lo), min(max(p[1], q[1]), hi)
+        else:
+            continue
+        if d < K.HUG_CLEAR and s1 - s0 > K.HUG_OVERLAP:
+            probs.append(f"LINE HUGS BORDER {gid}")
+            break
+    result = tuple(probs)
+    ctx.segment_checks[key] = result
+    return result
+
+
 def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool, headers: bool = False) -> List[str]:
     """What check_layout would say about these segments (plus a 1 px margin round icons)."""
     probs = []
@@ -1070,33 +1124,9 @@ def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool, headers: bo
     if not segs:
         return ["no segment"]
     for i, (p, q) in enumerate(segs):
-        x0, x1 = (p[0], q[0]) if p[0] <= q[0] else (q[0], p[0])
-        y0, y1 = (p[1], q[1]) if p[1] <= q[1] else (q[1], p[1])
-        if headers:
-            for gid, b in ctx.headers:
-                if CL.segment_in_header({"p": p, "q": q}, b.t()):
-                    probs.append(f"LINE IN HEADER {gid}")
-                    break
-        for t, b in ctx.icon_t:
-            if t[0] <= x1 and x0 <= t[2] and t[1] <= y1 and y0 <= t[3] and CL.seg_hits_box(p, q, t):
-                probs.append(f"LINE OVER ICON ({b.x0:g},{b.y0:g})")
-                break
-        for t, b in ctx.text_t:
-            if t[0] <= x1 and x0 <= t[2] and t[1] <= y1 and y0 <= t[3] and CL.seg_hits_box(p, q, t):
-                probs.append(f"LINE OVER TEXT ({b.x0:.0f},{b.y0:.0f})")
-                break
+        probs.extend(_segment_problems(ctx, p, q, headers))
         horiz = abs(p[1] - q[1]) < 0.5
         vert = abs(p[0] - q[0]) < 0.5
-        for ax, pos, lo, hi, gid in ctx.borders:
-            if horiz and ax == "h":
-                d, s0, s1 = abs(p[1] - pos), max(min(p[0], q[0]), lo), min(max(p[0], q[0]), hi)
-            elif vert and ax == "v":
-                d, s0, s1 = abs(p[0] - pos), max(min(p[1], q[1]), lo), min(max(p[1], q[1]), hi)
-            else:
-                continue
-            if d < K.HUG_CLEAR and s1 - s0 > K.HUG_OVERLAP:
-                probs.append(f"LINE HUGS BORDER {gid}")
-                break
         if i and not (horiz or vert):
             probs.append("diagonal")
     for i in range(1, len(segs)):            # doubling back on itself

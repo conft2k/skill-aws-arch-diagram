@@ -317,12 +317,13 @@ def test_target_size_controls_the_text_shrink_exception(monkeypatch, rule, mode,
 
 
 @pytest.mark.parametrize("mode", ["document", "slide"])
+@pytest.mark.parametrize("candidate_build", [False, True], ids=["held", "candidate-internal"])
 @pytest.mark.parametrize("ratio,below_target,accepted", [
     (0.99, True, True), (0.989, True, False),
     (0.95, False, True),
 ])
 def test_later_stages_keep_below_target_text_with_one_percent_tolerance(
-        monkeypatch, mode, ratio, below_target, accepted):
+        monkeypatch, mode, candidate_build, ratio, below_target, accepted):
     spec = layout_spec.load({
         "name": "repair-text", "text_scale": "off",
         "cols": ["a", {"id": "b", "min_gap_before": 1450}], "rows": ["r"],
@@ -346,10 +347,108 @@ def test_later_stages_keep_below_target_text_with_one_percent_tolerance(
     monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
         rules.Violation("R-flow", ("edge:0",), "F3 junction", code="F3")
     ] if data == before.svg else [])
-    guard = layout.RuleGuard(selection=True, min_text_size=desired * 0.9)
+    guard = layout.RuleGuard(selection=True, min_text_size=desired * 0.9,
+                             candidate_build=candidate_build)
     assert guard.accepts(before, before.svg, after, after.svg) is accepted
     # Search retains ticket 06's fixed floor, rather than the repair tolerance.
     assert guard.accepts(before, before.svg, after, after.svg, later=False)
+
+
+def test_candidate_feedback_preserves_privatelink_slide_text(tmp_path, capsys, monkeypatch):
+    """The replay's 6.296pt held drawing cannot adopt the 5.920pt feedback."""
+    admits = layout.RuleGuard.admits
+    comparisons = []
+
+    def watch(guard, before, old, after, new, later=True):
+        accepted = admits(guard, before, old, after, new, later=later)
+        if guard.candidate_build and later:
+            actual, _, target, _ = guard.text(before.spec, old)[0]
+            next_actual = guard.text(after.spec, new)[0][0]
+            comparisons.append((actual, next_actual, accepted))
+            if accepted and actual < target:
+                assert next_actual >= actual * layout.REPAIR_TEXT_RETENTION - 1e-9
+        return accepted
+
+    monkeypatch.setattr(layout.RuleGuard, "admits", watch)
+    source = ROOT / "tests/corpus/qa/t1-privatelink.layout.yaml"
+    _, draft, _ = invoke(source, tmp_path, capsys, "--mode", "slide")
+    assert comparisons
+    spec = layout_spec.load(source, mode="slide")
+    assert layout.drawn_text(spec, draft)[0][0] >= 6.296
+
+
+def test_build_cache_reuses_effective_decisions(monkeypatch):
+    spec = layout_spec.load({
+        "name": "build-cache", "cols": ["a", "b"], "rows": ["r"],
+        "nodes": [{"id": n, "icon": "service/AWS-Lambda", "label": n, "at": [n, "r"]}
+                  for n in ("a", "b")], "edges": [{"e": "a -> b"}],
+        "note": {"place": "auto", "summary": "same note"},
+    })
+    real_build = layout.build
+    calls = []
+
+    def watch(*args, **kwargs):
+        calls.append(1)
+        return real_build(*args, **kwargs)
+
+    monkeypatch.setattr(layout, "build", watch)
+    guard = layout.RuleGuard(build_cache={})
+    first = guard.build(spec, [], {0: 1}, "pane", "cache.yaml")
+    explicit = layout.layout_solve.Decisions(skip=((0, 1),), place="pane")
+    replay = guard.build(spec, [], {}, None, "cache.yaml", decisions=explicit)
+    assert replay.svg == first.svg
+    assert replay.decisions == first.decisions
+    assert len(calls) == 1
+    # Font changes still need a new solve and drawing.
+    scaled = copy.deepcopy(spec)
+    scaled.font_factor = 1.1
+    assert guard.build(scaled, [], {}, None, "cache.yaml", decisions=explicit) is not first
+    assert len(calls) == 2
+
+
+def test_fixed_answer_cache_is_shared_only_with_the_same_policy(tmp_path, monkeypatch):
+    source = ROOT / "tests/corpus/ports/xnt.layout.yaml"
+    spec = layout_spec.load(source)
+    b = layout.build(spec, [], {}, None, str(source))
+    real_fix = layout.fix_pass
+    calls = []
+
+    def watch(*args, **kwargs):
+        calls.append(1)
+        return real_fix(*args, **kwargs)
+
+    monkeypatch.setattr(layout, "fix_pass", watch)
+    first = layout.RuleGuard(selection=True)
+    replay = layout.RuleGuard(selection=True)
+    replay._checked = first._checked
+    expected = layout.fixed_build(b, tmp_path / "fix.svg", first)
+    assert layout.fixed_build(b, tmp_path / "fix.svg", replay) == expected
+    assert len(calls) == 1
+    # The fixed default floor can change whether an edit is eligible.
+    replay.min_text_size = 11
+    layout.fixed_build(b, tmp_path / "fix.svg", replay)
+    assert len(calls) == 2
+
+
+def test_build_cache_reuses_the_note_place_the_same_solve_already_chose(monkeypatch):
+    source = ROOT / "tests/corpus/bench/engine2-egress.layout.yaml"
+    spec = layout_spec.load(source, mode="slide", title=False)
+    real_build = layout.build
+    calls = []
+
+    def watch(*args, **kwargs):
+        calls.append(1)
+        return real_build(*args, **kwargs)
+
+    monkeypatch.setattr(layout, "build", watch)
+    guard = layout.RuleGuard(build_cache={})
+    first = guard.build(spec, [], {}, None, str(source))
+    explicit = layout.dataclasses.replace(first.decisions, place=first.nb.place)
+    expected = real_build(spec, [], {}, None, str(source), decisions=explicit)
+    replay = guard.build(spec, [], {}, None, str(source), decisions=explicit)
+    assert replay.svg == expected.svg
+    assert replay.decisions == expected.decisions
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("change,accepted", [
