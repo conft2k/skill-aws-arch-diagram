@@ -1156,6 +1156,11 @@ cases:
   - path: qa/ex-gwlb-slide-arrowhead-on-border.layout.yaml
     rules: [R-border, R-flow]
     what: "4-node reduction: Users → IGW and GWLBe → GWLB arrowheads straddle the Cloud/Region and Security VPC borders; rules.py 미검출, check_layout Layout OK"
+  # bedrock-dx 예제(91062e1 spec): PC 오른쪽에서 나가는 HVH 프록시 선이 엔진이 짧게 잰 캡션 CLAUDE_CODE_USE_BEDROCK=1 바로 옆(~2px)에서 꺾이고, 박스 아래에 놓인 라벨의 soft run이 On-premises 테두리부터 재져 Direct Connect를 ~95px 오른쪽으로 민다.
+  # rules.py 미검출, check_layout도 Layout OK: rendered caption width vs layout_text_width is not checked (LINE NEAR TEXT uses the layout width).
+  - path: qa/ex-bedrock-dx-caption-bend.layout.yaml
+    rules: [R-border, R-fit]
+    what: "4-node bedrock-dx repro: from_side right HVH bends ~2px past the rendered all-caps PC caption; HVH label run before the bend pushes dx 181.6 past the On-premises border; rules.py 미검출"
 examples:
   # alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
   - path: ../../docs/examples/specs/alb-reference-architecture.layout.yaml
