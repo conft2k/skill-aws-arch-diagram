@@ -4,7 +4,7 @@
 
 **Blocked by:** 06 (merged)
 
-**Status:** ready-for-agent
+**Status:** implemented-partial — time limit; see results/10-no-moved-violation-no-repair-shrink.md
 
 Decisions (lead, 2026-11-08, user approved the fix):
 
@@ -13,10 +13,10 @@ Decisions (lead, 2026-11-08, user approved the fix):
 - When the held drawing's effective text size is below target (slide 10pt; document 11px in a 760px column), a later stage may not keep a drawing whose effective text size is smaller than the held one's (tolerance 1%). Candidate selection keeps the existing text-size limit.
 - The verdict order itself does not change. This is a gate in front of it.
 
-- [ ] Tests first (red) reproduce both cases through the CLI: qa/t3-hybrid-dns slide and slide-no-title, and qa/t1-multiregion-dr slide. Then green.
-- [ ] qa/t3-hybrid-dns slide: no tier-0 violation that the pre-step-2 drawing (main 36c7ea3) lacks, and effective text size at least 6.26pt. The same check applies to slide-no-title. qa/t1-multiregion-dr slide: text at least its 36c7ea3 value.
-- [ ] Corpus against the main 3946906 baseline: per-rule, check, better/same/worse and runtime tables. Every changed run is listed with its reason.
+- [x] Tests first (red) reproduce both cases through the CLI: qa/t3-hybrid-dns slide and slide-no-title, and qa/t1-multiregion-dr slide. Then green.
+- [x] qa/t3-hybrid-dns slide: no tier-0 violation that the pre-step-2 drawing (main 36c7ea3) lacks, and effective text size at least 6.26pt. The same check applies to slide-no-title. qa/t1-multiregion-dr slide: text at least its 36c7ea3 value.
+- [x] Corpus against the main 3946906 baseline: per-rule, check, better/same/worse and runtime tables. Every changed run is listed with its reason.
 - [ ] Corpus against the pre-step-2 baseline (main 36c7ea3): count the runs that have a tier-0 violation identity the 36c7ea3 run lacked, and the runs below target whose text is smaller than at 36c7ea3. Both counts are listed with their cases. Each remaining case is either fixed or explained as unrelated to step 2.
-- [ ] Step-2 wins are kept: R-flow stays at or below 50, and qa/t4-shared-lane (both modes) and qa/t1-multiregion-dr document keep their passing drawings.
+- [x] Step-2 wins are kept: R-flow stays at or below 50, and qa/t4-shared-lane (both modes) and qa/t1-multiregion-dr document keep their passing drawings.
 - [ ] Runtime stays within the ticket 04 limits (at most 3× per draft, at most 30s).
-- [ ] `docs/dev/step2/spec.md` and `GLOSSARY.md` (Verdict or Candidate) state the gate.
+- [x] `docs/dev/step2/spec.md` and `GLOSSARY.md` (Verdict or Candidate) state the gate.

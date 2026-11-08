@@ -64,6 +64,77 @@ def test_header_repair_rejects_new_violation(tmp_path, monkeypatch):
     assert result[1].svg == before.svg
 
 
+@pytest.mark.parametrize("selection", [False, True])
+def test_feedback_rejects_a_moved_violation(tmp_path, monkeypatch, selection):
+    spec = layout_spec.load(spec_data())
+    before = layout.build(spec, [], {}, None, "guard.json")
+    after = layout.build(layout_spec.load(spec_data(350)), [], {}, None, "guard.json")
+    problem = layout.Problem(SimpleNamespace(kind="SHORT ARROW"), ["edge:0"], [])
+    monkeypatch.setattr(layout, "problems_of",
+                        lambda data, *a, **kw: ([problem] if data == before.svg else [], None, []))
+    monkeypatch.setattr(layout, "feedback", lambda *a: True)
+    builds = iter((before, after))
+    monkeypatch.setattr(layout, "build", lambda *a, **kw: next(builds))
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
+        rules.Violation("R-flow", ("edge:0", "edge:1" if geom is before.geom else "edge:2"),
+                        "F3 moved junction", code="F3")
+    ])
+    result = layout.render_checked(spec, "guard.json", tmp_path / "round.svg", max_rounds=1,
+                                   rule_guard=layout.RuleGuard(selection=selection))
+    assert result[1] == before.svg
+
+
+def test_header_repair_rejects_a_moved_violation(tmp_path, monkeypatch):
+    spec = layout_spec.load(spec_data())
+    before = layout.build(spec, [], {}, None, "guard.json")
+    after = layout.build(layout_spec.load(spec_data(350)), [], {}, None, "guard.json")
+    old = layout.Problem(SimpleNamespace(kind="LINE IN HEADER"), ["edge:0"], [])
+    monkeypatch.setattr(layout, "problems_of",
+                        lambda data: ([old] if data == before.svg else [], None, []))
+    monkeypatch.setattr(layout, "feedback", lambda *a: True)
+    monkeypatch.setattr(layout, "build", lambda *a, **kw: after)
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
+        rules.Violation("R-border", ("edge:0", "group:old" if geom is before.geom else "group:new"),
+                        "B2 moved crossing", code="B2")
+    ])
+    result = layout.repair_headers(before, 0, [], {}, "guard.json",
+                                   tmp_path / "round.svg", max_rounds=1)
+    assert result[1].svg == before.svg
+
+
+def test_fixed_answer_rejects_a_moved_violation(tmp_path, monkeypatch):
+    document = spec_data()
+    document["raw"] = [{"layer": "above", "svg":
+                       '<text x="150" y="90" font-size="8">Tiny annotation</text>'}]
+    spec = layout_spec.load(document)
+    before = layout.build(spec, [], {}, None, "guard.json")
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
+        rules.Violation("R-label",
+                        ("raw:new" if b'font-size="12">Tiny annotation' in data else "raw:old",),
+                        "L1 moved label", code="L1")
+    ])
+    result = layout.render_checked(spec, "guard.json", tmp_path / "round.svg")
+    assert result[1] == before.svg
+    assert result[2] == 0
+
+
+def test_text_scale_rejects_a_moved_violation(tmp_path, monkeypatch):
+    document = spec_data(950)
+    document["text_scale"] = "auto"
+    spec = layout_spec.load(document)
+    original = layout.render_checked(spec, "guard.json", tmp_path / "round.svg")
+    trial = copy.deepcopy(spec)
+    trial.font_factor = 1.5
+    candidate = layout.render_checked(trial, "guard.json", tmp_path / "round.svg")
+    results = iter((original, candidate))
+    monkeypatch.setattr(layout, "render_checked", lambda *a, **kw: next(results))
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
+        rules.Violation("R-flow", ("edge:0", "edge:2" if sp.font_factor > 1 else "edge:1"),
+                        "F3 moved junction", code="F3")
+    ])
+    assert layout.render_readable(spec, "guard.json", tmp_path / "round.svg")[1] == original[1]
+
+
 def test_fixed_answer_rejects_new_violation(tmp_path, monkeypatch):
     document = spec_data()
     document["raw"] = [{"layer": "above", "svg":

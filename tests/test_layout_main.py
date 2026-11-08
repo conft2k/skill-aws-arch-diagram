@@ -273,7 +273,7 @@ class SlideNoteOverflow(unittest.TestCase):
                 self.assertFalse(any("past the canvas" in w or "does not fit" in w
                                      for w in b.nb.warnings))
 
-    def test_fitting_final_notes_preserve_feedback_and_drafts(self):
+    def test_fitting_final_notes_preserve_default_feedback_and_drafts(self):
         original_block = layout.layout_note.block
 
         def unwrapped(*args, **kwargs):
@@ -285,13 +285,18 @@ class SlideNoteOverflow(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             for path, mode in cases:
                 with self.subTest(case=path.name, mode=mode):
-                    before, after = Path(tmp) / "before.svg", Path(tmp) / "after.svg"
+                    spec = layout_spec.load(path, mode=mode)
+                    scratch = Path(tmp) / "round.svg"
+                    # Test the note's complete default. Candidate gates also judge
+                    # intermediate drawings, whose checks can differ under this mock.
                     with redirect_stdout(io.StringIO()), \
                             mock.patch.object(layout.layout_note, "block", side_effect=unwrapped):
-                        layout.main([str(path), "--mode", mode, "-o", str(before)])
+                        before = layout.render_readable(
+                            spec, str(path), scratch, rule_guard=layout.RuleGuard(protect=False))[1]
                     with redirect_stdout(io.StringIO()):
-                        layout.main([str(path), "--mode", mode, "-o", str(after)])
-                    self.assertEqual(before.read_bytes(), after.read_bytes())
+                        after = layout.render_readable(
+                            spec, str(path), scratch, rule_guard=layout.RuleGuard(protect=False))[1]
+                    self.assertEqual(before, after)
 
     def test_wrapped_panel_height_reaches_the_canvas(self):
         spec, b = built({

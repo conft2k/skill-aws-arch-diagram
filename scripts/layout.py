@@ -33,6 +33,9 @@ the first render. It then tries at most 12 document / 16 slide Candidates, gener
 R-border, R-flow, R-rt and R-fit violations. Skip-only Candidates share solved geometry. Only
 a strictly better Verdict replaces the incumbent; ties retain the earlier Draft. Later
 stages preserve the winner's Verdict. Explicit Spec placements have no neighbouring move.
+Before ranking, a new tier-0 identity (rule, code, owner set) requires a strictly lower
+tier-0 count. Selection retains its fixed text floor; later stages retain below-target
+text within 1% of the held drawing.
 The complete default also protects against higher check counts or a worse full Verdict
 on rules outside the enabled group. A checker failure restores it and is reported once.
 
@@ -84,6 +87,7 @@ MAX_SKIP = 3            # candidates an edge may skip before its gap is widened 
 SELECTION_RULES = frozenset(("R-border", "R-flow", "R-rt"))
 MAX_CANDIDATES = {"document": 12, "slide": 16}
 MIN_TEXT_RETENTION = 0.9  # below-target text keeps at least 90% of the completed default's size
+REPAIR_TEXT_RETENTION = 0.99  # later stages tolerate at most 1% shrink below target
 # The router's warning for an edge drawn in another shape than plan() reserved space for.
 SHAPE_MISS = re.compile(r"drew (\S+) instead of")
 # A shape the spec asked for and the router refused (the warning says what to change).
@@ -124,10 +128,14 @@ class Build:
 
 
 class RuleGuard:
-    """Share rule information across later stages; a checker bug never costs a draft."""
+    """Share admission and verdicts; a checker bug never costs a draft.
+
+    candidate_build uses selection's fixed text floor while constructing an alternative.
+    Repairs of a held drawing additionally retain its below-target text within 1%.
+    """
 
     def __init__(self, protect: bool = True, selection: bool = False, build_cache=None,
-                 enabled_rules=None, min_text_size=None):
+                 enabled_rules=None, min_text_size=None, candidate_build=False, incumbent=None):
         self.protect = protect
         self.selection = selection
         self.error = None
@@ -135,7 +143,16 @@ class RuleGuard:
         self.build_cache = build_cache
         self.enabled_rules = SELECTION_RULES if enabled_rules is None else frozenset(enabled_rules)
         self.min_text_size = min_text_size
+        self.candidate_build = candidate_build
+        self.incumbent = incumbent
         self._problems = {}
+        self._text = {}
+
+    def text(self, spec, data):
+        key = (spec.mode, spec.title, data)
+        if key not in self._text:
+            self._text[key] = drawn_text(spec, data)
+        return self._text[key]
 
     def problems(self, data):
         if data not in self._problems:
@@ -215,9 +232,34 @@ class RuleGuard:
             self.failed(error)
             return None
 
-    def accepts(self, before: Build, old: bytes, after: Build, new: bytes):
-        """Later stages compare complete verdicts, with unavailable rules falling back."""
+    def admits(self, before: Build, old: bytes, after: Build, new: bytes, later=True):
+        """Gate replacement before ranking, including rules outside the search group."""
+        if not self.protect and not self.selection:
+            # Build the historical complete default before it becomes an incumbent.
+            # Its unfinished rounds are not replacements of a selected drawing.
+            return True
         if not self.accepts_text(after, new):
+            return False
+        if later and not self.candidate_build:
+            actual, _, target, _ = self.text(before.spec, old)[0]
+            if actual < target - 1e-9:
+                next_actual = self.text(after.spec, new)[0][0]
+                if next_actual < actual * REPAIR_TEXT_RETENTION - 1e-9:
+                    return False
+        before_viol = self.check(before.spec, before.geom, old)
+        after_viol = self.check(after.spec, after.geom, new)
+        if before_viol is None or after_viol is None:
+            return True
+        before_hard = [v for v in before_viol if v.tier == 0]
+        after_hard = [v for v in after_viol if v.tier == 0]
+        identities = {(v.rule, v.code, frozenset(v.owners)) for v in before_hard}
+        new_identity = any((v.rule, v.code, frozenset(v.owners)) not in identities
+                           for v in after_hard)
+        return not new_identity or len(after_hard) < len(before_hard)
+
+    def accepts(self, before: Build, old: bytes, after: Build, new: bytes, later=True):
+        """Later stages compare complete verdicts, with unavailable rules falling back."""
+        if not self.admits(before, old, after, new, later=later):
             return False
         a, b = self.verdict(before, old), self.verdict(after, new)
         if a is None or b is None:
@@ -228,7 +270,7 @@ class RuleGuard:
         """Target-sized text follows the verdict; below target, retain the fixed floor."""
         if self.min_text_size is None:
             return True
-        actual, _, target, _ = drawn_text(b.spec, data)[0]
+        actual, _, target, _ = self.text(b.spec, data)[0]
         return actual >= min(self.min_text_size, target) - 1e-9
 
 
@@ -569,11 +611,13 @@ def fix_pass(data: bytes, scratch: Path, spec: Optional[Spec] = None,
         CL.write_edits(scratch, data, adv.order, [e for _, h in real for e in h.auto])
         candidate = scratch.read_bytes()
         if rule_guard is not None:
+            b = Build(spec, geom, None, [], [], data)
             if rule_guard.selection:
-                b = Build(spec, geom, None, [], [], data)
                 if not rule_guard.accepts(b, data, b, candidate):
                     break
             else:
+                if not rule_guard.admits(b, data, b, candidate):
+                    break
                 before = rule_guard.counts(spec, geom, data)
                 after = rule_guard.counts(spec, geom, candidate)
                 if rule_guard.adds(before, after):
@@ -996,6 +1040,10 @@ def repair_headers(b: Build, rnd: int, used: Sequence[Requirement], skipped: Dic
         if rule_guard.selection:
             rules_worse = not rule_guard.accepts(best[2], fixed_build(best[2], scratch, rule_guard)[0],
                                                  b, fixed_build(b, scratch, rule_guard)[0])
+        else:
+            rules_worse = rules_worse or not rule_guard.admits(
+                best[2], fixed_build(best[2], scratch, rule_guard)[0],
+                b, fixed_build(b, scratch, rule_guard)[0])
         if not (checks - base_checks or rules_worse or (small and not base_small)):
             if len(headers) < best[0]:
                 best = (len(headers), rnd + step, b, list(extra.values()), dict(skip))
@@ -1281,13 +1329,22 @@ def render_checked(spec: Spec, source: str, scratch: Path, no_check: bool = Fals
         skip: Dict[int, int] = dict(chosen[6]) if chosen is not None else {}
         best, place, best_rules = None, None, None
         decisions = chosen[0].decisions if chosen is not None else decisions
+        avoid_headers = set(chosen[0].avoid_headers) if chosen is not None else set()
         base_round = chosen[4] if chosen is not None else 0
         if chosen is not None:
             chosen[0]._fixed_draft = (chosen[0].svg, rule_guard, (chosen[1], chosen[2]))
+        elif rule_guard.incumbent is not None:
+            ib, data, fixed, ip, ir, iu, isk = rule_guard.incumbent
+            ib._fixed_draft = (ib.svg, rule_guard, (data, fixed))
+            rank = rule_guard.verdict(ib, data, ip)
+            if rank is not None:
+                best = (rank, ir, ib, list(iu), dict(isk))
         for rnd in range(max_rounds + 1):
             try:
                 kwargs = ({"decisions": dataclasses.replace(decisions, skip=tuple(sorted(skip.items())))}
                           if decisions is not None else {})
+                if avoid_headers:
+                    kwargs["avoid_headers"] = avoid_headers
                 b = (chosen[0] if chosen is not None and rnd == 0 else
                      rule_guard.build(spec, list(extra.values()), dict(skip), place, source, **kwargs))
             except M.LayoutError:
@@ -1309,8 +1366,40 @@ def render_checked(spec: Spec, source: str, scratch: Path, no_check: bool = Fals
                 data = chosen[1] if chosen is not None and rnd == 0 else fixed_build(b, scratch, rule_guard)[0]
                 verdict = rule_guard.verdict(b, data)
                 rank = verdict if verdict is not None else score
-                if best is None or rank < best[0]:
-                    best = (rank, base_round + rnd, b, list(extra.values()), dict(skip))
+                kept = (base_round + rnd, b, list(extra.values()), dict(skip))
+                improves = best is None or rank < best[0]
+                admitted = best is None
+                if best is not None:
+                    old = fixed_build(best[2], scratch, rule_guard)[0]
+                    admitted = rule_guard.admits(best[2], old, b, data)
+                    if (not admitted and rule_guard.candidate_build and verdict is not None and any(
+                            p.iss.kind == "LINE IN HEADER" for p in rule_guard.problems(data))):
+                        # A moved B2 is not an improvement. Finish its header repair
+                        # without holding the intermediate drawing, then gate again.
+                        kept = repair_headers(b, base_round + rnd, list(extra.values()),
+                                              dict(skip), source, scratch, min(2, MAX_ROUNDS),
+                                              rule_guard)
+                        kb = kept[1]
+                        data = fixed_build(kb, scratch, rule_guard)[0]
+                        repaired = rule_guard.verdict(kb, data)
+                        if repaired is not None:
+                            rank = repaired
+                            improves = rank < best[0]
+                            admitted = rule_guard.admits(best[2], old, kb, data)
+                if improves and admitted:
+                    best = (rank, *kept)
+                    if kept[1] is not b:
+                        # Continue from the completed, admitted repair. Forgetting its
+                        # header obstacles would reintroduce B2 in the next round.
+                        b = kept[1]
+                        extra = {(r.axis, r.a, r.b): r for r in kept[2]}
+                        skip = dict(kept[3])
+                        decisions, avoid_headers = b.decisions, set(b.avoid_headers)
+                        probs = [p for p in rule_guard.problems(b.feedback_svg)
+                                 if p.iss.kind != "LINE IN HEADER"]
+                        score = (problem_count(probs) + bool(slide_problem(b.spec, data)),
+                                 int(b.spec.mode == "document" and b.geom.canvas_w > K.DOC_WIDE),
+                                 shape_misses(b))
                 if score == (0, 0, 0) or rnd == max_rounds or not feedback(b, probs, extra, skip):
                     break
                 continue
@@ -1328,7 +1417,13 @@ def render_checked(spec: Spec, source: str, scratch: Path, no_check: bool = Fals
                     kb = kept[1]
                     violations = rule_guard.counts(kb.spec, kb.geom,
                                                    fixed_build(kb, scratch, rule_guard)[0])
-                if best is None or not rule_guard.adds(best_rules, violations):
+                previous_data = (None if best is None else
+                                 fixed_build(best[2], scratch, rule_guard)[0]
+                                 if chosen is not None else best[2].svg)
+                kept_data = (fixed_build(kept[1], scratch, rule_guard)[0]
+                             if chosen is not None else kept[1].svg)
+                if best is None or (not rule_guard.adds(best_rules, violations)
+                                    and rule_guard.admits(best[2], previous_data, kept[1], kept_data)):
                     best = (score, *kept)
                     best_rules = violations
             if score == (0, 0, 0) or rnd == max_rounds or not feedback(b, probs, extra, skip):
@@ -1402,34 +1497,52 @@ def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = Fal
                     rule_guard: Optional[RuleGuard] = None, chosen=None):
     """Render, then try at most two uniform font enlargements; keep a safe improvement."""
     rule_guard = rule_guard if rule_guard is not None else RuleGuard()
+    gentle = False
     if chosen is None:
         result = render_checked(spec, source, scratch, no_check, MAX_ROUNDS, rule_guard)
+        if rule_guard.incumbent is not None and result[1] == rule_guard.incumbent[1]:
+            return result
     else:
         result = render_checked(spec, source, scratch, no_check, min(2, MAX_ROUNDS), rule_guard, chosen)
         if result[1] == chosen[1]:
-            # This selected draft already exhausted its text-scale attempts.
-            return result
+            # A newly routed candidate has not tried text scale yet. Keep its clean
+            # rules and feedback geometry while trying one canvas font unit at a time.
+            violations = rule_guard.check(result[0].spec, result[0].geom, result[1])
+            gentle = (rule_guard.selection and not no_check
+                      and not getattr(result[0], "_text_scale_attempted", False)
+                      and violations is not None and not any(v.tier == 0 for v in violations))
+            if not gentle:
+                return result
     if spec.text_scale != "auto":
         return result
     for _ in range(2):
         b, data, _, probs, *_ = result
-        (actual, _, target, _), t, _ = drawn_text(b.spec, data)
+        (actual, _, target, _), t, _ = rule_guard.text(b.spec, data)
         if t is None or actual >= target:
             break
         trial = copy.deepcopy(b.spec)
         step = min(1.8, target / actual)
+        if gentle:
+            step = min(step, 1 + 1 / t[0])
         trial.font_factor *= step
         trial.font_steps += (step,)
         try:
             # The initial render gets the full feedback budget. Font retries have a
             # smaller budget: unresolved collisions safely keep that initial result.
-            kwargs = {"decisions": b.decisions} if rule_guard.selection else {}
-            candidate = render_checked(trial, source, scratch, no_check, min(2, MAX_ROUNDS), rule_guard,
-                                       **kwargs)
+            if gentle:
+                cb = rule_guard.build(trial, result[5], result[6],
+                                      b.nb.place if b.nb.place != "none" else None, source,
+                                      decisions=b.decisions, avoid_headers=b.avoid_headers)
+                cd, fixed = fixed_build(cb, scratch, rule_guard)
+                candidate = (cb, cd, fixed, rule_guard.problems(cd), *result[4:])
+            else:
+                kwargs = {"decisions": b.decisions} if rule_guard.selection else {}
+                candidate = render_checked(trial, source, scratch, no_check, min(2, MAX_ROUNDS), rule_guard,
+                                           **kwargs)
         except M.LayoutError:
             break
         cb, cd, _, cp, *_ = candidate
-        new_actual = drawn_text(trial, cd)[0][0]
+        new_actual = rule_guard.text(trial, cd)[0][0]
         if new_actual < actual or len(cp) > len(probs):
             break
         try:
@@ -1442,11 +1555,14 @@ def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = Fal
                 if not rule_guard.accepts(b, data, cb, cd):
                     break
             else:
+                if not rule_guard.admits(b, data, cb, cd):
+                    break
                 before = other_rule_counts(b.spec, b, data, rule_guard)
                 after = other_rule_counts(trial, cb, cd, rule_guard)
                 if rule_guard.adds(before, after):
                     break
         result = candidate
+    result[0]._text_scale_attempted = True
     return result
 
 
@@ -1580,6 +1696,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
                              min_text_size=rule_guard.min_text_size)
         previous._checked = rule_guard._checked
         previous._problems = rule_guard._problems
+        previous._text = rule_guard._text
         best, _ = select_drawing(default, source, scratch, previous, original_spec, shared)
         if previous.error is not None:
             rule_guard.error = previous.error
@@ -1595,9 +1712,14 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         # from the first render, without restoring an unfinished drawing.
         guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
                             enabled_rules=rule_guard.enabled_rules,
-                            min_text_size=rule_guard.min_text_size)
+                            min_text_size=rule_guard.min_text_size, candidate_build=True,
+                            incumbent=(best if first and all(
+                                v.rule == "R-flow" and v.code == "F5"
+                                for v in first if v.tier == 0) and any(v.tier == 0 for v in first)
+                                else None))
         guarded._checked = rule_guard._checked
         guarded._problems = rule_guard._problems
+        guarded._text = rule_guard._text
         result = render_readable(original_spec, source, scratch, rule_guard=guarded)
         if guarded.error is not None:
             rule_guard.error = guarded.error
@@ -1610,7 +1732,8 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         if all_after is None or all_before is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
         if (candidate_score < score and candidate_score.checks <= score.checks
-                and all_after < all_before and rule_guard.accepts_text(result[0], result[1])):
+                and all_after < all_before
+                and rule_guard.admits(best[0], best[1], result[0], result[1], later=False)):
             best, score = result, candidate_score
     budget = MAX_CANDIDATES[b.spec.mode]
     tried = {base_decisions, best[0].decisions}
@@ -1633,16 +1756,17 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
             current.routing_alternatives = alternatives
             current._alternative_edges = wanted
         round_best, round_score, round_index = best, score, index
-        for decisions in neighbours(current, violations, rule_guard.enabled_rules):
+        proposals = [(current, d) for d in neighbours(current, violations, rule_guard.enabled_rules)]
+        for origin, decisions in proposals:
             if decisions in tried:
                 continue
             tried.add(decisions)
             count += 1
             try:
-                skip_only = dataclasses.replace(decisions, skip=current.decisions.skip) == current.decisions
-                cb = (redraw_routes(current, decisions, source) if skip_only else
-                      build(current.spec, best[5], dict(decisions.skip), decisions.place,
-                            source, avoid_headers=current.avoid_headers, decisions=decisions))
+                skip_only = dataclasses.replace(decisions, skip=origin.decisions.skip) == origin.decisions
+                cb = (redraw_routes(origin, decisions, source) if skip_only else
+                      build(origin.spec, best[5], dict(decisions.skip), decisions.place,
+                            source, avoid_headers=origin.avoid_headers, decisions=decisions))
             except M.LayoutError:
                 if count >= budget:
                     break
@@ -1667,10 +1791,27 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
                 # The enabled group steers the search; other rules and checks still
                 # protect the corpus. A changed draft must improve its full Verdict.
                 if (candidate_score < round_score and all_after < all_before
-                        and candidate_score.checks <= score.checks
-                        and rule_guard.accepts_text(cb, cd)):
-                    round_best = (cb, cd, fixed, cp, best[4], best[5], dict(decisions.skip))
-                    round_score, round_index = candidate_score, count
+                        and candidate_score.checks <= score.checks):
+                    if rule_guard.admits(current, best[1], cb, cd, later=False):
+                        round_best = (cb, cd, fixed, cp, best[4], best[5], dict(decisions.skip))
+                        round_score, round_index = candidate_score, count
+                    elif origin is current:
+                        # A collinear gap is not a safe replacement for an overlap.
+                        # Try one further route in the same budget without holding it.
+                        gaps = [v for v in rule_guard.check(cb.spec, cb.geom, cd)
+                                if v.rule == "R-flow" and v.code == "F2"]
+                        wanted = {edge_of(o)[0] for v in gaps for o in v.owners
+                                  if edge_of(o) is not None and edge_of(o)[0] in movable}
+                        if wanted and rule_guard.text(cb.spec, cd)[0][0] >= (
+                                rule_guard.text(current.spec, best[1])[0][0] * 0.99):
+                            alternatives = {}
+                            with layout_text.font_context(cb.spec.font_factor, cb.spec.font_steps):
+                                layout_route.draw(cb.spec, cb.geom, dict(cb.decisions.skip),
+                                                  avoid_headers=cb.avoid_headers,
+                                                  alternatives=alternatives, alternative_edges=wanted)
+                            cb.routing_alternatives = alternatives
+                            proposals.extend((cb, d) for d in neighbours(
+                                cb, gaps, rule_guard.enabled_rules))
             if count >= budget:
                 break
         if round_best is best:
@@ -1683,6 +1824,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
                             min_text_size=rule_guard.min_text_size)
         guarded._checked = rule_guard._checked
         guarded._problems = rule_guard._problems
+        guarded._text = rule_guard._text
         result = render_readable(best[0].spec, source, scratch, rule_guard=guarded, chosen=best)
         if guarded.error is not None:
             rule_guard.error = guarded.error
@@ -1692,7 +1834,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         if result_score is None or best_score is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
         if (result_score < best_score and result_score.checks <= best_score.checks
-                and rule_guard.accepts_text(result[0], result[1])):
+                and rule_guard.admits(best[0], best[1], result[0], result[1])):
             best = result
         after = rule_guard.check(best[0].spec, best[0].geom, best[1])
         removed = Counter((v.rule, v.code) for v in first) - Counter((v.rule, v.code) for v in after)
@@ -1770,7 +1912,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 before = rule_guard.check(db.spec, db.geom, dd)
                 after = rule_guard.check(cb.spec, cb.geom, cd)
                 if before is None or after is None:
-                    if len(cp) <= len(dp) and rule_guard.accepts_text(cb, cd):
+                    if len(cp) <= len(dp) and rule_guard.admits(db, dd, cb, cd):
                         result = candidate
                 else:
                     improves = (len(after) < len(before) or
@@ -1785,7 +1927,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         if (improves and len(cp) <= len(dp)
                                 and not rule_guard.adds(Counter(v.rule for v in before),
                                                        Counter(v.rule for v in after))
-                                and new_score < old_score and rule_guard.accepts_text(cb, cd)):
+                                and new_score < old_score and rule_guard.admits(db, dd, cb, cd)):
                             result = candidate
             if a.no_check:
                 selection = ["selection: default kept (--no-check)"]

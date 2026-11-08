@@ -103,7 +103,7 @@ One of the user's readability rules, judged on a draft against its spec: R-flow,
 _Avoid_: heuristic
 
 **Violation**:
-One instance of a rule that a draft breaks. It names the owners involved and carries a tier and a cost.
+One instance of a rule that a draft breaks. It names the owners involved and carries a tier and a cost. Its identity is its rule, code and owner set; coordinates and owner order do not change that identity.
 _Avoid_: failure, finding
 
 **Tier**:
@@ -115,11 +115,11 @@ One pass in which the engine reads a draft's check problems, adds space or routi
 _Avoid_: retry, repair loop
 
 **Candidate**:
-One complete drawing of a spec under one set of layout decisions. Candidates are compared by their verdicts. For every rule group, the text-size limit excludes candidates whose effective text size is both below the medium's target (slide 10pt; document 11px in a 760px column) and below 90% of the completed default's; text at or above target follows the verdict regardless of shrink percentage.
+One complete drawing of a spec under one set of layout decisions. Candidates are compared by their verdicts after the replacement gates. For every rule group, the text-size limit excludes candidates whose effective text size is both below the medium's target (slide 10pt; document 11px in a 760px column) and below 90% of the completed default's; text at or above target follows the verdict regardless of shrink percentage. Later stages (feedback, header, fixed-answer and text-scale steps) also reject more than 1% text shrink from a held drawing whose effective text size is below target.
 _Avoid_: attempt, variant
 
 **Verdict**:
-The ordered score of a candidate. Its parts, in order: canvas clipping check count (critical like tier 0, before all other parts), tier-0 violation count, tier-0 cost, check problem count, effective text shortfall, shape misses, canvas area.
+The ordered score of a candidate. Its parts, in order: canvas clipping check count (critical like tier 0, before all other parts), tier-0 violation count, tier-0 cost, check problem count, effective text shortfall, shape misses, canvas area. Before this unchanged order, every replacement comparison gates new tier-0 violation identities: a drawing that adds one is eligible only when its total tier-0 violation count is strictly lower than the held drawing's. Candidate selection and every later stage share the gate, including rules outside the enabled search group.
 _Avoid_: grade, fitness
 
 ## Corpus

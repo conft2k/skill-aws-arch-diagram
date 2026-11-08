@@ -22,8 +22,8 @@ def invoke(source, tmp_path, capsys, *args):
     return status, draft.read_bytes(), capsys.readouterr().out
 
 
-def default(source, tmp_path, mode=None):
-    spec = layout_spec.load(source, mode=mode)
+def default(source, tmp_path, mode=None, title=None):
+    spec = layout_spec.load(source, mode=mode, title=title)
     return layout.render_readable(spec, str(source), tmp_path / "round.svg",
                                   rule_guard=layout.RuleGuard(protect=False))
 
@@ -116,6 +116,30 @@ def test_return_flow_is_not_clipped_to_reduce_other_checks(tmp_path, capsys, tit
                 {"LINE OFF CANVAS", "OFF CANVAS", "BADGE OFF CANVAS"}]
 
 
+@pytest.mark.parametrize("title", [True, False], ids=["slide", "slide-no-title"])
+def test_hybrid_dns_keeps_existing_violation_owners_and_text(tmp_path, capsys, title):
+    source = ROOT / "tests/corpus/qa/t3-hybrid-dns.layout.yaml"
+    args = ["--mode", "slide"] + ([] if title else ["--no-title"])
+    _, draft, text = invoke(source, tmp_path, capsys, *args)
+    spec = layout_spec.load(source, mode="slide", title=title)
+    violations = rules.flow_rules(spec, rules.Drawn.parse(draft))
+    # main 36c7ea3: the junction and label conflict both involve edge:4/edge:12.
+    allowed = {("R-flow", code, frozenset(("edge:4", "edge:12")))
+               for code in ("F3", "F5")}
+    assert {(v.rule, v.code, frozenset(v.owners)) for v in violations} <= allowed
+    assert all(line.startswith(("rule: R-flow ", "rule: R-fit "))
+               for line in text.splitlines() if line.startswith("rule:"))
+    assert layout.drawn_text(spec, draft)[0][0] >= 6.26
+
+
+def test_multiregion_slide_repairs_do_not_shrink_below_target_text(tmp_path, capsys):
+    source = ROOT / "tests/corpus/qa/t1-multiregion-dr.layout.yaml"
+    _, draft, _ = invoke(source, tmp_path, capsys, "--mode", "slide")
+    spec = layout_spec.load(source, mode="slide")
+    # main 36c7ea3's 3028px canvas with 12px text: 3.6618...pt.
+    assert layout.drawn_text(spec, draft)[0][0] >= 12 * 924 / 3028
+
+
 @pytest.mark.parametrize("checker", ["check", "score"])
 def test_checker_failure_keeps_default(tmp_path, capsys, monkeypatch, checker):
     source = ROOT / "tests/corpus/ports/u3.layout.yaml"
@@ -184,12 +208,44 @@ def test_enabling_route_tables_keeps_the_previous_group_winner(tmp_path, capsys,
         prior.setattr(layout, "SELECTION_RULES", frozenset(("R-border", "R-flow")))
         _, before, old_text = invoke(source, tmp_path, capsys, "--mode", "slide")
     _, after, text = invoke(source, tmp_path, capsys, "--mode", "slide")
-    assert "rule: R-rt" not in old_text and "rule: R-rt" not in text
+    # Gating the earlier group's repairs can leave its RT violations unresolved.
+    # The enabled RT group must improve that held drawing without losing its flow win.
+    assert "rule: R-rt" not in text
+    assert text.count("rule: R-flow") <= old_text.count("rule: R-flow")
     spec = layout_spec.load(source, mode="slide")
-    assert layout.drawn_text(spec, after)[0][0] >= layout.drawn_text(spec, before)[0][0]
+    original = default(source, tmp_path, "slide")
+    assert layout.drawn_text(spec, after)[0][0] >= min(
+        layout.drawn_text(spec, original[1])[0][0] * 0.9, 10)
     assert len(CL.run_checks(ET.fromstring(after))) <= len(CL.run_checks(ET.fromstring(before)))
     evaluated, budget = map(int, re.search(r"evaluated (\d+)/(\d+) candidates", text).groups())
     assert evaluated <= budget == 16
+
+
+@pytest.mark.parametrize("title,minimum", [(True, 5.6485), (False, 5.9041)],
+                         ids=["slide", "slide-no-title"])
+def test_rule_clean_winner_keeps_text_after_a_gated_repair(tmp_path, capsys, title, minimum):
+    source = ROOT / "tests/corpus/ports/xnt.layout.yaml"
+    args = ["--mode", "slide"] + ([] if title else ["--no-title"])
+    _, draft, text = invoke(source, tmp_path, capsys, *args)
+    spec = layout_spec.load(source, mode="slide", title=title)
+    assert all(line.startswith("rule: R-fit ") for line in text.splitlines()
+               if line.startswith("rule:"))
+    assert layout.drawn_text(spec, draft)[0][0] >= minimum
+
+
+@pytest.mark.parametrize("case,expected,minimum", [
+    ("flowcol/t9-tmpl-on-flowcol", 0, 7.7777),
+    ("qa/t3-cache-label", 1, 11.25),
+])
+@pytest.mark.parametrize("title", [True, False], ids=["slide", "slide-no-title"])
+def test_candidate_construction_keeps_completed_rule_wins(
+        tmp_path, capsys, case, expected, minimum, title):
+    source = ROOT / f"tests/corpus/{case}.layout.yaml"
+    args = ["--mode", "slide"] + ([] if title else ["--no-title"])
+    _, draft, text = invoke(source, tmp_path, capsys, *args)
+    spec = layout_spec.load(source, mode="slide", title=title)
+    assert text.count("rule: R-flow ") == expected
+    assert layout.drawn_text(spec, draft)[0][0] >= minimum
 
 
 @pytest.mark.parametrize("case", [
@@ -226,7 +282,7 @@ def test_better_rules_cannot_override_the_text_size_limit(monkeypatch, rule, rat
     ] if data == before.svg else [])
     guard = layout.RuleGuard(selection=True)
     guard.min_text_size = layout.drawn_text(spec, before.svg)[0][0] * 0.9
-    assert guard.accepts(before, before.svg, after, after.svg) is accepted
+    assert guard.accepts(before, before.svg, after, after.svg, later=False) is accepted
 
 
 @pytest.mark.parametrize("rule", ["R-border", "R-flow", "R-rt"])
@@ -257,17 +313,97 @@ def test_target_size_controls_the_text_shrink_exception(monkeypatch, rule, mode,
     ] if data == before.svg else [])
     guard = layout.RuleGuard(selection=True)
     guard.min_text_size = original * 0.9
-    assert guard.accepts(before, before.svg, after, after.svg) is above_target
+    assert guard.accepts(before, before.svg, after, after.svg, later=False) is above_target
 
 
-def test_shared_lane_target_sized_winner_restores_label_attribution(tmp_path, capsys):
+@pytest.mark.parametrize("mode", ["document", "slide"])
+@pytest.mark.parametrize("ratio,below_target,accepted", [
+    (0.99, True, True), (0.989, True, False),
+    (0.95, False, True),
+])
+def test_later_stages_keep_below_target_text_with_one_percent_tolerance(
+        monkeypatch, mode, ratio, below_target, accepted):
+    spec = layout_spec.load({
+        "name": "repair-text", "text_scale": "off",
+        "cols": ["a", {"id": "b", "min_gap_before": 1450}], "rows": ["r"],
+        "nodes": [{"id": n, "icon": "service/AWS-Lambda", "label": n, "at": [n, "r"]}
+                  for n in ("a", "b")], "edges": [{"e": "a -> b"}],
+    }, mode=mode)
+    before = layout.build(spec, [], {}, None, "repair-text.json")
+    original, _, target, _ = layout.drawn_text(spec, before.svg)[0]
+    desired = target - 1 if below_target else target
+    root = ET.fromstring(before.svg)
+    x, y, width, height = map(float, root.attrib["viewBox"].split())
+    width *= original / desired
+    before.geom.canvas_w = width
+    root.set("viewBox", f"{x} {y} {width} {height}")
+    before.svg = ET.tostring(root)
+    after = copy.copy(before)
+    after.geom = copy.copy(before.geom)
+    after.geom.canvas_w = width / ratio
+    root.set("viewBox", f"{x} {y} {width / ratio} {height}")
+    after.svg = ET.tostring(root)
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
+        rules.Violation("R-flow", ("edge:0",), "F3 junction", code="F3")
+    ] if data == before.svg else [])
+    guard = layout.RuleGuard(selection=True, min_text_size=desired * 0.9)
+    assert guard.accepts(before, before.svg, after, after.svg) is accepted
+    # Search retains ticket 06's fixed floor, rather than the repair tolerance.
+    assert guard.accepts(before, before.svg, after, after.svg, later=False)
+
+
+@pytest.mark.parametrize("change,accepted", [
+    ("owners", False), ("code", False), ("rule", False),
+    ("reordered-owners", True), ("coordinates", True), ("lower-count", True),
+])
+def test_tier_zero_identity_gate_precedes_the_verdict(monkeypatch, change, accepted):
+    spec = layout_spec.load({
+        "name": "identity", "text_scale": "off",
+        "cols": ["a", "b"], "rows": ["r"],
+        "nodes": [{"id": n, "icon": "service/AWS-Lambda", "label": n, "at": [n, "r"]}
+                  for n in ("a", "b")], "edges": [{"e": "a -> b"}],
+    })
+    before = layout.build(spec, [], {}, None, "identity.json")
+    old = rules.Violation("R-flow", ("edge:0", "edge:1"), "junction at (100,100)",
+                          cost=2, code="F3")
+    next_rule = "R-label" if change == "rule" else "R-flow"
+    next_code = "F5" if change == "code" else "F3"
+    owners = (("edge:1", "edge:0") if change == "reordered-owners" else
+              ("edge:0", "edge:2") if change in {"owners", "lower-count"} else old.owners)
+    new = rules.Violation(next_rule, owners, "junction at (200,200)", cost=1, code=next_code)
+    old_viol = [old]
+    if change == "lower-count":
+        old_viol.append(rules.Violation("R-flow", ("edge:3",), "other junction", code="F3"))
+    new_data = before.svg.replace(b"</svg>", b"<!-- new drawing --></svg>")
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data:
+                        old_viol if data == before.svg else [new])
+    # R-label is not enabled for search, but its new identity must still be gated.
+    guard = layout.RuleGuard(selection=True, enabled_rules={"R-flow"})
+    assert guard.verdict(before, new_data) < guard.verdict(before, before.svg)
+    assert guard.accepts(before, before.svg, before, new_data) is accepted
+    assert guard.accepts(before, before.svg, before, new_data, later=False) is accepted
+
+
+@pytest.mark.parametrize("title", [True, False], ids=["slide", "slide-no-title"])
+def test_shared_lane_target_sized_winner_restores_label_attribution(tmp_path, capsys, title):
     source = ROOT / "tests/corpus/qa/t4-shared-lane.layout.yaml"
-    before = default(source, tmp_path, "slide")
-    _, draft, text = invoke(source, tmp_path, capsys, "--mode", "slide")
+    before = default(source, tmp_path, "slide", title)
+    args = ["--mode", "slide"] + ([] if title else ["--no-title"])
+    _, draft, text = invoke(source, tmp_path, capsys, *args)
     original = layout.drawn_text(before[0].spec, before[1])[0][0]
     actual, _, target, _ = layout.drawn_text(before[0].spec, draft)[0]
     assert "rule: R-flow" not in text
-    assert target <= actual < original * 0.9
+    assert actual >= target
+    if title:
+        assert actual < original * 0.9
+    assert not CL.run_checks(ET.fromstring(draft))
+
+
+def test_multiregion_document_keeps_the_flow_improvement(tmp_path, capsys):
+    source = ROOT / "tests/corpus/qa/t1-multiregion-dr.layout.yaml"
+    status, draft, text = invoke(source, tmp_path, capsys, "--mode", "document")
+    assert status == 0
+    assert "rule: R-flow" not in text
     assert not CL.run_checks(ET.fromstring(draft))
 
 
