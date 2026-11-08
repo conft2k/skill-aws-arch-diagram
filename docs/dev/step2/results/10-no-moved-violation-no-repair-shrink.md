@@ -38,6 +38,8 @@ Python 3.15, offline uv 의존성은 사용자 지정대로 사용했다. 중첩
 
 `run_corpus_fork.py`는 sandbox의 forkserver 소켓 제한 때문에 fork를 지정하고 원본 `tests/run_corpus.py`를 그대로 실행한다. `--rule-checker scripts/rules.py:corpus --baseline clean/corpus.json --baseline-drafts clean/drafts --keep .t10-exception/drafts --out .t10-exception/corpus.json -q -j 6`으로 **전체 한 번** 실행했다. pytest·예제·프로파일·PNG 렌더와 겹치지 않았고 부분 결과를 합치지 않았다.
 
+병합 전에 팀장이 worktree의 `.t10-fix/`와 `.t10-exception/`을 `~/.cache/skill-design/t10-gate/fix-round/`와 `~/.cache/skill-design/t10-gate/exception-round/`로 옮겼다. 위 상대 경로는 그 폴더를 가리킨다.
+
 원본 실행 `2026-11-08T02:26:50Z` → `2026-11-08T02:28:42Z`: 267 entries, 760 runs, drawn 744 / rejected 16, failures 0. 원본 SHA-256 `0ddc6324474abaabc634da2757318d85db2d684066af11b1331e510fb042c742`.
 
 원본에는 multiregion 두 slide의 과거 bad R-flow tag 불일치 2건이 남는다. 이제 두 그림 모두 R-flow 0이므로 MANIFEST를 good R-flow로 고쳤다. 같은 저장 결과를 렌더 없이 재판정한 `tag-rejudgement.json`은 **0건**이다. 원본 JSON은 수정하지 않았고 재실행하지 않았다.
