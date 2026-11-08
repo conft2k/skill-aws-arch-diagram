@@ -6,12 +6,12 @@ rows: [az1, main, az2]
 
 groups:
   - {id: cloud,   type: cloud, pad_bottom: 6}
-  - {id: region,  type: region, label: Region, in: cloud, pad_bottom: 6}
+  - {id: region,  type: region, label: Region, in: cloud, pad_bottom: 6, pad_left: 60}   # Users → IGW arrowhead clear of the Cloud and Region borders
   - {id: appvpc,  type: vpc, label: Application VPC, cidr: 10.0.0.0/16, in: region, pad_bottom: 6}
   - {id: appaz,   type: az, in: appvpc, per: [az1, az2]}
   - {id: gwlbesn, type: public, label: GWLBe subnet, in: appaz}
   - {id: appsn,   type: private, label: App subnet, in: appaz}
-  - {id: secvpc,  type: vpc, label: Security VPC, cidr: 10.1.0.0/16, in: region, pad_bottom: 6}
+  - {id: secvpc,  type: vpc, label: Security VPC, cidr: 10.1.0.0/16, in: region, pad_bottom: 6, pad_left: 36}   # GWLBe ⇄ GWLB arrowheads inside the VPC, beside GWLB
   - {id: secaz,   type: az, in: secvpc, per: [az1, az2]}
   - {id: applsn,  type: private, label: Appliance subnet, in: secaz}
   - {id: asg,     type: asg, label: ASG, over: [fw.*], header: right}

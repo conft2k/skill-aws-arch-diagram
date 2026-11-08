@@ -1,0 +1,21 @@
+# Source: docs/examples/specs/slides/gwlb-reference-architecture.layout.yaml at 91062e1, reduced
+# Arrowheads into a node sit on a container border: Users → IGW (IGW on the VPC border)
+# straddles the Cloud and Region left borders, GWLBe → GWLB (first node in its VPC) straddles
+# the Security VPC left border. check_layout says Layout OK; rules.py reports nothing.
+name: ex-gwlb-slide-arrowhead-on-border
+mode: slide
+cols: [users, igw, gwlbe, gwlb]
+rows: [main]
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}
+  - {id: appvpc, type: vpc, label: Application VPC, in: region}
+  - {id: secvpc, type: vpc, label: Security VPC, in: region}
+nodes:
+  - {id: users, icon: resource/Users, label: Users, at: [users, main]}
+  - {id: igw,   icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: appvpc, at: [igw, main]}
+  - {id: gwlbe, icon: resource/Amazon-VPC_Endpoints, label: GWLBe, in: appvpc, at: [gwlbe, main]}
+  - {id: gwlb,  icon: resource/Elastic-Load-Balancing_Gateway-Load-Balancer, label: GWLB, in: secvpc, at: [gwlb, main]}
+edges:
+  - {e: "users -> igw", label: "HTTPS :443"}
+  - {e: "gwlbe -> gwlb"}
