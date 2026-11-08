@@ -217,7 +217,7 @@ the rules pass; moving a label must keep it visibly attached to its own flow.
 | R-flow F5: label/badge belongs to another line | Try `label_at: above` / `right` and `step_at: start` / `end` / `stem` / `branch`; separate nearby routes or tracks. A point placement must still read beside its own line. |
 | R-label L1: label is on the wrong side | Use `label_at: above` for a horizontal piece or `right` for a vertical one; make room with `min_gap_before` or container padding. |
 | R-label L2: badges and legend disagree | Match `step` / `steps` / `step_each` to `note.steps`, with one note row per step number. |
-| R-twin TWR: twins' rows in another order | Reorder `rows:` as the `try:` says, so each box lists the same subnets top to bottom. |
+| R-twin TWR: twins' rows in another order | Reorder `rows:` as the `try:` says, so each box lists the same subnets top to bottom; when the boxes share rows, change the `at` row of the nodes it names instead. |
 | R-rt RT1–RT5: table association is unclear | Check `for:` / `via:`; move the table's `at` tracks or `dx` / `dy` beside its associated lines/subnets, within their bracket and clear of other flows. |
 | R-border B2: line crosses a header | Change `shape`, end sides or bends to avoid the badge/title/CIDR band; make room with `pad_top` or `min_gap_before`. |
 

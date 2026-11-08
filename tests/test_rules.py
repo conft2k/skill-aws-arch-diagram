@@ -654,6 +654,70 @@ class TwinAzs(unittest.TestCase):
         self.assertNotEqual(rules.layout_solve.twin_title("az", "Seoul"), rules.layout_solve.twin_title("az", "Seouk"))
 
 
+MIRRORED = ROOT / "tests" / "corpus" / "qa" / "timing-mirrored-az-rows.layout.yaml"
+
+
+def mirrored(same_order=False, labels=None, sg=False):
+    """The corpus case timing-mirrored-az-rows as a dict: same_order puts AZ 2's Public
+    subnet on b1 above its Appliance subnet on b2; labels: the two AZ titles; sg: a
+    Firewall SG overlay over each AZ's firewall (header: right)."""
+    import yaml
+    d = yaml.safe_load(MIRRORED.read_text())
+    groups = {g["id"]: g for g in d["groups"]}
+    if labels:
+        groups["azi1"]["label"], groups["azi2"]["label"] = labels
+    if same_order:
+        for n in d["nodes"]:
+            n["at"][1] = {"fw2": "b2", "nat2": "b1"}.get(n["id"], n["at"][1])
+    if sg:
+        d["groups"] += [{"id": f"sg{k}", "type": "sg", "label": "Firewall SG", "header": "right", "over": [f"fw{k}"]}
+                        for k in (1, 2)]
+    return d
+
+
+class TwinAzReview(unittest.TestCase):
+    """The three repros of the az-twin review: only the AZ identifier is ignored, a zone
+    letter before a description is one, and overlays inside the AZs move with their rows."""
+
+    def twr(self, d):
+        sp, b = build(d)
+        return sp, [v for v in rules.twin_rules(sp, b.geom) if v.code == "TWR"]
+
+    def classes(self, sp):
+        return sorted(sorted(m[0] for m in c) for c in rules.layout_solve.twin_classes(sp))
+
+    def test_other_numbers_in_the_title_count(self):
+        labels = ("Availability Zone 1 (IPv4)", "Availability Zone 2 (IPv6)")
+        sp, got = self.twr(mirrored(labels=labels))
+        self.assertEqual(got, [])
+        sp, _ = self.twr(mirrored(same_order=True, labels=labels))
+        self.assertNotIn(["azi1", "azi2"], self.classes(sp))
+
+    def test_zone_letter_before_a_description(self):
+        labels = ("Availability Zone A (Seoul)", "Availability Zone C (Seoul)")
+        sp, got = self.twr(mirrored(labels=labels))
+        self.assertEqual([(v.owners, v.tier) for v in got], [(("group:azi1", "group:azi2"), rules.TIER_HARD)])
+        self.assertIn("put azi2's rows in azi1's order: b2, b1", got[0].message)
+        sp, _ = self.twr(mirrored(same_order=True, labels=labels))
+        self.assertIn(["azi1", "azi2"], self.classes(sp))
+
+    def test_overlays_inside_move_with_the_rows(self):
+        sp, got = self.twr(mirrored(sg=True))
+        self.assertEqual([v.owners for v in got], [("group:azi1", "group:azi2")])
+        self.assertIn("put azi2's rows in azi1's order: b2, b1", got[0].message)
+        d = mirrored(sg=True)
+        d["rows"] = ["a1", "a2", "b2", "b1"]        # the hinted order makes them twins
+        sp, got = self.twr(d)
+        self.assertEqual(got, [])
+        self.assertIn(["azi1", "azi2"], self.classes(sp))
+
+    def test_overlay_from_outside_is_left_out(self):
+        d = mirrored()
+        d["groups"].append({"id": "asg", "type": "asg", "label": "ASG", "over": ["fw1", "fw2"]})
+        _, got = self.twr(d)
+        self.assertEqual(got, [])
+
+
 class Score(unittest.TestCase):
     def test_hard_violations_first(self):
         geom = M.Geometry(mode="document", S=48, canvas_w=100, canvas_h=100, cols={}, rows={})

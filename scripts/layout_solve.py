@@ -971,7 +971,7 @@ class _Model:
     def _shape(self, gid, rank, root=False, free_rows=False):
         """(signature, its subtree's box ids, its nodes' ids, both in canonical order): the
         group type tree with each box's type, title (twin_title: not a named root's own, two
-        App VPCs are twins; an AZ root's own but for its number, AZ 1 and AZ 2), CIDR line
+        App VPCs are twins; an AZ root's own but for its identifier, AZ 1 and AZ 2), CIDR line
         or not and track ranks, and per box its nodes' icons, caption line counts and track
         ranks. Children come in signature order (spec order breaks ties), so twins' boxes and
         nodes correspond by index. free_rows: each row range only by how many of the used
@@ -1001,7 +1001,7 @@ class _Model:
         norder = [nid for _, _, nid in nodes] + [n for (_, _, ns), _ in kids for n in ns]
         return sig, order, norder
 
-    def _overlay_shape(self, norder, used):
+    def _overlay_shape(self, norder, used, ymap=None, free_rows=False):
         """The overlays reaching into gid's subtree (norder: its nodes in signature order;
         used: the (rows, cols) indexes it covers) as part of its signature, and per overlay
         the edges inside it on each axis. Per overlay with a member in the subtree: its type,
@@ -1013,22 +1013,34 @@ class _Model:
         (_overlay_sides) (which decide where the header goes and which subnets it insets).
         Members outside the subtree count only through those flags, so a box an overlay
         reaches into from outside (an ASG across a VPC's AZs) twins with the box holding the
-        same part of an equal overlay. Sorted; the edges come in the same order."""
+        same part of an equal overlay. Sorted; the edges come in the same order.
+        row_orders: ymap (row index → row index) reads every member row and row end as
+        moved there (None when one is not in it); free_rows leaves out the row ends and the
+        first / last member row flags."""
         idx = {nid: k for k, nid in enumerate(norder)}
         out = []
         for o in self.overlays:
             if not any(m in idx for m in o.over):
                 continue
             rows = [self._member_row(m) for m in o.over]
+            if ymap is not None:
+                if any(r not in ymap for r in rows):
+                    return None
+                rows = [ymap[r] for r in rows]
             first, last = min(rows), max(rows)
             sides = self._overlay_sides(o)
-            mem = tuple(sorted((idx[m], r == first, r == last, sides.get(self.spec.nodes[m].parent, (True, True)))
+            mem = tuple(sorted((idx[m], None if free_rows else r == first, None if free_rows else r == last,
+                                sides.get(self.spec.nodes[m].parent, (True, True)))
                                for m, r in zip(o.over, rows) if m in idx))
             rr, edges = [], []
             for axis, ts, lo, hi in (("y", used[0], "T", "B"), ("x", used[1], "L", "R")):
                 r = self.group_rng(o.id, axis)
+                if axis == "y" and r is not None and ymap is not None:
+                    if r[0] not in ymap or r[1] not in ymap:
+                        return None
+                    r = tuple(sorted((ymap[r[0]], ymap[r[1]])))
                 ends, es = [], []
-                for t, e in (() if r is None or not ts else ((r[0], lo), (r[1], hi))):
+                for t, e in (() if r is None or not ts or (axis == "y" and free_rows) else ((r[0], lo), (r[1], hi))):
                     if not ts[0] <= t <= ts[-1]:
                         ends.append(None)
                         continue
@@ -1073,8 +1085,9 @@ class _Model:
         length (_shape free_rows), the largest twin class (the first in spec order on a tie)
         is the order to match; another box counts when its rows, reordered by the
         correspondence of the two boxes' boxes and nodes, give exactly that class's
-        signature. Boxes an overlay reaches into are left out (their overlay's rows would
-        move as well)."""
+        signature and overlays. Overlays wholly inside a box move with its rows; a box an
+        overlay reaches into from outside is left out (that overlay's other rows would move
+        as well)."""
         loose: Dict[tuple, Dict[tuple, list]] = defaultdict(dict)
         for g in self.tree:
             rows, cols = self._tracks_used(g.id)
@@ -1082,11 +1095,15 @@ class _Model:
                 continue
             rank = ({r: k for k, r in enumerate(rows)}, {c: k for k, c in enumerate(cols)})
             sig, _, norder = self._shape(g.id, rank, root=True)
-            if self._overlay_shape(norder, (rows, cols))[0]:
+            inside = set(norder)
+            if any(inside & set(o.over) and not set(o.over) <= inside for o in self.overlays):
                 continue
+            over = self._overlay_shape(norder, (rows, cols))[0]
             lsig, lorder, lnorder = self._shape(g.id, rank, root=True, free_rows=True)
+            lover = self._overlay_shape(lnorder, (rows, cols), free_rows=True)[0]
             inst = g.instance if g.template else None
-            loose[(repr(lsig), inst)].setdefault(repr(sig), []).append((g.id, rows, rank, lorder, lnorder))
+            loose[(repr((lsig, lover)), inst)].setdefault(repr((sig, over)), []).append(
+                (g.id, rows, rank, lorder, lnorder, cols, over))
         out = []
         for subs in loose.values():
             if len(subs) < 2:
@@ -1108,7 +1125,7 @@ class _Model:
         """The rank permutation that maps box a's rows onto box b's (row_orders), read off
         their corresponding boxes and nodes and checked on the full signature; None when
         there is none or it is the identity."""
-        (ga, rows_a, rank_a, lorder_a, lnorder_a), (gb, rows_b, rank_b, lorder_b, lnorder_b) = a, b
+        (ga, rows_a, rank_a, lorder_a, lnorder_a, cols_a, _), (gb, rows_b, rank_b, lorder_b, lnorder_b, _, over_b) = a, b
         if len(rows_a) != len(rows_b) or len(lorder_a) != len(lorder_b) or len(lnorder_a) != len(lnorder_b):
             return None
         pi: Dict[int, int] = {}
@@ -1125,8 +1142,12 @@ class _Model:
         if sorted(pi) != list(range(n)) or sorted(pi.values()) != list(range(n)) or all(k == v for k, v in pi.items()):
             return None
         moved = ({r: pi[k] for r, k in rank_a[0].items()}, rank_a[1])
-        sa, sb = self._shape(ga, moved, root=True)[0], self._shape(gb, rank_b, root=True)[0]
-        return pi if sa[:3] + sa[4:] == sb[:3] + sb[4:] else None
+        (sa, _, norder_a), sb = self._shape(ga, moved, root=True), self._shape(gb, rank_b, root=True)[0]
+        if sa[:3] + sa[4:] != sb[:3] + sb[4:]:
+            return None
+        ymap = {rows_a[k]: rows_a[pi[k]] for k in range(n)}
+        over_a = self._overlay_shape(norder_a, (rows_a, cols_a), ymap=ymap)
+        return pi if over_a is not None and over_a[0] == over_b else None
 
     def _twin_measures(self, axis, member) -> List[Tuple[str, str, str]]:
         """A twin's measures on this axis in corresponding order, each (a, b, what): b − a
@@ -1888,19 +1909,26 @@ AVOID_ROUNDS = 6        # solves spent keeping moved xy nodes off the siblings t
 TWIN_ROUNDS = 6         # solves per axis spent evening out twins (their measures at the class's largest)
 TWIN_WHY = "twins alike"
 TWIN_NAMED = ("vpc", "account", "region", "onprem", "cloud")   # a twin root's own title may differ
-TWIN_NUMBERED = ("az",)                                          # ... or differ by its number only
-# an AZ's number in its title: 1, 2a (a digit run, with a zone letter), or a last lone letter (AZ a, Zone C)
-_TWIN_NUMBER = re.compile(r"\d+[A-Za-z]?\b|(?<=\s)[A-Za-z]$")
+TWIN_NUMBERED = ("az",)                                          # ... or differ by its identifier only
+# an AZ's identifier in its title, and only that: the number or lone letter right after the word
+# AZ / Zone (AZ 1, AZ1, AZ a, Availability Zone C (Seoul), apne2-az1), or a region name's zone
+# letter (ap-northeast-2a); other numbers and text (IPv4, a parenthesised note) stay
+_TWIN_NUMBER = re.compile(r"\b(?:az|zone)[ \t]*(\d+[a-z]?|[a-z])\b|\b[a-z]{2}(?:-[a-z]+)+-\d+([a-z])\b", re.I)
+
+
+def _twin_number(m: "re.Match") -> str:
+    k = 1 if m.group(1) is not None else 2
+    return m.group(0)[:m.start(k) - m.start(0)] + "#"
 
 
 def twin_title(gtype: str, label: Optional[str]) -> Optional[str]:
     """A twin root's title as the twin test compares it: none for a named root (VPC,
-    Account, Region, ...: two App VPCs twin), an AZ's without its number (AZ 1 and AZ 2,
+    Account, Region, ...: two App VPCs twin), an AZ's without its identifier (AZ 1 and AZ 2,
     AZ a and AZ b twin), any other box's as written."""
     if gtype in TWIN_NAMED:
         return None
     if gtype in TWIN_NUMBERED and label:
-        return _TWIN_NUMBER.sub("#", label)
+        return _TWIN_NUMBER.sub(_twin_number, label)
     return label
 
 

@@ -146,8 +146,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
 - **Twins**: containers of one structure anywhere in the drawing are drawn the same shape —
   two App VPCs, the TGW subnet of each, the AZ boxes of two VPCs, two subnets in different
   AZs. One structure = the same group type tree, the same titles (a VPC's, Account's or
-  Region's own title may differ; an AZ's own title may differ by its number only: AZ 1 /
-  AZ 2, AZ a / AZ b, ap-northeast-2a / 2c), CIDR line or not, the same node icons with the same
+  Region's own title may differ; an AZ's own title may differ by its identifier only, the
+  number or letter right after AZ / Zone or a region name's zone letter: AZ 1 / AZ 2,
+  Availability Zone A / C (Seoul), ap-northeast-2a / 2c, but not (IPv4) / (IPv6)), CIDR line or not, the same node icons with the same
   number of caption lines, the same overlays (`over:`, an Auto Scaling group) with the
   same title and `header` over the same nodes, on the same pattern of rows and columns
   (counted within each twin, so twins on other tracks qualify). An overlay that reaches
@@ -168,7 +169,10 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   Rows are drawn in the order `rows:` lists them; the engine never reorders them. Boxes of
   one structure whose rows come in another order (AZ 1 Public above Appliance subnet, AZ 2
   Appliance above Public) read as two structures: the checker reports `rule: R-twin TWR`
-  with the row order to write in its `try:` (AZ 2's rows `b2, b1`, like AZ 1's `a1, a2`).
+  with the row order to write in its `try:` (AZ 2's rows `b2, b1`, like AZ 1's `a1, a2`);
+  an overlay wholly inside the boxes (a security group over one AZ's firewall) moves with
+  its rows. When the boxes share rows (AZs side by side), it says which rows' content to
+  move instead: change those nodes' `at` rows, not the order of `rows:`.
 - `only: [1]` (or `only: 2`) on a group or node inside a template draws it in those
   instances only: the Aurora writer in AZ 1, a reader in AZ 2, a subnet one AZ lacks. A
   group's `only` leaves out everything inside it. `a.* -> b.*` then pairs the shared
