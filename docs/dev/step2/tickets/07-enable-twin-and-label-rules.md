@@ -4,7 +4,7 @@
 
 **Blocked by:** 06
 
-**Status:** implemented; awaiting independent review
+**Status:** done (2026-11-08). Codex review: no regressions; its one blocking finding (the mirrored-AZ case is not tagged `bad R-twin`) moves to the AZ twin follow-up the user approved (docs/dev/improve/plan.md, stage 2b).
 
 Evidence: [ticket 07 validation](../results/07-enable-twin-and-label-rules.md).
 
