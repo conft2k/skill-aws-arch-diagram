@@ -1,7 +1,9 @@
 # TGW reference: on-premises → Internet → Site-to-Site VPN into a hub-and-spoke Transit Gateway A (4 VPCs), inter-Region TGW peering to Transit Gateway B (2 VPCs), each TGW's route table below it
 name: tgw-reference-architecture
 mode: document
-cols: [cgw, inet, vpn, a1, a2, a3, peer, b1, b2]
+cols: [inet, vpn, a1, a2, a3, peer, b1, b2]
+# On-premises sits under the Internet (no column of its own) to keep the canvas narrow: with all nine
+# columns in one row, text_scale enlarged the text 2.38x on a 2751 px canvas while the icons stayed 48 px
 rows: [top, main, bot]
 
 groups:
@@ -11,7 +13,7 @@ groups:
   - {id: rb,     type: region, label: Region ap-northeast-1, in: cloud}
 
 nodes:
-  - {id: cgw,  icon: resource/Amazon-VPC_Customer-Gateway, label: Customer gateway, sub: 192.168.0.0/16, in: onprem, at: [cgw, main]}
+  - {id: cgw,  icon: resource/Amazon-VPC_Customer-Gateway, label: Customer gateway, sub: 192.168.0.0/16, in: onprem, at: [inet, bot]}
   - {id: inet, icon: resource/Internet, label: Internet, at: [inet, main]}
   - {id: vpn,  icon: service/AWS-Site-to-Site-VPN, label: Site-to-Site VPN, at: [vpn, main]}
   - {id: tgwa, icon: service/AWS-Transit-Gateway, label: Transit Gateway A, in: ra, at: [a2, main]}
@@ -24,7 +26,7 @@ nodes:
   - {id: tgwb, icon: service/AWS-Transit-Gateway, label: Transit Gateway B, in: rb, at: [b1..b2, main]}
   - {id: dr,   icon: service/Amazon-Virtual-Private-Cloud, label: DR VPC, sub: 10.16.0.0/16, in: rb, at: [b1, top]}
   - {id: ana,  icon: service/Amazon-Virtual-Private-Cloud, label: Analytics VPC, sub: 10.17.0.0/16, in: rb, at: [b2, top]}
-  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16 → peering"], in: rb, at: [b1..b2, bot], for: [peer, dr, ana]}   # TGW B's only table: associated with the peering and both VPC attachments
+  - {id: rtb,  icon: resource/Amazon-Route-53_Route-Table, label: TGW B RT, sub: ["VPC 경로 전파", "10.0.0.0/13 · 192.168.0.0/16", "→ peering"], in: rb, at: [b1..b2, bot], for: [peer, dr, ana]}   # TGW B's only table: associated with the peering and both VPC attachments; the static route on two lines so its width does not set Region B's
 
 edges:                       # topology diagram: '--' = solid 1.5px, no arrowheads
   - {e: "cgw -- inet"}
@@ -34,9 +36,9 @@ edges:                       # topology diagram: '--' = solid 1.5px, no arrowhea
   - {e: "tgwa -- prod"}
   - {e: "tgwa -- dev"}
   - {e: "tgwa -- test"}
-  - {e: "tgwa -- peer", step: 3, step_at: gap}              # badge in the 776–816 run between Region A's border and the peering icon, not mid of the longer 644–776 piece
+  - {e: "tgwa -- peer", step: 3, step_at: gap}              # badge in the run between Region A's border and the peering icon, not mid of the longer piece inside Region A
   - {e: "peer -- tgwb"}
-  - {e: "tgwb -- dr", step: 4}
+  - {e: "tgwb -- dr", step: 4, step_at: start}   # badge beside the piece leaving TGW B, away from the main line
   - {e: "tgwb -- ana"}
 
 note:
