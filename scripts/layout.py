@@ -35,7 +35,7 @@ a strictly better Verdict replaces the incumbent; ties retain the earlier Draft.
 stages preserve the winner's Verdict. Explicit Spec placements have no neighbouring move.
 Before ranking, a new tier-0 identity (rule, code, owner set) requires a strictly lower
 tier-0 count. Selection retains its fixed text floor; later stages retain below-target
-text within 1% of the held drawing.
+text within 1% of the held drawing unless the total tier-0 count strictly decreases.
 The complete default also protects against higher check counts or a worse full Verdict
 on rules outside the enabled group. A checker failure restores it and is reported once.
 
@@ -87,7 +87,7 @@ MAX_SKIP = 3            # candidates an edge may skip before its gap is widened 
 SELECTION_RULES = frozenset(("R-border", "R-flow", "R-rt"))
 MAX_CANDIDATES = {"document": 12, "slide": 16}
 MIN_TEXT_RETENTION = 0.9  # below-target text keeps at least 90% of the completed default's size
-REPAIR_TEXT_RETENTION = 0.99  # later stages tolerate at most 1% shrink below target
+REPAIR_TEXT_RETENTION = 0.99  # greater later shrink below target requires fewer tier-0 violations
 # The router's warning for an edge drawn in another shape than plan() reserved space for.
 SHAPE_MISS = re.compile(r"drew (\S+) instead of")
 # A shape the spec asked for and the router refused (the warning says what to change).
@@ -131,7 +131,8 @@ class RuleGuard:
     """Share admission and verdicts; a checker bug never costs a draft.
 
     Candidate selection uses the completed default's fixed text floor. Every repair
-    of a held drawing, including candidate construction, also retains text within 1%.
+    of a held drawing, including candidate construction, retains text within 1%
+    unless its total tier-0 violation count strictly decreases.
     """
 
     def __init__(self, protect: bool = True, selection: bool = False, build_cache=None,
@@ -280,7 +281,14 @@ class RuleGuard:
         if later:
             actual, _, target, _ = self.text(before.spec, old)[0]
             if actual < target - 1e-9:
-                return self.text(after.spec, new)[0][0] >= actual * REPAIR_TEXT_RETENTION - 1e-9
+                if self.text(after.spec, new)[0][0] < actual * REPAIR_TEXT_RETENTION - 1e-9:
+                    before_viol = self.check(before.spec, before.geom, old)
+                    after_viol = self.check(after.spec, after.geom, new)
+                    # Cost/check improvements cannot pay for smaller undersized text.
+                    # An unavailable checker cannot establish the required reduction.
+                    return (before_viol is not None and after_viol is not None
+                            and sum(v.tier == 0 for v in after_viol)
+                            < sum(v.tier == 0 for v in before_viol))
         return True
 
     def accepts(self, before: Build, old: bytes, after: Build, new: bytes, later=True):
@@ -655,6 +663,12 @@ def fix_pass(data: bytes, scratch: Path, spec: Optional[Spec] = None,
 
 def fixed_build(b: Build, scratch: Path, rule_guard: Optional[RuleGuard] = None) -> Tuple[bytes, int]:
     """Reuse a build's identical fixed-answer pass during header repair and output."""
+    cached = getattr(b, "_fixed_draft", None)
+    if (cached is not None and cached[0] == b.svg and cached[1] is rule_guard
+            and len(cached) == 3):
+        # A completed incumbent explicitly handed over by render_checked takes
+        # precedence over a memoized repair of the underlying raw build.
+        return cached[2]
     namespace = None if rule_guard is None else rule_guard._checked
     policy = (None if rule_guard is None else
               (rule_guard.protect, rule_guard.selection, rule_guard.enabled_rules,
@@ -665,7 +679,6 @@ def fixed_build(b: Build, scratch: Path, rule_guard: Optional[RuleGuard] = None)
     if previous is not None and previous[0] == b.svg:
         b._fixed_draft = (b.svg, rule_guard, previous[2], key)
         return previous[2]
-    cached = getattr(b, "_fixed_draft", None)
     if (cached is not None and cached[1] is rule_guard and len(cached) > 3
             and cached[3] != key):
         cached = None
@@ -1417,7 +1430,7 @@ def render_checked(spec: Spec, source: str, scratch: Path, no_check: bool = Fals
                     old = fixed_build(best[2], scratch, rule_guard)[0]
                     admitted = rule_guard.admits(best[2], old, b, data)
                     if (not admitted and rule_guard.candidate_build and verdict is not None
-                            and rule_guard.preserves_text(best[2], old, b, data) and any(
+                            and rule_guard.accepts_text(b, data) and any(
                             p.iss.kind == "LINE IN HEADER" for p in rule_guard.problems(data))):
                         # A moved B2 is not an improvement. Finish its header repair
                         # without holding the intermediate drawing, then gate again.
@@ -1755,13 +1768,26 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         # The original complete drawing remains the failure-safe incumbent. Reuse
         # its solves to compare feedback, fixed answers and font tries by Verdict
         # from the first render, without restoring an unfinished drawing.
+        incumbent = None
+        hard = [v for v in first if v.tier == 0]
+        if hard and all(v.rule == "R-flow" and v.code == "F5" for v in hard):
+            incumbent = best
+        elif not hard:
+            initial = rule_guard.build(original_spec, [], {}, None, source)
+            initial_violations = rule_guard.check(initial.spec, initial.geom, initial.svg)
+            if initial_violations is None:
+                return default, ["selection: default kept (rule checker unavailable)"]
+            initial_score = rule_guard.verdict(initial, initial.svg)
+            if (not any(v.tier == 0 for v in initial_violations)
+                    and initial_score is not None and initial_score.checks > score.checks):
+                # A check-only replay already has a completed incumbent. An
+                # unfinished first round must not replace that retention reference.
+                # A clean first round still needs its own font retry budget.
+                incumbent = best
         guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
                             enabled_rules=rule_guard.enabled_rules,
                             min_text_size=rule_guard.min_text_size, candidate_build=True,
-                            incumbent=(best if first and all(
-                                v.rule == "R-flow" and v.code == "F5"
-                                for v in first if v.tier == 0) and any(v.tier == 0 for v in first)
-                                else None))
+                            incumbent=incumbent)
         guarded._checked = rule_guard._checked
         guarded._problems = rule_guard._problems
         guarded._text = rule_guard._text

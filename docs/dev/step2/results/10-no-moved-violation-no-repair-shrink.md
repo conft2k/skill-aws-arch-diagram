@@ -1,65 +1,65 @@
-# Ticket 10: 수정 1회 — 후속 글자 보존과 실행 시간
+# Ticket 10: 사용자 승인 예외 — tier-0 감소가 있는 축소만 허용
 
-2026-11-08, 코드 작성 세션. **미완료**: 리뷰 차단 2건의 코드와 시간 조건은 해결했지만, 단일 전체 corpus의 R-flow가 **51 > 50**이고 clean 대비 12건이 worse다. 공유 Git 메타데이터도 read-only여서 실제 `t10-gate` 브랜치 반영은 차단되어 있다. 독립 리뷰는 별도 세션에서 한다.
+2026-11-08, 코드 작성 세션. 사용자 승인 규칙과 최종 단일 전체 실행으로 **통과**했다. clean 7eb2d55 대비 **4 better / 756 same / 0 worse**, R-flow **46 ≤ 48**, 36c7ea3 대비 새 tier-0 identity **0**, 모든 run **≤3×·≤30s**다. 독립 리뷰는 별도 세션에서 한다. 공유 Git이 read-only여서 사용자 승인대로 worktree 안의 별도 index/준비 커밋과 bundle로 전달한다.
 
-## 결정과 구현
+## 최종 결정과 코드
 
-Identity는 `(rule, code, frozenset(owners))`다. 새 tier-0 identity가 있으면 전체 tier-0 개수가 엄격히 줄어야 한다. 좌표·owner 순서는 identity가 아니며, 활성 탐색 그룹 밖의 규칙도 검사한다. Verdict 순서는 그대로다.
+보유 그림의 effective text size가 목표 미만일 때, 그 글자의 99% 미만으로 줄어드는 후속 그림은 **전체 tier-0 위반 개수가 엄격히 줄어야만** 교체할 수 있다. check 문제나 tier-0 cost 감소만으로는 축소를 허용하지 않는다. Feedback, header, fixed-answer, text-scale 및 후보 내부 단계가 같은 `preserves_text`/`admits`를 쓴다. 검사기가 실패하면 개수 감소를 증명할 수 없어 이런 축소를 거부한다.
 
-`RuleGuard.preserves_text`와 `admits`는 후보 안의 feedback, header, fixed-answer, text-scale에도 보유 그림의 1% 보존 규칙을 적용한다. `candidate_build=True`에 대한 예외를 제거했다. 완료 후보를 기본 그림과 비교하는 선택에는 기존 `min(완료 기본 그림 × 90%, 목표)` 한도를 유지한다. 목표는 slide 10pt, document 760px 열에서 11px다. 역사적 완료 기본 그림은 fallback으로 먼저 구성하며 이 미완료 구성의 단계는 보유 완료 그림 교체가 아니다.
+새 identity gate는 그대로다: `(rule, code, frozenset(owners))`가 새로 생기면 전체 tier-0 개수가 엄격히 줄어야 한다. 후보 선택의 고정 한도도 그대로다: 후보 글자가 목표와 완료 기본 그림 ×90% 모두보다 작으면 거부한다. 목표는 slide 10pt, document 760px 열에서 11px다. Verdict의 7개 순서, rules.py의 규칙 및 threshold는 바꾸지 않았다.
 
-팀장 결정 3에 맞게 완료 조건을 고쳤다. 36c7ea3 대비 후보 선택에서 90% 한도 안으로 생긴 축소는 허용하되, 후보 내부를 포함한 후속 단계의 1% 초과 축소는 0이어야 한다. 남은 2건의 실제 도입 단계와 최종 SVG hash를 아래에 기록한다.
+기존 build/fix 캐시, 장애물/행·열 캐시, 수평·수직 교차 계산을 유지했다. 두 경계도 고쳤다.
 
-글자 gate를 통과하지 못한 중간 B2의 header 재시도를 생략한다. 체크는 통과하지만 F5가 남을 때는 기존 shape-miss의 공간 요구로 한 번 그린 독립 spacing 후보를 비교한다. 같은 12/16 예산의 한 슬롯을 쓰며, 후보의 후속 단계에는 1% 규칙을 적용한다. 이 선택으로 multiregion document의 기존 흐름 승자를 유지한다.
+- **보유 fixed SVG의 handoff:** `render_checked`가 명시적으로 넘긴 완료 그림이 같은 raw build의 이전 memoized fix 결과보다 우선한다. 캐시가 이미 보유한 SVG/수정 개수를 덮어쓰지 못하게 했다. namespace·정책·고정 글자 한도별 캐시는 유지한다.
+- **체크 수정 replay의 시작 그림:** 완료 그림과 처음 raw 그림 모두 tier-0가 없고 raw의 check가 더 많을 때는 완료 그림을 incumbent로 사용한다. 미완성 raw를 글자 보존의 기준으로 삼지 않는다. 초기 tier-0가 있거나 raw check가 더 많지 않으면 기존 후보의 font retry를 유지한다. 이 경계로 pin-bottom의 두 글자 회귀를 없애면서 rtsub/TGW의 기존 font 후보도 유지했다.
 
-## 테스트 먼저 red → green
+## Red → green과 검증
 
-- 기존 최초 작성의 DNS slide/slide-no-title, multiregion slide CLI red 근거는 이전 커밋과 `~/.cache/skill-design/t10-gate/red.log`에 보존된다.
-- 이번 `red.log`: 후보 내부 document/slide에서 1.1% 축소가 허용되어 **2 failed / 10 passed**. `red-privatelink.log`: 실제 CLI에서 더 이른 6.398→6.279pt feedback 위반을 포착했다. 리뷰의 6.296→5.920pt와 같은 예외 경로다.
-- `red-build-cache.log`, `red-fixed-cache.log`, `red-note-cache.log`는 같은 실효 결정/보존 정책에서 중복 계산을 재현한다. `red-cache.log`는 같은 선분의 장애물 검사를 반복하는 것을 재현한다.
-- 최종 필수 전체 pytest **840 passed, 1 xfailed, 2572 subtests passed / 195.21s**. 예제 **21 all PASS, 0 FAIL, 0 SKIP**. Xfail은 기존 gw-ret 불투명 배경 가림이다. 두 필수 검증은 각각 한 번 실행했고 그 뒤 구현 파일을 바꾸지 않았다.
+`red.log`: 새 규칙의 tier-0 감소+1.1% 축소가 기존 코드에서 거부되어 **4 failed / 32 passed**였다. 동일 tier-0 개수에서 cost만 줄거나 check만 줄어드는 축소의 거부, 1% 경계, 목표 이상 예외, 후보 선택 90% 한도를 두 medium 및 후보 내부/외부에서 함께 검증한다.
 
-## 프로파일과 성능 변경
+`red-handoff.log`: 명시적인 보유 SVG를 캐시가 덮어쓰는 실패 1건. `red-pin.log`: pin-bottom 두 mode의 글자 축소 실패 2건. `red-font-retry.log`: 너무 넓게 적용한 incumbent 시작이 TGW document font retry를 막는 실패 1건. 모두 green으로 고쳤다.
 
-먼저 xnt, engine2-egress, multiregion slide를 cProfile로 측정했다. 아래 누적 시간에는 프로파일 자체의 비용이 들어 있으며 Q1 판정에는 아래의 전체 corpus 시간을 사용한다.
+최종 필수 검증은 각각 **한 번** 실행했다. 전체 pytest **872 passed, 1 xfailed, 2572 subtests passed / 209.10s**, 예제 **21 all PASS / 0 FAIL / 0 SKIP**. Xfail은 기존 gw-ret 불투명 배경 가림이다. `pytest.log`, `examples.log` 및 시작/종료 파일을 보존한다. 이후 구현 파일을 변경하지 않았다.
 
-| 사례 slide | profile 전체(s) | build 호출 | 다른 SVG | 주요 비용 |
-|---|---:|---:|---:|---|
-| ports/xnt | 30.269 | 22 | 13 | route.draw 18.836s, fixed-answer 5.696s |
-| bench/engine2-egress | 13.985 | 15 | 7 | build 9.628s, route.draw 8.231s |
-| qa/t1-multiregion-dr | 73.442 | 28 | 24 | route.draw 54.499s, label 배치 37.499s |
+## Canvas area 회귀와 캐시
 
-프로파일 자료: `.t10-fix/*.prof`, `*.profile.txt`, `*.builds.json`. 같은 실효 skip·note 결정을 정규화하고 자동으로 선택된 axis/note 결정을 캐시에 등록한다. note를 명시적으로 고정한 캐시 사본에는 명시 결정을 유지한다. 탐색의 일반 build도 공유 캐시를 사용한다. fixed-answer는 checker namespace, 보호 정책, 규칙 그룹, 고정 글자 한도가 같은 경우에만 결과를 공유한다.
+gw-ret/rtsub의 area 악화는 최종 글자 값만 보면 규칙과 무관해 보였지만, 중간 그림의 글자 축소를 막아 header/feedback 승자를 잃은 결과였다. 동일 최적화에서 tier-0 감소 예외를 적용하면 원래 area와 SVG를 회복한다. 최적화를 끈 직접 CLI에서도 clean SVG와 동일함을 확인했다(`no-optim.log`).
 
-선분의 정적인 장애물 검사와 같은 행/열의 장애물 목록을 draw 내부에서 캐시한다. 동적인 포트·배지·이미 그린 선의 배치 검사는 캐시하지 않는다. 수평/수직 교차 검사는 기존 경계 접촉·역방향·길이 0 semantics를 유지하는 직접 계산으로 바꿨다. **390,625개 입력에서 기존 Liang–Barsky와 결과가 동일**했다(`segment-equivalence.log`).
+실제 trace에서 gw-ret는 header repair의 **tier-0 2→0** 및 feedback **1→0**, rtsub는 feedback **1→0**에 해당하는 축소를 허용한다. 코드의 캐시 키를 느슨하게 만들어 area를 맞추지 않았다. 실제 SVG viewBox area를 검사하는 회귀 테스트를 두 mode씩 추가했다.
 
-프로파일 사례의 xnt 두 모드, engine2-egress slide, multiregion slide는 clean SVG와 바이트 동일하다. engine2-egress slide-no-title의 변경은 gate 수정 결과이며, 최적화 전후 SVG가 동일하다. 추가 회귀 대표 4건(merge-v3az, r2-pin-bottom, tgw document, three-b)은 최적화 기능을 끈 직접 CLI에서도 전체 실행 SVG와 같았다(`no-optim.log`). 캐시 최적화로 설명할 수 있는 회귀로 처리하지 않는다.
+| Run | 303b12a area | clean 및 최종 area | 최종 글자 |
+|---|---:|---:|---:|
+| gw-ret S/N | 886030 | 874734 | 7.648725 / 8.566572pt |
+| rtsub S/N | 725532 | 710700 | 9.718447pt |
 
-## 단일 전체 실행과 두 기준
+## 단일 전체 corpus
 
-전체 corpus는 **-j 6 한 번**, pytest·예제·프로파일·PNG 렌더와 겹치지 않게 실행했다. 부분 결과를 합치지 않았다. 원본은 `.t10-fix/corpus.json`이며 수정하지 않았다. Python 3.15 forkserver의 sandbox 소켓 제한 때문에 `run_corpus_fork.py`가 fork를 지정한 뒤 원본 `tests/run_corpus.py`를 실행했다.
+Python 3.15, offline uv 의존성은 사용자 지정대로 사용했다. 중첩 uv에도 `UV_OFFLINE=1`을 적용했다. cache 경로가 read-only여서 TMPDIR은 `.t10-exception/tmp`, uv cache는 기존 worktree의 `.t10-fix/uv-cache`를 사용했다. `/tmp`는 사용하지 않았으며 TMPDIR은 마무리 시 삭제한다.
 
-필수 명령은 사용자 지정 uv 의존성과 offline 옵션을 사용했다. 중첩 uv에도 `UV_OFFLINE=1`을 적용했다. cache와 공유 Git 경로가 read-only여서 UV cache와 TMPDIR을 worktree의 `.t10-fix/uv-cache`, `.t10-fix/tmp`로 대체했다. `/tmp`는 사용하지 않았다. TMPDIR은 마무리 시 제거한다.
+`run_corpus_fork.py`는 sandbox의 forkserver 소켓 제한 때문에 fork를 지정하고 원본 `tests/run_corpus.py`를 그대로 실행한다. `--rule-checker scripts/rules.py:corpus --baseline clean/corpus.json --baseline-drafts clean/drafts --keep .t10-exception/drafts --out .t10-exception/corpus.json -q -j 6`으로 **전체 한 번** 실행했다. pytest·예제·프로파일·PNG 렌더와 겹치지 않았고 부분 결과를 합치지 않았다.
 
-실행: `2026-11-08T01:12:09Z` → `2026-11-08T01:14:07Z`. 267 entries, 760 runs, drawn 744 / rejected 16, failures 0, tag mismatch 0. 원본 SHA-256 `820c91546c81a758460271732121c2baeb539262640ef338174e1c2068f7f7dd`.
+원본 실행 `2026-11-08T02:26:50Z` → `2026-11-08T02:28:42Z`: 267 entries, 760 runs, drawn 744 / rejected 16, failures 0. 원본 SHA-256 `0ddc6324474abaabc634da2757318d85db2d684066af11b1331e510fb042c742`.
 
-`audit.py`는 렌더 없이 두 기준 및 팀장의 clean 전체 결과와 비교한다. 글자는 양쪽 SVG에서 full precision으로 재계산하고 규칙 비용은 baseline의 기록 정밀도를 따른다. 결과는 `audit.json`, `compare-3946906.json`, `compare-36c7ea3.json`, `compare-clean.json`이다.
+원본에는 multiregion 두 slide의 과거 bad R-flow tag 불일치 2건이 남는다. 이제 두 그림 모두 R-flow 0이므로 MANIFEST를 good R-flow로 고쳤다. 같은 저장 결과를 렌더 없이 재판정한 `tag-rejudgement.json`은 **0건**이다. 원본 JSON은 수정하지 않았고 재실행하지 않았다.
 
-| 항목 | 36c7ea3 | 3946906 | clean | 이번 단일 전체 |
+`audit.py`는 양쪽 SVG에서 full precision 글자 크기를 재계산하여 clean·3946906·36c7ea3를 비교한다. `compare-*.json`, `audit.json`은 파생 감사 자료이며 원본 전체 실행은 하나다.
+
+| 항목 | 36c7ea3 | 3946906 | clean | 최종 |
 |---|---:|---:|---:|---:|
 | R-border | 17 | 17 | 17 | 17 |
-| R-flow | 82 | 46 | 48 | 51 |
+| R-flow | 82 | 46 | 48 | 46 |
 | R-rt | 94 | 90 | 90 | 90 |
 | R-twin | 6 | 6 | 6 | 6 |
 | R-label | 2 | 2 | 2 | 2 |
 | R-fit | 298 | 298 | 298 | 298 |
-| Check 전체 | 389 | 378 | 381 | 381 |
+| Check 전체 | 389 | 378 | 381 | 379 |
 | BADGE NEAR ICON | 6 | 6 | 6 | 6 |
 | LINE HUGS BORDER | 2 | 2 | 2 | 2 |
 | LINE IN HEADER | 15 | 15 | 15 | 15 |
+| LINE LEAVES BOX | 1 | 1 | 0 | 0 |
 | LINE NEAR TEXT | 5 | 5 | 5 | 5 |
 | LINE OFF CANVAS | 1 | 1 | 1 | 1 |
-| LINE ON LINE | 15 | 8 | 10 | 10 |
+| LINE ON LINE | 15 | 8 | 10 | 8 |
 | LINE OVER ICON | 32 | 32 | 32 | 32 |
 | LINE OVER TEXT | 67 | 65 | 67 | 67 |
 | SERVICE AS TEXT | 12 | 12 | 12 | 12 |
@@ -67,121 +67,101 @@ Identity는 `(rule, code, frozenset(owners))`다. 새 tier-0 identity가 있으�
 | TEXT AT BORDER | 1 | 1 | 1 | 1 |
 | TEXT NEAR ICON | 21 | 19 | 19 | 19 |
 | TEXT OVERLAP | 27 | 27 | 27 | 27 |
-| Wall(s) | 126.04 | 168.67 | 174.25 | 117.03 |
-| 합계(s) | 616.69 | 977.31 | 1010.74 | 667.76 |
-| 최악 run(s) | 10.67 | 19.484 | 28.219 | 15.053 |
+| Wall(s) | 126.04 | 168.67 | 174.25 | 110.19 |
+| 합계(s) | 616.69 | 977.31 | 1010.74 | 631.98 |
+| 최악 run(s) | 10.67 | 19.484 | 28.219 | 17.181 |
 
-| 기준 | better | same | worse | 바뀐 SVG | 최대 run 비율 | 3×/30s 초과 |
+| 비교 기준 | better | same | worse | 바뀐 SVG | 최대 run 비율 | 3× / 30s 초과 |
 |---|---:|---:|---:|---:|---:|---:|
-| 36c7ea3 | 80 | 680 | 0 | 80 | 2.779× | 0/0 |
-| 3946906 | 23 | 725 | 12 | 35 | 1.688× | 0/0 |
-| clean | 3 | 745 | 12 | 15 | 1.667× | 0/0 |
+| 36c7ea3 | 92 | 668 | 0 | 92 | 2.757× | 0/0 |
+| 3946906 | 28 | 730 | 2 | 30 | 1.481× | 0/0 |
+| clean | 4 | 756 | 0 | 4 | 1.611× | 0/0 |
 
-760개 전체(거부 16개 포함)의 최대 시간 비율도 **2.779×**다. 모든 run이 3× 및 30s 한도 안이다. multiregion slide **15.054s ≤ 25s** 목표도 통과한다.
+거부 16건을 포함한 **모든 760 run**의 36 대비 최대 비율도 **2.757×**다. 모두 ≤3× 및 ≤30s. multiregion slide **17.037s**, slide-no-title **17.181s**, 전체 최악 17.181s로 25s 목표도 통과했다.
 
-| 시간 문제 사례 | 36c7ea3(s) | clean(s) | 이번(s) | 36 비율 |
-|---|---:|---:|---:|---:|
-| ports/xnt.layout.yaml slide | 2.367 | 9.535 | 4.950 | 2.091× |
-| ports/xnt.layout.yaml slide-no-title | 2.349 | 9.714 | 4.944 | 2.105× |
-| bench/engine2-egress.layout.yaml slide | 1.387 | 4.619 | 2.239 | 1.614× |
-| bench/engine2-egress.layout.yaml slide-no-title | 1.347 | 4.558 | 3.743 | 2.779× |
-| qa/t1-multiregion-dr.layout.yaml slide | 9.730 | 28.219 | 15.053 | 1.547× |
+## 바뀐 run — clean 대비 4건
 
-## 3946906 대비 모든 변경 35건
-
-D=document, S=slide, N=slide-no-title. 아래에 SVG가 바뀐 run을 모두 기재한다. 시간만 바뀐 run은 앞의 성능 표로 판정한다.
-
-| Run | Verdict | 글자 전→후 | 이유 |
+| Run | 판정 | 글자 전→후 | 이유 |
 |---|---|---:|---|
-| bench/engine2-egress.layout.yaml · slide-no-title | better | 6.661→6.750pt | 1% gate 후 다른 font/note 후보 선택; 같은 규칙/check에서 6.661→6.750pt |
-| bench/engine3-pipeline.layout.yaml · slide | better | 4.733→5.008pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| bench/engine3-pipeline.layout.yaml · slide-no-title | better | 5.301→5.609pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/eng-egress-tgw.layout.yaml · slide | better | 5.844→6.056pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/eng-egress-tgw.layout.yaml · slide-no-title | better | 5.904→6.269pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| rt/ce-three.layout.yaml · document | better | 5.078→5.281px | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| rt/right.layout.yaml · document | better | 7.164→7.893px | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/merge-v3az.layout.yaml · slide | worse | 8.949→8.757pt | 후보 내부 9.604→8.949pt 축소 거부로 기존 승자 탈락; clean 대비 F3 재발, 미해결 |
-| trunk/merge-v3az-top.layout.yaml · slide | worse | 8.949→8.757pt | 후보 내부 9.604→8.949pt 축소 거부로 기존 승자 탈락; clean 대비 F3 재발, 미해결 |
-| flowcol/r2-pin-bottom.layout.yaml · slide | worse | 8.182→7.554pt | 강화한 후보 내부 gate로 replay 승자 탈락; 완료 기본 그림의 더 작은 글자로 복귀, 회귀 |
-| flowcol/r2-pin-bottom.layout.yaml · slide-no-title | worse | 9.646→8.460pt | 강화한 후보 내부 gate로 replay 승자 탈락; 완료 기본 그림의 더 작은 글자로 복귀, 회귀 |
-| twin/sub.layout.yaml · slide | better | 9.703→9.703pt | 규칙/check/글자 유지; canvas area 감소 |
-| twin/sub.layout.yaml · slide-no-title | better | 9.703→9.703pt | 규칙/check/글자 유지; canvas area 감소 |
-| ports/xnt.layout.yaml · slide | better | 5.649→5.743pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| ports/xnt.layout.yaml · slide-no-title | better | 5.904→6.432pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| rt/rtsub.layout.yaml · slide | worse | 9.718→9.718pt | 규칙/check/글자는 같지만 선택된 geometry의 canvas area가 커져 terminal Verdict 악화 |
-| rt/rtsub.layout.yaml · slide-no-title | worse | 9.718→9.718pt | 규칙/check/글자는 같지만 선택된 geometry의 canvas area가 커져 terminal Verdict 악화 |
-| rt/three.layout.yaml · slide | better | 7.626→8.268pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/ce-tgw.layout.yaml · slide | better | 5.844→6.056pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/ce-tgw.layout.yaml · slide-no-title | better | 5.904→6.269pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/v-fork.layout.yaml · slide | better | 5.651→6.065pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/v-stem.layout.yaml · slide | better | 5.844→6.056pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/v-stem.layout.yaml · slide-no-title | better | 5.904→6.269pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/v-three.layout.yaml · document | better | 5.164→5.474px | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/v-three.layout.yaml · slide | better | 4.927→5.100pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/v-three.layout.yaml · slide-no-title | better | 5.518→5.712pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/x-fork-b.layout.yaml · slide | better | 5.649→5.969pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| trunk/x-fork-b.layout.yaml · slide-no-title | better | 5.904→6.269pt | 안전한 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
-| qa/t3-nat-route-table.layout.yaml · document | better | 12.000→12.000px | 안전하게 완료한 경로의 비교; LINE LEAVES BOX 제거 |
-| qa/t1-privatelink.layout.yaml · slide | worse | 5.920→6.398pt | 후보 내부의 1% 초과 feedback 거부; 6.398pt 및 기존 F5 복귀 |
-| qa/t1-multiregion-dr.layout.yaml · slide | worse | 3.496→3.662pt | 후속 축소 거부; 3.662pt와 기존 F2 보존 |
-| qa/t1-multiregion-dr.layout.yaml · slide-no-title | worse | 3.496→3.662pt | 후속 축소 거부; 3.662pt와 기존 F2 보존 |
-| qa/t3-hybrid-dns.layout.yaml · slide | worse | 5.651→6.264pt | 새 F3 및 후속 축소 거부; 기존 VGW의 F3/F5와 6.264pt 보존 |
-| qa/t3-hybrid-dns.layout.yaml · slide-no-title | worse | 5.651→6.264pt | 새 F3 및 후속 축소 거부; 기존 VGW의 F3/F5와 6.264pt 보존 |
-| ../../docs/examples/specs/tgw-reference-architecture.layout.yaml · document | worse | 7.735→6.867px | 강화한 후보 내부 gate로 replay 승자 탈락; 완료 기본 그림의 더 작은 글자로 복귀, 회귀 |
+| bench/engine2-egress.layout.yaml · slide-no-title | better | 6.660793→6.750000pt | 같은 tier-0/check에서 다른 font/note 승자 선택; font 확대 및 shape miss 제거 |
+| bench/engine2-pipeline.layout.yaml · document | better | 4.117381→4.147340px | 같은 tier-0/check에서 Verdict-selected feedback/font 후보 개선; effective text 증가 |
+| qa/t1-multiregion-dr.layout.yaml · slide | better | 3.661823→3.495586pt | 보호된 feedback에서 tier-0 6→2; F2와 LINE ON LINE 제거를 위해 축소 허용 |
+| qa/t1-multiregion-dr.layout.yaml · slide-no-title | better | 3.661823→3.495586pt | 보호된 feedback에서 tier-0 6→2; F2와 LINE ON LINE 제거를 위해 축소 허용 |
 
-## 팀장 clean 대비 모든 변경 15건
+clean 대비 worse run은 **0건**, 목록은 없다. 303b12a의 기존 회귀 12건은 모두 해소했다. 시간 최적화 코드는 유지했다.
 
-D=document, S=slide, N=slide-no-title. 아래에 SVG가 바뀐 run을 모두 기재한다. 시간만 바뀐 run은 앞의 성능 표로 판정한다.
+## 바뀐 run — 3946906 대비 30건
 
-| Run | Verdict | 글자 전→후 | 이유 |
+| Run | 판정 | 글자 전→후 | 이유 |
 |---|---|---:|---|
-| bench/engine2-egress.layout.yaml · slide-no-title | better | 6.661→6.750pt | 1% gate 후 다른 font/note 후보 선택; 같은 규칙/check에서 6.661→6.750pt |
-| trunk/merge-v3az.layout.yaml · slide | worse | 9.034→8.757pt | 후보 내부 9.604→8.949pt 축소 거부로 기존 승자 탈락; clean 대비 F3 재발, 미해결 |
-| trunk/merge-v3az-top.layout.yaml · slide | worse | 9.034→8.757pt | 후보 내부 9.604→8.949pt 축소 거부로 기존 승자 탈락; clean 대비 F3 재발, 미해결 |
-| flowcol/r2-pin-bottom.layout.yaml · slide | worse | 8.182→7.554pt | 강화한 후보 내부 gate로 replay 승자 탈락; 완료 기본 그림의 더 작은 글자로 복귀, 회귀 |
-| flowcol/r2-pin-bottom.layout.yaml · slide-no-title | worse | 9.646→8.460pt | 강화한 후보 내부 gate로 replay 승자 탈락; 완료 기본 그림의 더 작은 글자로 복귀, 회귀 |
-| twin/sub.layout.yaml · slide | better | 9.703→9.703pt | 규칙/check/글자 유지; canvas area 감소 |
-| twin/sub.layout.yaml · slide-no-title | better | 9.703→9.703pt | 규칙/check/글자 유지; canvas area 감소 |
-| rt/gw-ret.layout.yaml · slide | worse | 7.649→7.649pt | 규칙/check/글자는 같지만 선택된 geometry의 canvas area가 커져 terminal Verdict 악화 |
-| rt/gw-ret.layout.yaml · slide-no-title | worse | 8.567→8.567pt | 규칙/check/글자는 같지만 선택된 geometry의 canvas area가 커져 terminal Verdict 악화 |
-| rt/rtsub.layout.yaml · slide | worse | 9.718→9.718pt | 규칙/check/글자는 같지만 선택된 geometry의 canvas area가 커져 terminal Verdict 악화 |
-| rt/rtsub.layout.yaml · slide-no-title | worse | 9.718→9.718pt | 규칙/check/글자는 같지만 선택된 geometry의 canvas area가 커져 terminal Verdict 악화 |
-| rt/three-b.layout.yaml · slide | worse | 9.076→8.424pt | candidate replay/후속 확대의 기존 승자 탈락; clean 대비 글자 확대 이득 상실 |
-| rt/three-b.layout.yaml · slide-no-title | worse | 9.487→9.476pt | candidate replay/후속 확대의 기존 승자 탈락; clean 대비 글자 확대 이득 상실 |
-| qa/t1-privatelink.layout.yaml · slide | worse | 5.920→6.398pt | 후보 내부의 1% 초과 feedback 거부; 6.398pt 및 기존 F5 복귀 |
-| ../../docs/examples/specs/tgw-reference-architecture.layout.yaml · document | worse | 7.735→6.867px | 강화한 후보 내부 gate로 replay 승자 탈락; 완료 기본 그림의 더 작은 글자로 복귀, 회귀 |
+| bench/engine2-egress.layout.yaml · slide-no-title | better | 6.661→6.750pt | 같은 tier-0/check에서 다른 font/note 승자 선택; font 확대 및 shape miss 제거 |
+| bench/engine2-pipeline.layout.yaml · document | better | 4.117→4.147px | 같은 tier-0/check에서 Verdict-selected feedback/font 후보 개선; effective text 증가 |
+| bench/engine3-pipeline.layout.yaml · slide | better | 4.733→5.008pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| bench/engine3-pipeline.layout.yaml · slide-no-title | better | 5.301→5.609pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/eng-egress-tgw.layout.yaml · slide | better | 5.844→6.056pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/eng-egress-tgw.layout.yaml · slide-no-title | better | 5.904→6.269pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| rt/ce-three.layout.yaml · document | better | 5.078→5.281px | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| rt/right.layout.yaml · document | better | 7.164→7.893px | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/merge-v3az.layout.yaml · slide | better | 8.949→9.034pt | tier-0 감소를 동반한 후보 feedback 허용; F3 제거 후 안전한 font 확대 |
+| trunk/merge-v3az-top.layout.yaml · slide | better | 8.949→9.034pt | tier-0 감소를 동반한 후보 feedback 허용; F3 제거 후 안전한 font 확대 |
+| ports/xnt.layout.yaml · slide | better | 5.649→5.743pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| ports/xnt.layout.yaml · slide-no-title | better | 5.904→6.432pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| rt/gw-ret.layout.yaml · slide | better | 7.649→7.649pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| rt/gw-ret.layout.yaml · slide-no-title | better | 8.567→8.567pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| rt/three.layout.yaml · slide | better | 7.626→8.268pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| rt/three-b.layout.yaml · slide | better | 8.424→9.076pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| rt/three-b.layout.yaml · slide-no-title | better | 9.476→9.487pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/ce-tgw.layout.yaml · slide | better | 5.844→6.056pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/ce-tgw.layout.yaml · slide-no-title | better | 5.904→6.269pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/v-fork.layout.yaml · slide | better | 5.651→6.065pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/v-stem.layout.yaml · slide | better | 5.844→6.056pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/v-stem.layout.yaml · slide-no-title | better | 5.904→6.269pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/v-three.layout.yaml · document | better | 5.164→5.474px | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/v-three.layout.yaml · slide | better | 4.927→5.100pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/v-three.layout.yaml · slide-no-title | better | 5.518→5.712pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/x-fork-b.layout.yaml · slide | better | 5.649→5.969pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| trunk/x-fork-b.layout.yaml · slide-no-title | better | 5.904→6.269pt | 새 tier-0 없는 후보의 두 번 이내 작은 uniform font 확대; 규칙/check 보존 |
+| qa/t3-nat-route-table.layout.yaml · document | better | 12.000→12.000px | 안전한 경로 완료; LINE LEAVES BOX 제거 |
+| qa/t3-hybrid-dns.layout.yaml · slide | worse | 5.651→6.264pt | AZ1 새 접점/축소 거부; 기존 VGW F3/F5 및 6.264pt 보존 |
+| qa/t3-hybrid-dns.layout.yaml · slide-no-title | worse | 5.651→6.264pt | AZ1 새 접점/축소 거부; 기존 VGW F3/F5 및 6.264pt 보존 |
 
-## 36c7ea3 identity·축소와 도입 단계
+3946906 대비 worse 두 run은 DNS slide/slide-no-title이다. 새 AZ1 접점을 없애고 더 큰 기존 그림으로 돌아온 티켓의 의도된 변경이며, clean 대비는 same다. 그 PNG를 아래처럼 직접 확인했다.
 
-새 tier-0 identity run은 **0개**이며 목록은 없다. 목표 미만이면서 글자가 작아진 run은 아래 **2개**다. 둘 다 실제 완료 기본 그림과 비교한 후보 선택(`later=False`)에서 생겼다. 최종 winner repair의 hash와 전체 corpus SVG hash가 같고, 도입 후 추가 축소가 없다.
+## 36c7ea3 대비 identity·목표 미만 축소
 
-| Run | 36→이번 | 보존율 | 도입 단계·증거 |
-|---|---:|---:|---|
-| bench/v2-3-egress.layout.yaml · document | 7.502056→7.294055px | 97.23% | select_drawing 후보 비교, `later=False`; final SHA `e6e48fb46c741aa2ed6697f45b12cf9890d6c122f34c0bb810655457a2806e8c` |
-| qa/t1-multiregion-dr.layout.yaml · document | 2.972621→2.839352px | 95.52% | select_drawing 후보 비교, `later=False`; final SHA `43d3af302e1fc7e28acb3b3386f73605a7fef40598d939c6ec5c0695a0771fc8` |
+새 tier-0 identity run: **0건** — 목록 없음. 목표 미만 축소는 아래 **5건**이다. 직접 CLI 추적은 전체 결과에 합치지 않았으며, 최종 SVG hash가 전체 실행 draft와 같은 것만 증거로 사용했다.
 
-`phase-evidence.json` 및 각 `*.normal.stages.json`의 실제 CLI 호출 기록: 완료 기본 그림 → 후보 선택 → winner repair. 위 두 run과 privatelink의 보호된 `later=True` 호출에서 **1% 초과 축소를 허용한 호출은 0**이다. Privatelink는 이제 36c7ea3와 같은 6.398104pt여서 축소 목록에서 빠졌다. 내부 후보와 보유 그림 양쪽을 검사한 경계 테스트, feedback/header/fixed-answer/text-scale 회귀 및 공통 gate가 다른 보호 단계도 검증한다.
+| Run | 이전→최종 | 보존율 | 도입 단계 | tier-0 전→후 |
+|---|---:|---:|---|---:|
+| bench/v2-3-egress.layout.yaml · document | 7.502056→7.294055px | 97.23% | 후보 선택 | 4→4 |
+| qa/t1-privatelink.layout.yaml · slide | 6.398104→5.919915pt | 92.53% | 후보 내부 feedback | 6→5 |
+| qa/t1-multiregion-dr.layout.yaml · document | 2.972621→2.839352px | 95.52% | 후보 선택 | 5→4 |
+| qa/t1-multiregion-dr.layout.yaml · slide | 3.661823→3.495586pt | 95.46% | 보유 기본 그림 feedback | 6→2 |
+| qa/t1-multiregion-dr.layout.yaml · slide-no-title | 3.661823→3.495586pt | 95.46% | 보유 기본 그림 feedback | 6→2 |
+
+Bench/v2-3-egress와 multiregion document는 독립 후보 선택의 고정 90% 한도로 허용한다. Privatelink는 후보 replay feedback에서 6.398104→5.919915pt 및 **6→5 감소**를 확인했고, 이후 winner repair는 크기를 그대로 유지한다. Multiregion 두 slide는 보유 기본 그림 feedback의 **6→2 감소**로 허용한다.
+
+`shrink-stages.json`에 각 최종 hash와 `trace/*.json` 경로를 기록했다. 후보 선택 후 동일 크기의 경로 수정으로 hash가 바뀌는 경우도, 도입 직후 크기와 최종 winner repair의 크기 및 최종 hash를 함께 확인한다. 추적한 모든 보호된 후속 호출의 1% 초과 축소는 tier-0 감소를 동반했다. 위반 호출 **0건**이며 rule matrix와 공통 gate가 모든 뒤 단계를 적용한다.
 
 ## PNG 직접 판정
 
-`.t10-fix/png/qa__t3-hybrid-dns.layout.yaml.slide.{36c7ea3,3946906}-pair.png`와 `.t10-fix/png/qa__t1-multiregion-dr.layout.yaml.slide.{36c7ea3,3946906}-pair.png` 네 장을 이미지 보기 도구로 직접 확인했다. 각 원본은 `png/{36c7ea3,3946906,after}/`에 있다. after는 이번 단일 전체 실행의 draft에서 export했다.
+이번 전체 실행 SVG에서 `png/{clean,36c7ea3,3946906,after}/`를 export했다. 다음 pair PNG를 이미지 보기 도구로 직접 확인했다.
 
-- DNS: AZ1 Inbound ENI 앞 새 접점 오독이 없어지고 VGW 옆 기존 접점으로 돌아왔다. **5.651→6.264pt**, 36c7ea3 크기를 보존한다. UDP/TCP :53의 기존 귀속 문제와 작은 CIDR/범례는 남아 전달 판정은 차단 유지다.
-- Multiregion: 복제선과 badge를 SQL/NLB 요청선에서 분리한 개선을 유지한다. 기존 DNS 제어선/앱 요청선 F2는 남는다. **3.496→3.662pt**로 이전 크기를 보존하지만 실제 slide 글자가 너무 작아 전달 판정은 차단 유지다.
-
-clean 대비 worse 12건의 `*.clean-pair.png`도 모두 직접 봤다. merge 두 그림의 ALB 분기선 접점과 글자 축소는 실제 회귀다. pin-bottom 두 모드는 구조는 읽히지만 글자가 작아졌다. three-b 두 모드는 요청/검사 흐름을 유지하나 확대 이득을 잃었다. gw-ret/rtsub 네 모드는 같은 흐름·글자를 유지하고 배치·여백이 달라진 canvas area 악화다. PrivateLink는 글자가 커졌지만 HTTPS 라벨 귀속 F5가 복귀했다. TGW document는 연결 의미를 유지하지만 최소 글자/범례 크기가 작아졌다. 이 회귀를 “다른 사례 악화 없음”으로 처리하지 않는다.
+- `qa__t3-hybrid-dns.layout.yaml.slide.{clean,36c7ea3,3946906}-pair.png`와 `slide-no-title.clean-pair.png`: clean 그림을 그대로 유지한다. main 3946906의 AZ1 Inbound ENI 앞 새 접점은 없고, 36과 같은 VGW 옆 기존 F3/F5는 남는다. 두 mode **6.264407pt**, 새 identity 없음. 작은 글자와 기존 UDP/TCP :53 귀속은 전달 차단 백로그다.
+- `qa__t1-multiregion-dr.layout.yaml.slide.{clean,36c7ea3,3946906}-pair.png`: clean의 DNS 제어선/앱 선 collinear gap을 없앴다. 복제선과 badge는 SQL/NLB 요청선에서 분리된 상태를 유지한다. **3.661823→3.495586pt** 축소는 tier-0 **6→2** 및 F2/LINE ON LINE 제거로 허용된다. 흐름은 개선됐지만 실제 slide 글자는 여전히 너무 작아 R-fit 전달 차단은 남는다.
+- `trunk__merge-v3az.layout.yaml.slide.clean-pair.png`, `trunk__merge-v3az-top.layout.yaml.slide.clean-pair.png`: clean의 세 ALB 분기선을 유지하고 두 그림 모두 **F3 0**, **9.033877pt**다. 303b에서 복귀한 접점 회귀를 없앴다.
+- `qa__t1-privatelink.layout.yaml.slide.clean-pair.png`: clean과 같은 **5.919915pt**, R-border B1 및 R-flow F1/F3가 남고 F5는 없다. 후보 내부 tier-0 감소가 확인되어 축소를 허용했다. 엔드포인트를 관통하는 기존 경로 및 작은 글자는 여전히 전달 백로그다.
 
 ## 완료 조건
 
-- [x] 기존 CLI 3건 red → green, 이번 후보 내부 경계/privatelink 및 캐시 red → green; 전체 pytest 840건 통과.
-- [x] DNS 두 mode 새 identity 0 및 6.264pt; multiregion slide 3.661823pt 유지.
-- [x] 3946906 및 36c7ea3의 규칙/check/판정/시간 표와 모든 변경 run; 수정 전 clean도 별도로 비교.
-- [x] 36 대비 새 identity 0, 축소 2건의 목록·90% 한도·실제 선택 단계 및 hash 증거. 금지된 후속 축소 0.
-- [ ] R-flow ≤50 및 기존 승자 보존: **51건**. shared-lane 두 slide 및 multiregion document는 R-flow 0을 유지하지만 merge 두 slide의 기존 승자를 잃었다.
-- [x] 모든 760 run이 36 대비 ≤3×, ≤30s; 최악 15.054s, multiregion ≤25s 목표도 통과.
-- [x] spec.md / GLOSSARY.md에 후보 내부까지 포함한 gate와 고정 후보 한도 명시.
-- [x] 필수 전체 pytest·예제·corpus 각각 1회, corpus -j 6 단독 실행. 부분 재실행을 결과에 합치지 않음.
-- [ ] 다른 corpus 사례 악화 없음: clean 대비 worse 12건을 위 표와 PNG 판정에 남김.
-- [ ] 공유 브랜치 커밋: 현재 세션의 파일시스템 정책에서 공유 objects/refs가 read-only다. worktree 안에 별도 Git index/준비 저장소의 커밋과 bundle을 만들고, 공유 경로 쓰기가 열리면 반영해야 한다. **index 동기화 필요**. 실제 worktree HEAD는 아직 이전 커밋이라 HEAD diff가 남는다. 준비 커밋 기준의 tracked diff만 비어 있음을 확인한다.
+- [x] 새 규칙 red→green: count 감소 허용, cost/check 감소만 있는 축소 거부. 후보 내부/외부, 두 medium 및 1% 경계.
+- [x] 새 identity gate와 후보 선택 90% 고정 한도 유지.
+- [x] clean 대비 worse **0**, R-flow **46≤48**; shared-lane 두 mode와 multiregion document R-flow 0 유지.
+- [x] 36 대비 새 tier-0 identity **0**, 모든 run ≤3×·≤30s; 축소 5건의 실제 도입 단계·개수 감소·최종 hash 증거.
+- [x] DNS 두 mode ≥6.26pt 및 새 identity 없음, merge 두 slide F3 없음; privatelink 상태·이유·PNG 기록.
+- [x] build/fix·장애물·교차 최적화 유지; canvas area 네 회귀 해소; 보유 fixed SVG handoff 캐시 문제도 테스트로 수정.
+- [x] 전체 pytest·예제·corpus 각각 1회; corpus -j 6 단독 실행 및 단일 원본 사용, 부분 실행 합치지 않음.
+- [x] spec·GLOSSARY·티켓·증거 문서 갱신, 개선에 맞춰 mri bad tag를 good으로 정정.
+- [x] 사용자 승인 fallback: 공유 Git read-only 시 별도 index의 준비 커밋과 bundle로 전달. 준비 HEAD와 작업 트리 tracked diff가 비어 있음을 확인한다. 공유 HEAD는 아직 303b12a라 실제 HEAD diff는 반영 전까지 남는다. **index 동기화 필요**.
 
-추가 전체 검증 허용 및 cache/공유 Git 쓰기 권한 복구를 질문했으나 아직 응답이 없다. 선택지가 미리 표시되거나 시간이 지났다는 것을 승인으로 보지 않았다. 구현은 최초 단일 전체 실행 이후 고정했으며, 이후의 진단용 직접 CLI 실험을 최종 corpus에 합치거나 적용하지 않았다. R-flow/추가 회귀를 남은 문제로 보고한다.
+남은 구현 차단은 없다. 기존 DNS F3/F5, PrivateLink B1/F1/F3 및 엔드포인트 관통, 큰 문서 spec을 slide로 변환할 때의 작은 글자, 기존 gw-ret 가림 xfail은 백로그다. 공유 브랜치 적용은 팀장이 bundle을 반영한다.

@@ -132,12 +132,57 @@ def test_hybrid_dns_keeps_existing_violation_owners_and_text(tmp_path, capsys, t
     assert layout.drawn_text(spec, draft)[0][0] >= 6.26
 
 
-def test_multiregion_slide_repairs_do_not_shrink_below_target_text(tmp_path, capsys):
+def test_multiregion_slide_shrink_removes_tier_zero_violations(tmp_path, capsys, monkeypatch):
     source = ROOT / "tests/corpus/qa/t1-multiregion-dr.layout.yaml"
-    _, draft, _ = invoke(source, tmp_path, capsys, "--mode", "slide")
+    admits = layout.RuleGuard.admits
+    reductions = []
+
+    def watch(guard, before, old, after, new, later=True):
+        accepted = admits(guard, before, old, after, new, later=later)
+        actual, _, target, _ = guard.text(before.spec, old)[0]
+        if ((guard.protect or guard.selection) and later and accepted
+                and actual < target and guard.text(after.spec, new)[0][0] < actual * 0.99 - 1e-9):
+            old_count = sum(v.tier == 0 for v in guard.check(before.spec, before.geom, old))
+            new_count = sum(v.tier == 0 for v in guard.check(after.spec, after.geom, new))
+            assert new_count < old_count
+            reductions.append((old_count, new_count))
+        return accepted
+
+    monkeypatch.setattr(layout.RuleGuard, "admits", watch)
+    _, draft, text = invoke(source, tmp_path, capsys, "--mode", "slide")
     spec = layout_spec.load(source, mode="slide")
-    # main 36c7ea3's 3028px canvas with 12px text: 3.6618...pt.
-    assert layout.drawn_text(spec, draft)[0][0] >= 12 * 924 / 3028
+    assert reductions
+    assert "rule: R-flow" not in text
+    assert layout.drawn_text(spec, draft)[0][0] >= (12 * 924 / 3028) * 0.9
+
+
+@pytest.mark.parametrize("case,area", [("rt/gw-ret", 874734), ("rt/rtsub", 710700)])
+@pytest.mark.parametrize("title", [True, False], ids=["slide", "slide-no-title"])
+def test_unchanged_text_keeps_clean_canvas_area(tmp_path, capsys, case, area, title):
+    source = ROOT / f"tests/corpus/{case}.layout.yaml"
+    _, draft, _ = invoke(source, tmp_path, capsys, "--mode", "slide",
+                         *([] if title else ["--no-title"]))
+    spec = layout_spec.load(source, mode="slide", title=title)
+    width, height = layout.drawn_text(spec, draft)[2]
+    assert width * height <= area
+
+
+@pytest.mark.parametrize("title,minimum", [(True, 8.181818181818182), (False, 9.645933014354068)],
+                         ids=["slide", "slide-no-title"])
+def test_check_only_replay_keeps_completed_incumbent_text(tmp_path, capsys, title, minimum):
+    source = ROOT / "tests/corpus/flowcol/r2-pin-bottom.layout.yaml"
+    _, draft, text = invoke(source, tmp_path, capsys, "--mode", "slide",
+                         *([] if title else ["--no-title"]))
+    spec = layout_spec.load(source, mode="slide", title=title)
+    assert layout.drawn_text(spec, draft)[0][0] >= minimum - 1e-9
+    assert "rule: R-flow" not in text
+
+
+def test_clean_document_font_retry_remains_available(tmp_path, capsys):
+    source = ROOT / "docs/examples/specs/tgw-reference-architecture.layout.yaml"
+    _, draft, _ = invoke(source, tmp_path, capsys, "--mode", "document")
+    spec = layout_spec.load(source, mode="document")
+    assert layout.drawn_text(spec, draft)[0][0] >= 7.735368956743002 - 1e-9
 
 
 @pytest.mark.parametrize("checker", ["check", "score"])
@@ -318,12 +363,13 @@ def test_target_size_controls_the_text_shrink_exception(monkeypatch, rule, mode,
 
 @pytest.mark.parametrize("mode", ["document", "slide"])
 @pytest.mark.parametrize("candidate_build", [False, True], ids=["held", "candidate-internal"])
+@pytest.mark.parametrize("benefit", ["hard-count", "hard-cost", "checks"])
 @pytest.mark.parametrize("ratio,below_target,accepted", [
     (0.99, True, True), (0.989, True, False),
     (0.95, False, True),
 ])
-def test_later_stages_keep_below_target_text_with_one_percent_tolerance(
-        monkeypatch, mode, candidate_build, ratio, below_target, accepted):
+def test_later_shrink_requires_fewer_tier_zero_violations(
+        monkeypatch, mode, candidate_build, benefit, ratio, below_target, accepted):
     spec = layout_spec.load({
         "name": "repair-text", "text_scale": "off",
         "cols": ["a", {"id": "b", "min_gap_before": 1450}], "rows": ["r"],
@@ -344,18 +390,25 @@ def test_later_stages_keep_below_target_text_with_one_percent_tolerance(
     after.geom.canvas_w = width / ratio
     root.set("viewBox", f"{x} {y} {width / ratio} {height}")
     after.svg = ET.tostring(root)
-    monkeypatch.setattr(rules, "check", lambda sp, geom, data: [
-        rules.Violation("R-flow", ("edge:0",), "F3 junction", code="F3")
-    ] if data == before.svg else [])
+    old_violation = rules.Violation("R-flow", ("edge:0",), "F3 junction", code="F3", cost=2)
+    new_violation = rules.Violation("R-flow", ("edge:0",), "F3 junction", code="F3",
+                                    cost=1 if benefit == "hard-cost" else 2)
+    monkeypatch.setattr(rules, "check", lambda sp, geom, data:
+                        [old_violation] if data == before.svg else
+                        [] if benefit == "hard-count" else [new_violation])
     guard = layout.RuleGuard(selection=True, min_text_size=desired * 0.9,
                              candidate_build=candidate_build)
-    assert guard.accepts(before, before.svg, after, after.svg) is accepted
+    monkeypatch.setattr(guard, "problems", lambda data:
+                        ["LINE OVER ICON", "LINE OVER TEXT"]
+                        if benefit == "checks" and data == before.svg else [])
+    expected = accepted or benefit == "hard-count"
+    assert guard.accepts(before, before.svg, after, after.svg) is expected
     # Search retains ticket 06's fixed floor, rather than the repair tolerance.
     assert guard.accepts(before, before.svg, after, after.svg, later=False)
 
 
-def test_candidate_feedback_preserves_privatelink_slide_text(tmp_path, capsys, monkeypatch):
-    """The replay's 6.296pt held drawing cannot adopt the 5.920pt feedback."""
+def test_candidate_feedback_shrink_requires_tier_zero_reduction(tmp_path, capsys, monkeypatch):
+    """Candidate feedback may shrink only to remove a hard violation."""
     admits = layout.RuleGuard.admits
     comparisons = []
 
@@ -365,8 +418,10 @@ def test_candidate_feedback_preserves_privatelink_slide_text(tmp_path, capsys, m
             actual, _, target, _ = guard.text(before.spec, old)[0]
             next_actual = guard.text(after.spec, new)[0][0]
             comparisons.append((actual, next_actual, accepted))
-            if accepted and actual < target:
-                assert next_actual >= actual * layout.REPAIR_TEXT_RETENTION - 1e-9
+            if accepted and actual < target and next_actual < actual * layout.REPAIR_TEXT_RETENTION - 1e-9:
+                old_count = sum(v.tier == 0 for v in guard.check(before.spec, before.geom, old))
+                new_count = sum(v.tier == 0 for v in guard.check(after.spec, after.geom, new))
+                assert new_count < old_count
         return accepted
 
     monkeypatch.setattr(layout.RuleGuard, "admits", watch)
@@ -374,7 +429,9 @@ def test_candidate_feedback_preserves_privatelink_slide_text(tmp_path, capsys, m
     _, draft, _ = invoke(source, tmp_path, capsys, "--mode", "slide")
     assert comparisons
     spec = layout_spec.load(source, mode="slide")
-    assert layout.drawn_text(spec, draft)[0][0] >= 6.296
+    baseline = default(source, tmp_path, "slide")
+    assert layout.drawn_text(spec, draft)[0][0] >= (
+        layout.drawn_text(spec, baseline[1])[0][0] * layout.MIN_TEXT_RETENTION)
 
 
 def test_build_cache_reuses_effective_decisions(monkeypatch):
@@ -428,6 +485,18 @@ def test_fixed_answer_cache_is_shared_only_with_the_same_policy(tmp_path, monkey
     replay.min_text_size = 11
     layout.fixed_build(b, tmp_path / "fix.svg", replay)
     assert len(calls) == 2
+
+
+def test_fixed_answer_cache_preserves_explicit_held_draft(tmp_path):
+    source = ROOT / "tests/corpus/ports/xnt.layout.yaml"
+    spec = layout_spec.load(source)
+    b = layout.build(spec, [], {}, None, str(source))
+    guard = layout.RuleGuard(selection=True)
+    data, _ = layout.fixed_build(b, tmp_path / "fix.svg", guard)
+    held = data.replace(b"</svg>", b"<!-- selected incumbent --></svg>")
+    # render_checked hands over an already selected/fixed drawing this way.
+    b._fixed_draft = (b.svg, guard, (held, 7))
+    assert layout.fixed_build(b, tmp_path / "fix.svg", guard) == (held, 7)
 
 
 def test_build_cache_reuses_the_note_place_the_same_solve_already_chose(monkeypatch):

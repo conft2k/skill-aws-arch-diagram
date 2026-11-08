@@ -1094,9 +1094,9 @@ cases:
   - path: qa/t1-multiregion-dr.layout.yaml
     rules: [R-flow, R-fit]
     what: "Original DR: replication badge touches NLB traffic; slide DNS control and app paths read as one line; page/slide text is below target; no equivalent reduction"
+    good: [R-flow]   # ticket 10 exception: the F2-removing slide repair shrinks only with a strict tier-0 count reduction
     bad:
       R-fit: canvas
-      R-flow: {slide: edge:1, slide-no-title: edge:1}   # ticket 10 keeps 3.66pt text: the shrink-only repair is rejected, retaining the pre-step-2 F2; document still passes (CLI regression test)
   # DLQ의 "5회 실패 후 이동" 라벨이 자기 선보다 다른 선에 더 가깝습니다(T4 shared_lane_5nodes).
   - path: qa/t4-shared-lane.layout.yaml
     rules: [R-flow]
