@@ -596,7 +596,7 @@ def test_gw_ret_response_label_is_not_covered_by_note_background(tmp_path, capsy
                 f"{text['own']} at y={text['y']} is occluded by later rect at y={y}")
 
 
-BEDROCK_DX = ROOT / "docs/examples/specs/bedrock-dx-reference-architecture.layout.yaml"
+BEDROCK_DX = ROOT / "tests/fixtures/examples-91062e1/specs/bedrock-dx-reference-architecture.layout.yaml"   # frozen: the live example no longer has the R-label violation these tests need
 
 
 def test_all_tier_zero_rules_count_in_the_verdict(tmp_path):
