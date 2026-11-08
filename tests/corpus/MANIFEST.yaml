@@ -1146,6 +1146,16 @@ cases:
   - path: qa/timing-mirrored-az-rows.layout.yaml
     rules: [R-twin]
     what: "4-node reduction: one VPC's AZ 1 stacks Public over Appliance subnet, AZ 2 Appliance over Public; rules.py 미검출"
+  # gwlb 문서 예제(91062e1 spec) 축소본: GWLB → GWLBe의 step 2가 HV로 들어갈 길이 라벨에 막히면 HVH로 GWLBe 오른쪽 면에 붙어 EC2 바로 옆을 지나고, GWLBe → EC2 선 12px 아래에 붙어 GWLBe ⇄ EC2 연결처럼 읽힙니다.
+  # rules.py 미검출: Layout OK, 모든 mode에서 위반 0.
+  - path: qa/ex-gwlb-step2-beside-ec2.layout.yaml
+    rules: [R-flow]
+    what: "gwlb doc reduction (91062e1): step-2 HV into gwlbe.1 refused by its label, HVH fallback enters GWLBe's right side beside EC2, 12px under GWLBe -> EC2, reading as GWLBe <-> EC2; rules.py 미검출: Layout OK, 0 violations in every mode"
+  # 노드로 들어가는 화살촉이 컨테이너 테두리 위에 놓입니다(examples gwlb slide, 91062e1 spec 축소본): Users → IGW 화살촉이 Cloud·Region 왼쪽 테두리를, GWLBe → GWLB 화살촉이 Security VPC 왼쪽 테두리를 지납니다.
+  # rules.py 미검출: R-border는 B1 hug와 B2 header band만 보고, F4는 node 끝점에서 다른 node footprint만 봅니다. check_layout도 Layout OK입니다.
+  - path: qa/ex-gwlb-slide-arrowhead-on-border.layout.yaml
+    rules: [R-border, R-flow]
+    what: "4-node reduction: Users → IGW and GWLBe → GWLB arrowheads straddle the Cloud/Region and Security VPC borders; rules.py 미검출, check_layout Layout OK"
 examples:
   # alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
   - path: ../../docs/examples/specs/alb-reference-architecture.layout.yaml
@@ -1174,7 +1184,7 @@ examples:
   # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.
   - path: ../../docs/examples/specs/nfw-reference-architecture.layout.yaml
     rules: [R-flow, R-label, R-rt, R-border, R-fit]
-    bad: {R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}}   # document 5.81px < 11px; titled 7.56pt < 8pt, untitled 8.18pt < 10pt
+    bad: {R-fit: {document: canvas, slide: canvas, slide-no-title: canvas}}   # document 8.25px < 11px; titled 8.11pt < 10pt, untitled 8.45pt < 10pt
     what: "Centralized inspection with AWS Network Firewall: spoke VPCs A and B → TGW → inspection VPC over two AZs (TGW subnet → firewall subnet → public subnet with NAT) → IGW → Internet; the Spoke RT and the Firewall RT each beside the attachments they are associated with"
     good: [R-flow, R-rt, R-label, R-border]   # golden (rules-design R-rt: Spoke RT and Firewall RT inside their brackets); Layout OK; R-border: lines into nested subnets with badges and titles, none along a border or through a header band
   # 문서용 예제 spec을 `--mode slide`로 그리면 8pt 하한 아래로 남는 것이 있습니다.

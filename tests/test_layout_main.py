@@ -29,6 +29,11 @@ import layout_solve  # noqa: E402
 import layout_spec  # noqa: E402
 
 SPECS = ROOT / "docs" / "examples" / "specs"
+# The NFW document example as drawn at 91062e1 (the Spoke RT in a column of its own, the inspection
+# lines up / down out of the TGW): the engine-behaviour tests below depend on that layout, which the
+# example spec has since left to narrow the drawing
+FROZEN_SPECS = ROOT / "tests" / "fixtures" / "examples-91062e1" / "specs"
+PINNED = {"nfw-reference-architecture"}
 NS = "{http://www.w3.org/2000/svg}"
 
 
@@ -41,7 +46,8 @@ def check_status(text):
 
 def spec_dict(name):
     yaml, loader = layout_spec._yaml_loader()          # YAML 1.2 booleans: `on:` stays a key
-    return yaml.load((SPECS / f"{name}.layout.yaml").read_text(encoding="utf-8"), Loader=loader)
+    base = FROZEN_SPECS if name in PINNED else SPECS
+    return yaml.load((base / f"{name}.layout.yaml").read_text(encoding="utf-8"), Loader=loader)
 
 
 def built(d_or_name, **kw):

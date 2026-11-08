@@ -391,9 +391,10 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   a row (column) and names the sides that work (`top` / `bottom` with `shape: VHV`).
 
 ```yaml
-# from: nfw-reference-architecture.layout.yaml
-  - {e: "vpca <-> tgw", verb: VPC attachment, step: 1}
-  - {e: "tgw <-> eni.*", shape: VH, step: 2, step_at: start}   # up / down around the Firewall RT
+# from: slides/nfw-reference-architecture.layout.yaml
+  - {e: "vpca <-> tgw", step: 1}
+  - {e: "tgw <-> eni.1", shape: VH, verb: VPC attachment, step: 2, step_at: start}   # up / down around the Firewall RT
+  - {e: "tgw <-> eni.2", shape: VH}
   - {e: "eni.* <-> fwe.*", step: 3}
   - {e: "fwe.* -> nat.*", step: 4}
   - {e: "nat.* -> igw", trunk: true, step: 5}
@@ -530,7 +531,7 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
 - **Hub and topology** (tgw): `--` edges, `at: [b1..b2, main]` under two spokes, route
   tables as nodes with routes in `sub` and `for:` every attachment of their TGW (its only
   table), `step_at: gap` for a badge between Regions.
-- **TGW route tables beside their attachments** (nfw): a column for each table on the
+- **TGW route tables beside their attachments** (nfw slide): a column for each table on the
   TGW's row — `rtsp` between the spoke VPCs and the TGW, `rtfw` between the TGW and the
   inspection VPC — `shape: VH` on `tgw <-> eni.*` so the inspection lines leave the TGW's
   top and bottom around `rtfw`; each table says which attachments it is associated with,
@@ -539,7 +540,11 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   nor the slide needs an empty column: the engine keeps the Spoke RT beside VPC A and VPC B
   (diagonal neighbours) on x, since apart on y the table would sit in the spoke column
   between the two VPCs, left of their lines to the TGW (the slide titled or not, and as a
-  document).
+  document). The nfw document example takes the narrower form: `rtsp` at `[spoke, main]`
+  between VPC A and VPC B, the spoke lines `shape: VHV` with `from_offset: -60` into the
+  TGW's top and bottom so the table sits inside their bracket, and `tgw <-> eni.*`
+  `shape: HVH` with `bend_x: "rtfw.label.x0-14"` so the inspection lines bend just left of
+  the Firewall RT.
 - **Two VPCs** (gwlb): two `vpc` groups in one Region, each with its own `az` template.
 
 ```yaml
