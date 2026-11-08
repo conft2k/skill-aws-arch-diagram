@@ -711,6 +711,23 @@ class TwinAzReview(unittest.TestCase):
         self.assertEqual(got, [])
         self.assertIn(["azi1", "azi2"], self.classes(sp))
 
+    def test_only_the_first_identifier_is_ignored(self):
+        # the DR target in the description is no AZ identifier of the box: kept
+        labels = ("AZ 1 (DR: us-east-1a)", "AZ 2 (DR: us-east-1b)")
+        _, got = self.twr(mirrored(labels=labels))
+        self.assertEqual(got, [])
+        sp, _ = self.twr(mirrored(same_order=True, labels=labels))
+        self.assertNotIn(["azi1", "azi2"], self.classes(sp))
+
+    def test_identifier_after_a_colon_or_dash(self):
+        for labels in (("AZ: 1", "AZ: 2"), ("AZ-1", "AZ-2"), ("AZ - a", "AZ - b")):
+            with self.subTest(labels=labels):
+                _, got = self.twr(mirrored(labels=labels))
+                self.assertEqual([v.owners for v in got], [("group:azi1", "group:azi2")])
+                self.assertIn("put azi2's rows in azi1's order: b2, b1", got[0].message)
+                sp, _ = self.twr(mirrored(same_order=True, labels=labels))
+                self.assertIn(["azi1", "azi2"], self.classes(sp))
+
     def test_overlay_from_outside_is_left_out(self):
         d = mirrored()
         d["groups"].append({"id": "asg", "type": "asg", "label": "ASG", "over": ["fw1", "fw2"]})

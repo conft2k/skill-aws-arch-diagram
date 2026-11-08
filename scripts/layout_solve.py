@@ -1910,10 +1910,11 @@ TWIN_ROUNDS = 6         # solves per axis spent evening out twins (their measure
 TWIN_WHY = "twins alike"
 TWIN_NAMED = ("vpc", "account", "region", "onprem", "cloud")   # a twin root's own title may differ
 TWIN_NUMBERED = ("az",)                                          # ... or differ by its identifier only
-# an AZ's identifier in its title, and only that: the number or lone letter right after the word
-# AZ / Zone (AZ 1, AZ1, AZ a, Availability Zone C (Seoul), apne2-az1), or a region name's zone
-# letter (ap-northeast-2a); other numbers and text (IPv4, a parenthesised note) stay
-_TWIN_NUMBER = re.compile(r"\b(?:az|zone)[ \t]*(\d+[a-z]?|[a-z])\b|\b[a-z]{2}(?:-[a-z]+)+-\d+([a-z])\b", re.I)
+# an AZ's own identifier in its title, and only that: the first number or lone letter right
+# after the word AZ / Zone (AZ 1, AZ1, AZ: 1, AZ-1, AZ a, Availability Zone C (Seoul),
+# apne2-az1), or a region name's zone letter when that comes first (ap-northeast-2a); other
+# numbers and text (IPv4, a later "DR: us-east-1a" note) stay
+_TWIN_NUMBER = re.compile(r"\b(?:az|zone)[ \t]*[:-]?[ \t]*(\d+[a-z]?|[a-z])\b|\b[a-z]{2}(?:-[a-z]+)+-\d+([a-z])\b", re.I)
 
 
 def _twin_number(m: "re.Match") -> str:
@@ -1928,7 +1929,7 @@ def twin_title(gtype: str, label: Optional[str]) -> Optional[str]:
     if gtype in TWIN_NAMED:
         return None
     if gtype in TWIN_NUMBERED and label:
-        return _TWIN_NUMBER.sub(_twin_number, label)
+        return _TWIN_NUMBER.sub(_twin_number, label, count=1)
     return label
 
 

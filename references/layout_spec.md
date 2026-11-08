@@ -147,8 +147,9 @@ The type fixes border color, width, dash, badge and header insets (quick referen
   two App VPCs, the TGW subnet of each, the AZ boxes of two VPCs, two subnets in different
   AZs. One structure = the same group type tree, the same titles (a VPC's, Account's or
   Region's own title may differ; an AZ's own title may differ by its identifier only, the
-  number or letter right after AZ / Zone or a region name's zone letter: AZ 1 / AZ 2,
-  Availability Zone A / C (Seoul), ap-northeast-2a / 2c, but not (IPv4) / (IPv6)), CIDR line or not, the same node icons with the same
+  first number or letter after AZ / Zone (`AZ 1`, `AZ: 1`, `AZ-1`) or a region name's zone
+  letter when that comes first: AZ 1 / AZ 2, Availability Zone A / C (Seoul),
+  ap-northeast-2a / 2c, but not (IPv4) / (IPv6) or (DR: us-east-1a) / (DR: us-east-1b)), CIDR line or not, the same node icons with the same
   number of caption lines, the same overlays (`over:`, an Auto Scaling group) with the
   same title and `header` over the same nodes, on the same pattern of rows and columns
   (counted within each twin, so twins on other tracks qualify). An overlay that reaches
