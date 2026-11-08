@@ -139,6 +139,25 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
   DX+VPN+TGW 2개 RT 패턴, Route 53 Resolver inbound/outbound 아이콘 검색 결과 없음, F3/F5에 `fix:` 안내 없음,
   `rule:`의 펼친 edge 번호와 YAML `edges[n]` 번호가 다름, 범례 hop이 표시 이름 대신 node ID.
 
+## 2026-11-08 개선 계획에서 나온 백로그
+
+[`improve/plan.md`](improve/plan.md) 진행 중 나온 것입니다. 증거는 개발 머신의 `~/.cache/skill-design/improve/`에 있습니다.
+
+- **AZ twin: 제목 해석 대신 spec에 명시 (1순위).** 제목에서 AZ 식별자를 찾는 방식은 리뷰마다 새 제목 변형에서 틀렸습니다(3라운드, 사용자 결정으로 e6fa151에서 멈춤). 남은 사례는 다음과 같습니다.
+  - 오탐: `AZ (DR Zone: A)` / `AZ (DR Zone: B)`처럼 자기 식별자가 없는 제목에서 설명 속 `Zone: A`를 식별자로 봅니다.
+  - 누락: 같은 SG가 3행을 감싸고 순서가 `[web, app, worker]` / `[app, worker, web]`처럼 돌아간 순열은 TWR이 나오지 않습니다.
+  - 힌트 부족: overlay에 `span.rows`를 적은 spec은 힌트대로 `rows:`만 바꾸면 로드 오류가 납니다. span도 함께 바꾸라고 안내해야 합니다.
+  - 중복: 부모 상자 쌍과 AZ 쌍이 함께 보고될 수 있습니다.
+  - 근본 해결 후보: AZ 식별자 필드나 twin 지정 키를 spec에 두고, 제목 해석은 그 키가 없을 때만 씁니다.
+- **검사기가 못 보는 예제 결함 3가지 (corpus에 미검출 재현으로 넣음).**
+  - `qa/ex-gwlb-step2-beside-ec2`: HVH 대체 경로가 EC2 옆을 지나 GWLBe ⇄ EC2 연결처럼 읽힘. 선 관통 규칙(계획 단계 4)에서 다룹니다.
+  - `qa/ex-gwlb-slide-arrowhead-on-border`: 노드로 들어가는 화살촉이 컨테이너 테두리 위에 놓임. R-border에 검사를 더해야 합니다.
+  - `qa/ex-bedrock-dx-caption-bend`: 엔진이 대문자 캡션 폭을 ~14px 짧게 재서 선이 캡션 2px 옆에서 꺾임. 박스 아래 라벨의 soft run이 상자 테두리부터 재져 오른쪽 열을 밀어냄.
+- **gwlb slide AZ 1 step 2 화살촉이 GWLBe subnet·AZ 아래 테두리에 걸침.** 이전 그림에도 있었고, spec으로 고치면 글자가 9.4pt로 줄어 두었습니다.
+- **gwlb 문서 노트 2행에서 제목 "GWLBe ⇄ GWLB"가 설명 첫 줄에 거의 닿음.** 노트 칸 간격 문제입니다.
+- **문서 예제의 작은 글자:** 760px 칼럼에서 bedrock-dx 6.0px, centralized-egress 5.1px, serverless 6.9px, tgw 7.8px, nfw 8.3px(하한 9px). 글자를 키울 때 아이콘도 함께 키우는 엔진 변경, 또는 그림 분할이 필요합니다.
+- **gwlb slide의 corpus worse 2건은 면적만 늘어난 것(+5.7%)으로 사용자가 예외로 받았습니다.** 화살촉-테두리 검사가 생기면 다시 판정합니다.
+
 ## 알려진 문제 (막는 문제 아님)
 
 - **svg2pptx / export**
