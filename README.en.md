@@ -166,6 +166,8 @@ references/layout_spec.md    the layout spec (`*.layout.yaml`) format
 assets/icons.json            857 icons in one JSON bundle (sets: service, resource,
                              group, category); built at install time (or on first
                              use), not committed
+templates/                   three starter specs to copy and edit (multi-account, DX + VPN + TGW,
+                             CloudFront VPC origin); each passes every rule as a document and a slide
 docs/examples/specs/         one layout spec per reference example plus the skeleton
                              `example.layout.yaml`; each regenerates its example's layout
                              (`slides/`: the slide examples' specs)
@@ -208,8 +210,9 @@ scripts/outfile.py           write outputs with a plain open() once every result
 
 The layout engine is called Trellis. Its entry point is `scripts/layout.py`, and "the engine" in this document means Trellis.
 
-A new diagram is drawn from a layout spec, with no coordinates. Copy the closest example's
-spec from [`docs/examples/specs/`](docs/examples/specs/) and edit its column and row
+A new diagram is drawn from a layout spec, with no coordinates. Copy a starter spec from
+[`templates/`](templates/) when one is close, else the closest example's
+spec from [`docs/examples/specs/`](docs/examples/specs/), and edit its column and row
 tracks, containers, nodes, edges and note; the format is in
 [`references/layout_spec.md`](references/layout_spec.md).
 

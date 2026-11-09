@@ -17,14 +17,15 @@ that readers recognize instantly. Respect the containment order:
 ```
 AWS Cloud (group)
 └── Region (group)
-    └── VPC (group)
-        └── Availability Zone (group, no icon) — when HA matters
-            └── Subnet (public or private, group)
-            └── Service icons (EC2, ECS, RDS, ...)
+    └── AWS Account (group) — in a multi-account diagram; an Organization / OU is a plain box around the accounts
+        └── VPC (group)
+            └── Availability Zone (group, no icon) — when HA matters
+                └── Subnet (public or private, group)
+                └── Service icons (EC2, ECS, RDS, ...)
 ```
 
 Not every diagram needs every layer — a serverless diagram may skip VPC/subnets
-entirely. But when you show networking (EC2, ALB, RDS, NAT), draw the containers.
+entirely, and a single-account diagram skips the Account box. But when you show networking (EC2, ALB, RDS, NAT), draw the containers.
 Putting a private-only service (like RDS) outside a subnet box is a red flag to
 any AWS reviewer.
 
@@ -623,6 +624,13 @@ draft path copies an example, or start from `docs/examples/specs/example.layout.
   users' dashed DNS lookup reaches it, any height that keeps that line short); the rest of that
   strip staying empty is expected, not an "empty area". Never put them in the regional
   services row. The DNS lookup from the users to Route 53 stays a dashed connector.
+- **CloudFront VPC origin.** A VPC origin lets CloudFront reach an internal ALB, NLB or
+  EC2 instance in private subnets. There is no VPC-origin icon: draw CloudFront
+  (`service/Amazon-CloudFront`, global, outside the Region) with the sub-caption "VPC
+  origin" and one line straight to the internal load balancer, with no public subnet on
+  the path. The VPC must still have an internet gateway attached, though this traffic
+  does not pass it: draw the IGW on the VPC border with no line to it and a caption that
+  says so ("경로 아님"), never on CloudFront's line (`templates/cloudfront-vpc-origin.layout.yaml`).
 - **Regional services on a slide.** When a row above the VPC doesn't fit the slide's
   height, stack the regional services in a column beside the VPC (inside the Region),
   one per slot — a slot is an AZ row or the gap between rows — on the same grid; with

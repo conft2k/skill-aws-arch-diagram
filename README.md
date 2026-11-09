@@ -156,6 +156,8 @@ references/layout_spec.md    레이아웃 spec(`*.layout.yaml`) 형식
 assets/icons.json            아이콘 857개를 담은 JSON 번들 (세트: service, resource,
                              group, category); 설치할 때(건너뛰면 처음 쓸 때) 만들며
                              커밋하지 않음
+templates/                   처음 쓰는 사용자가 복사해 고치는 starter spec 3개(multi-account,
+                             DX + VPN + TGW, CloudFront VPC origin); 문서·슬라이드 모두 규칙 통과
 docs/examples/specs/         참조 예제마다 하나인 레이아웃 spec과 골격 `example.layout.yaml`;
                              각 spec이 그 예제의 레이아웃을 다시 만듦 (`slides/`: 슬라이드 예제용)
 scripts/find_icon.py         이름으로 아이콘 찾기: `find_icon.py alb igw "s3 gateway endpoint"`
@@ -190,7 +192,8 @@ scripts/outfile.py           결과를 메모리에서 모두 만든 뒤 평범�
 
 레이아웃 엔진의 이름은 Trellis입니다. 실행 파일은 `scripts/layout.py`이고, 이 문서에서 "엔진"은 Trellis를 뜻합니다.
 
-새 구성도는 좌표를 쓰지 않고 레이아웃 spec으로 그립니다. [`docs/examples/specs/`](docs/examples/specs/)에서
+새 구성도는 좌표를 쓰지 않고 레이아웃 spec으로 그립니다. 가까운 것이 있으면 [`templates/`](templates/)의
+starter spec을, 없으면 [`docs/examples/specs/`](docs/examples/specs/)에서
 가장 가까운 예제의 spec을 복사하고 열·행 트랙, 컨테이너, 노드, 연결선, 노트를 고칩니다.
 spec 형식은 [`references/layout_spec.md`](references/layout_spec.md)에 있습니다.
 

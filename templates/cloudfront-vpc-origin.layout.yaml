@@ -1,0 +1,39 @@
+# Starter template: Users → CloudFront → VPC origin → internal ALB in private subnets → ECS tasks (Fargate) in two AZs.
+# Copy it into your scratchpad and change the lines marked EDIT; every other line already draws cleanly.
+# One spec for both media: it passes R-fit as a document (≥ 11px in a 760px column) and as a slide (≥ 10pt), titled or not.
+# The document canvas is ~880px wide with its text auto-enlarged to 16px (13.8px in a 760px column); each column you add (a DB tier) or a longer
+# label or note row widens it: re-run and, if the summary drops under 11px, set text_scale (e.g. 1.3) or shorten.
+name: cloudfront-vpc-origin             # EDIT: the output stem (<name>.draft.svg)
+mode: document                          # document, or slide for a deck (the same spec passes both)
+cols: [users, cf, alb, task, igw]       # tiers left → right; igw: right of the VPC's columns, so the IGW goes on its right border
+rows: [az1, main, az2]                  # one row per AZ; main is the gap row the ALB and the IGW sit on
+
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}   # EDIT: the Region
+  - {id: vpc,    type: vpc, label: VPC, cidr: 10.0.0.0/16, in: region}    # EDIT: VPC name and CIDR
+  - {id: az,     type: az, in: vpc, per: [az1, az2]}                      # one AZ box per row listed in per
+  - {id: albsn,  type: private, label: ALB subnet, in: az, span: {cols: [alb, alb]}}   # the internal ALB's private subnets (no node of their own)
+  - {id: appsn,  type: private, label: App subnet, in: az}
+  - {id: svc,    type: generic, label: ECS service, over: [task.*], dash: "6,4"}      # EDIT: the service name
+
+nodes:
+  - {id: users, icon: resource/Users, label: Users, at: [users, main]}
+  - {id: cf,    icon: service/Amazon-CloudFront, label: CloudFront, sub: VPC origin, in: cloud, at: [cf, main]}   # the VPC origin is a CloudFront resource: no icon of its own, so it is CloudFront's sub-caption; global: in the Cloud, outside the Region
+  - {id: alb,   icon: resource/Elastic-Load-Balancing_Application-Load-Balancer, label: Internal ALB, in: vpc, at: [alb, main]}   # one ALB node on the gap row, never inside the AZ template
+  - {id: task,  icon: resource/Amazon-Elastic-Container-Service_Task, label: ECS task, in: appsn, col: task}   # one task per AZ (task.1, task.2)
+  - {id: igw,   icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, sub: 경로 아님, on: vpc, at: [igw, main]}   # a VPC origin needs an IGW attached to the VPC, though CloudFront's traffic does not pass it: no line to it
+
+edges:
+  - {e: "users -> cf",  step: 1}   # no label on the two short hops: a badge and a label side by side need a longer piece (the badge drops below the line); the protocol is in the note
+  - {e: "cf -> alb",    step: 2}   # through the VPC origin, privately: not through the IGW or a public subnet
+  - {e: "alb -> svc",   label: "HTTP :8080", step: 3}   # EDIT: the container port
+
+note:
+  # One short hop and one short description per step. A slide puts the steps in a left pane when it fits, else in
+  # ≤ 3 plain lines where hop and description are joined by one space: end each hop with a colon (or put the
+  # description in parentheses) to keep them apart. A long row widens the drawing: keep each under ~40 characters.
+  steps:
+    - ["Users → CloudFront:", "가까운 엣지에 HTTPS로 접속"]
+    - ["CloudFront → ALB:", "VPC origin으로 HTTPS 프라이빗 연결"]
+    - ["ALB → ECS task:", "같은 서비스의 태스크로 분산"]

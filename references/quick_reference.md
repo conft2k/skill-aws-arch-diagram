@@ -1,6 +1,11 @@
 # Quick reference
 
 A new diagram is written as a layout spec ([`layout_spec.md`](layout_spec.md)); the engine applies the numbers below.
+Start the spec from a starter template when one is close — `templates/multi-account-egress.layout.yaml`,
+`templates/dx-vpn-tgw.layout.yaml`, `templates/cloudfront-vpc-origin.layout.yaml` — copied into the scratchpad;
+each passes every rule as a document and as a slide, and marks the lines to change with `# EDIT`.
+Text size in a document: unscaled 12px text stays ≥ 11px in a 760px column only on a canvas ≤ ~830px wide;
+wider, `text_scale` must enlarge it (auto stops after two steps; a fixed value then) — re-check the slide (SKILL.md step 6, "Document R-fit").
 
 Every number and rule needed to draw a diagram, in one place, at the default icon size
 S = 48. Each value comes from `diagram_guide.md` (the section is named after the
@@ -201,6 +206,11 @@ Decide in this order; exactly one place, always outside the AWS Cloud box:
 | Bottom panel | `x = 16`, `width = canvas − 32`, `y = Cloud bottom + 16`, canvas ends 16 below; rows at x 28, badge `cx = 38`, hop x 56; first baseline `panel.y + 26`, rows 24 apart; `height = 26 + 24 × (rows − 1) + 18` (one row 44); description column 16px right of the widest hop (examples 165, 172, 223) |
 | Left pane | `x = 16`, `y = Cloud.y`, width 300 (320 if a description would run past four lines; or the width of the left column below it — bedrock-dx 456); Cloud starts at pane right + 24; badge `cx = 38`, first `cy = pane.y + 22`; hop at x 56, baseline `cy + 4`; description from 20 below the hop, 16 pitch, wrapped to width − 52; next hop at last baseline + 28; pane ends 14 below the last baseline; the client node centered on the pane's center x, pane bottom ≥ 16 above its icon |
 | Slide plain lines | badge `cx = Cloud.x + 10`, its text at `Cloud.x + 28`, text-only lines at `Cloud.x`; first badge prefers `cy = drawing bottom + 18` (text-only baseline ≥ bottom + 17); ≤ 3 lines, 16 apart; items flowed in a row, 20px from an item's text end to the next badge, a second row 24 below; reserve 4px below the last baseline and include the entire badge radius plus half its stroke; reuse empty space above the legend (keep ≥ 4px clear of the drawing) before growing the canvas |
+
+On plain lines a step's hop and description are joined by one space; end each hop with a
+colon (`"NAT → IGW:"`) or put the description in parentheses so the two read apart. Every
+note row takes width (panel) or height (pane): one short hop and a description under ~40
+characters per step, so the same rows pass as a document and as a slide.
 
 ## Canvas
 

@@ -5,7 +5,7 @@
                                 [--out REPORT.json] [--keep DIR] [--rule-checker MOD:FUNC]
                                 [--baseline REPORT.json --baseline-drafts DIR] [-q]
 
-Every manifest entry (a corpus case, or a docs/examples spec by reference) is run in each
+Every manifest entry (a corpus case, or a docs/examples or templates/ spec by reference) is run in each
 of its modes — `document` (--mode document), `slide` (--mode slide) and `slide-no-title`
 (--mode slide --no-title) — through scripts/layout.py's main() in this process (one worker
 process per -j). A filter keeps the entries whose path contains it (substring).
@@ -45,7 +45,7 @@ warnings (a spec the solve draws after moving something, saying what it moved). 
 status: 1 when a run ends otherwise (a crash or a timeout never matches), 2 when nothing
 matches the filters, else 0. Check problems and rule violations are
 recorded, never judged here. A malformed manifest (unknown key, unknown rule, missing file,
-a file listed twice, …), or a corpus or docs/examples spec it does not list, stops the run
+a file listed twice, …), or a corpus, docs/examples or templates/ spec it does not list, stops the run
 before it starts. An entry with `known_fail: <why>` that does not end as expected is reported
 as a known failure without failing the run, and is reported again once it passes.
 
@@ -86,6 +86,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CORPUS = ROOT / "tests" / "corpus"
 MANIFEST = CORPUS / "MANIFEST.yaml"
 EXAMPLES = ROOT / "docs" / "examples" / "specs"
+TEMPLATES = ROOT / "templates"
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import layout  # noqa: E402
@@ -236,7 +237,7 @@ def load_manifest(path: Path = MANIFEST) -> List[Dict[str, Any]]:
             entries.append(e)
     if path.resolve() == MANIFEST.resolve():
         listed = {e["file"] for e in entries}
-        unlisted = sorted(str(p.relative_to(ROOT)) for d in (CORPUS, EXAMPLES)
+        unlisted = sorted(str(p.relative_to(ROOT)) for d in (CORPUS, EXAMPLES, TEMPLATES)
                           for p in d.rglob("*") if p.is_file() and p.name != MANIFEST.name
                           and p.suffix in (".yaml", ".yml", ".json") and str(p.resolve()) not in listed)
         if unlisted:

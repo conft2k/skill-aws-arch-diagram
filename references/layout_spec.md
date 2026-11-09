@@ -3,8 +3,10 @@
 A spec (`<name>.layout.yaml`) declares *what* the diagram holds and *which track* each
 thing sits on; Trellis, the layout engine (`scripts/layout.py`), computes every coordinate and writes a draft that
 already passes `check_layout.py`. You write tracks, nesting and edges — never a pixel.
-Start from the closest `docs/examples/specs/*.layout.yaml` (every one regenerates its
-example; `docs/examples/specs/slides/` for a slide) and change it. The guide's rules still decide the content (which icons, which
+Start from a starter template in `templates/` when one is close (each passes every rule as
+a document and as a slide; the lines to change are marked `# EDIT`), else from the closest
+`docs/examples/specs/*.layout.yaml` (every one regenerates its example;
+`docs/examples/specs/slides/` for a slide), and change it. The guide's rules still decide the content (which icons, which
 groups, left → right tiers, technical correctness); this file covers only how to say it.
 
 The smallest complete spec is the skeleton, `docs/examples/specs/example.layout.yaml`:
@@ -133,7 +135,10 @@ for another. Two nodes of one column join with a straight V.
 | `sg` | Security group | | `cloudwan` | none (phase 2: dash is a guess) |
 
 The type fixes border color, width, dash, badge and header insets (quick reference
-"Groups"); you never write them.
+"Groups"); you never write them. An `account` is an ordinary box nested like any other:
+AWS Cloud > Region > Account > VPC (an Organization or OU is a `generic` box around the
+accounts, inside the Region); `templates/multi-account-egress.layout.yaml` draws two
+workload accounts and a Network account this way.
 
 - `in`: parent group. Omitted = top level, outside the AWS Cloud (on-premises boxes).
 - `label`: the title; `cidr`: drawn as its own 12px line under the title.
@@ -414,7 +419,16 @@ The type fixes border color, width, dash, badge and header insets (quick referen
 
 One of `steps` (the step legend, `[hop, description]` per badge number, in order),
 `summary` (one line) or `rows` (`[label, text]` pairs), plus `place: auto|panel|pane|lines`
-and `width` (a pane's px). Leave `place` on auto: a document with steps gets a left pane
+and `width` (a pane's px). The note's text takes room like any other: a long row widens
+the bottom panel and so the canvas, or deepens a pane — in a document that lowers the
+text size in a 760px column (R-fit), and `--explain` shows it only as wider gaps. Keep
+each row to a short hop and a description under ~40 characters; put the detail in the
+text around the figure. On a slide's plain lines the hop and its description are joined by
+one space (`EC2 → TGW ENI App RT 기본 → TGW` reads as one path), so end each hop with a
+colon (`"EC2 → TGW ENI:"`) or put the description in parentheses; the same rows then read
+in a document panel and on a slide (the templates do this). An abbreviation you define in
+a `rows` note is lost when you switch it to `steps`: spell it out in the step text, or
+use the short form only where a node label already shows it. Leave `place` on auto: a document with steps gets a left pane
 when the drawing is taller than 0.7 × its width or something left of the Cloud leaves
 room above it, else the bottom panel; a slide gets a pane when it fits the 1108px width,
 else ≤ 3 plain lines, never a panel.
@@ -476,6 +490,11 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   blocked it (`bend_y tgwa.y0-60 = 148: LINE OVER TEXT '10.1.0.0/16' of svcs`) and what to
   try — a clean `bend_y: 181`, widening the gap between the ends, or for a same-side
   out-and-back `give <box> pad_right`; a refused request runs no re-solve of its own).
+- `selection: default kept; evaluated N/M candidates`: when the rule checker flags the
+  draft, the engine tries up to M alternative drawings (other shapes or moves for the
+  flagged edges) and keeps one only if it scores better; `default kept` means none did
+  (N = 0: nothing was flagged), `selection: candidate i (…)` names the one it kept.
+  Informational: nothing to change for it.
 - `check: …` lines: what the engine already widened or repaired on its own — e.g. `line
   leaves box (vpc bottom): node:a → group:vpc.B ≥ 94` when a route went round the outside of
   the box both ends are in (or `line off canvas (canvas top)` past the canvas edge): it
@@ -575,8 +594,9 @@ rows: [{id: svc, flow: 160}, az1, main, az2]
 - **A bus with drops** (`fork: bus`, phase 2) is drawn as a trunk fork with a warning;
   bedrock-dx draws its buses as `points` edges, one per segment.
 - **Gateways on a top / bottom border**, border nodes inside a template, nested or
-  multi-row templates, emphasis size (64), a TGW route table drawn as a table, Cloud WAN,
-  multi-account layouts: not in the engine.
+  multi-row templates, emphasis size (64), a TGW route table drawn as a table, Cloud WAN:
+  not in the engine. Multi-account diagrams need no layout of their own: `account` boxes
+  nest like the other groups (see "groups").
 - **No key picks the label / badge piece** beyond `step_at` / `label_at`; **no key aligns a
   node to another group's side**; `gap()` treats every icon footprint as an obstacle.
 - **`points`** reserve no space (widen with `min_gap_before` / `pad_top`) and cannot use

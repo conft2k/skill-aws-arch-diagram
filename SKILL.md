@@ -72,7 +72,24 @@ service or resource. Ask a brief clarifying question only if the topology is gen
 ambiguous; otherwise proceed with a sensible default and note assumptions. For a deck,
 settle the slide titles (one line each, or none) and the list of slides.
 
-### 2. Copy the closest example spec
+### 2. Copy the closest starter template or example spec
+**Starter templates first.** `templates/` holds three small specs that pass every rule
+(`Layout OK`, no `rule:` line) as a document *and* as a slide, titled or not, from the
+same file; each line you are meant to change is marked `# EDIT`, and the comments say
+which keys keep it passing. When one is close to the request, copy it and change only
+the `EDIT` lines first:
+
+```bash
+cp ${CLAUDE_SKILL_DIR}/templates/dx-vpn-tgw.layout.yaml /path/to/scratchpad/arch.layout.yaml
+```
+
+| Template (`templates/`) | What it draws | Pick it for |
+|---|---|---|
+| `multi-account-egress.layout.yaml` | AWS Cloud > Region > Organization > accounts: two workload accounts' App VPCs attached to a TGW shared from the Network account, egress through its Egress VPC (TGW ENI → NAT → IGW → Internet), 4 steps | multi-account, shared TGW (AWS RAM), centralized egress per account |
+| `dx-vpn-tgw.layout.yaml` | on-premises → Direct Connect (transit VIF) → DX gateway, and Site-to-Site VPN over the Internet as the backup, into one TGW with two route tables: On-prem RT beside the DXGW / VPN attachments, VPC RT beside the VPC attachments | hybrid DX + VPN, a TGW with several route tables |
+| `cloudfront-vpc-origin.layout.yaml` | Users → CloudFront (VPC origin) → internal ALB in private subnets → an ECS service of one task per AZ; the IGW a VPC origin requires on the VPC border with no line, 3 steps | CloudFront in front of a private origin, ALB + ECS/Fargate |
+
+Otherwise copy the closest example spec.
 `docs/examples/` holds finished, checked document-size layouts (`*.svg`, each with its
 `*.png`), and `docs/examples/specs/` the spec that regenerates each one; for a slide,
 `docs/examples/specs/slides/` holds the `mode: slide` specs of `docs/examples/slides/`
@@ -95,6 +112,10 @@ cp ${CLAUDE_SKILL_DIR}/docs/examples/specs/nfw-reference-architecture.layout.yam
 | `bedrock-dx-reference-architecture.svg` | `bedrock-dx-reference-architecture.layout.yaml` | on-premises Claude Code → Direct Connect (private VIF) → DX gateway → VGW → interface endpoints (bedrock-runtime, bedrock, sts) and Resolver inbound in a 2-AZ VPC, a second-Region VPC, Bedrock global cross-Region inference, 8 steps in a wide left pane | Direct Connect, hybrid DNS, interface endpoints / PrivateLink, private Bedrock access |
 | `serverless-order-pipeline.svg` | `serverless-order-pipeline.layout.yaml` | a serverless event pipeline of 29 nodes (32 icons) folded into lanes: request lane (Users → CloudFront + WAF → API Gateway + Cognito → Lambda → DynamoDB → Streams → Pipes → event bus, CloudFront's default behavior to an S3 static web origin with OAC), the bus wrapping back left to a rule that feeds an analytics lane (SQS → Lambda → Firehose → S3) and a fulfillment lane (Step Functions → Lambda · SNS → Lambda → SES) above a 2-AZ VPC (Lambda per AZ → RDS Proxy with IAM auth → Aurora writer/readers, Secrets Manager endpoints), Cognito · CloudWatch · X-Ray · Secrets Manager on the top row, 9 steps in a bottom panel | serverless, event-driven or any pipeline of more than ~8 nodes in one row (fold it into lanes instead of one long row), VPC-attached Lambda, RDS Proxy |
 | `../example.svg` | `example.layout.yaml` | the minimal skeleton: one VPC, 2 AZs, ALB, ASG of two EC2, IGW (slide spacing) | a topology none of the above resembles |
+
+The examples are reference figures, not starters: most document examples miss R-fit in a
+760px column as they are (alb 9.2px, nfw 8.3px, centralized-egress 5.1px) and need
+`text_scale` or a narrower layout first (step 6, "Document R-fit").
 
 `slides/` holds slide-size versions of the NLB, ALB, GWLB, NFW and TGW examples
 (`slides/*.svg`, ≤ 1107 × 540, text ≥ 10pt on a titled slide), the deck made from them (`reference-architectures.pptx`) and a render of each
@@ -166,8 +187,10 @@ user. Never hand-draw a fake product mark.
 ### 5. Write the spec
 Change the copied spec with Edit (or rewrite it whole when most lines change): rename labels, swap `icon:` refs, delete what the
 request doesn't have, add nodes, groups and edges for what it adds, add or drop
-tracks. The copy already satisfies the guide, so every line you leave alone stays
-correct. One spec per diagram (one per slide for a deck) in the scratchpad.
+tracks. The copy already follows the guide's grammar, so every line you leave alone stays
+correct in what it shows; it does not guarantee the text size: only a template passes
+R-fit as copied, and any label, column or note row you add widens the canvas (see
+"Document R-fit" in step 6). One spec per diagram (one per slide for a deck) in the scratchpad.
 
 **Decide only the tracks and the nesting**: which column (tier) and row (AZ, or the gap
 row between AZs) each node sits on, which group holds it, and which edges, labels and
@@ -227,6 +250,19 @@ By default it enlarges every font together and lays out again, at most twice, ke
 the earlier result if text shrinks or check/other rule counts grow. Use `text_scale: off`
 to retain the original layout, or a number such as `text_scale: 1.4` for a fixed multiplier.
 Below the 8pt/9px floor, split the diagram or write a `mode: slide` spec.
+
+**Document R-fit.** In a document the drawing is shrunk to a 760px column, so unscaled 12px text
+reaches 11px only on a canvas ≤ ~830px wide; a typical slide-size draft (1000–1100px)
+comes out at 8–9px. A slide is judged on its own 1108 × 540 canvas, so the same draft can
+pass as a slide and fail as a document. Fix a document in this order: drop a column or
+shorten the labels and note rows that set the widest columns (`--explain` names them);
+then set a fixed `text_scale` (1.5–1.8): text grows faster than the canvas, since icons
+keep their size. `text_scale` is one key for both modes, so check the slide again with
+`--mode slide` (and `--no-title`); the `dx-vpn-tgw` (1.5) and `multi-account-egress`
+(1.8) templates pass both this way. When no scale passes both, keep two specs — the
+document one with `text_scale` and a slide one (`docs/examples/specs/slides/` style) —
+and tell the user. `auto` stops after two enlargements, which is not enough on a canvas
+over ~1000px wide.
 
 ### 7. Export and verify
 Export the formats you need — any combination, from the same drafts:
@@ -456,9 +492,11 @@ draft path you draw them yourself. The decisions behind them are yours on both p
     without losing what it shows — may the smallest text go down to **8pt**, never below
     (canvas up to about 1380 × 675 with a title, 1380 × 755 without). Then tell the user
     which slide is under 10pt, its smallest size and why it couldn't be avoided.
-  - When the same diagram is wanted as a document image *and* a slide, use one draft if
-    it fits the slide limits; otherwise draw a compact slide draft next to the document
-    one (same grammar and icons, fewer rows or a split) and tell the user.
+  - When the same diagram is wanted as a document image *and* a slide, use one spec only
+    if it passes R-fit in both modes (`--mode document` and `--mode slide`): fitting the
+    slide limits is not enough, since a slide-size draft is usually too wide for 11px in a
+    document column (step 6, "Document R-fit"). Otherwise draw a compact slide draft next
+    to the document one (same grammar and icons, fewer rows or a split) and tell the user.
   - The document-size reference layouts come out under 10pt on a titled slide; for
     a slide start from their `docs/examples/slides/` versions instead.
 - Root `font-family` starts with a Korean font that is **installed on this machine** —
@@ -551,6 +589,7 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
   itself, or one a plain `open()` could not write (a read-only file, a new file in a
   read-only folder), is refused. The files are then written with a plain `open()`, so
   umask, mode, links and names behave as for any other write.
+- `templates/` — starter specs (multi-account egress, DX + VPN + TGW with two route tables, CloudFront VPC origin → internal ALB → ECS) that pass every rule as a document and as a slide; lines to change are marked `# EDIT`
 - `docs/examples/` — checked NLB, ALB, GWLB, TGW, Network Firewall, centralized egress, NLB mTLS and Bedrock-over-DX reference layouts and the serverless order pipeline in lanes
   (exported SVGs with inlined icons + PNG; copy them as drafts on the draft path); `specs/`
   has the layout spec that regenerates each of them and the skeleton (copy one in step 2);
