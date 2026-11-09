@@ -8,14 +8,14 @@
 
 - [x] 새 코드 **F6**이 rule checker에 있다. R-flow, tier 0, owners `(edge:n, node:x)`, 메시지는 표시 이름(label)을 쓰고 `try:` 값을 붙인다. GLOSSARY(Line over node, Attach piece)와 rules-design(§1 R-flow F6, §6 사용자 결정)에 적었다.
 - [x] Corpus 태그: dns-trunk·nat-route-table·privatelink·ssm-trunk의 slide 두 mode, three-az-writer 세 mode가 `bad: {R-flow: node:…}`다. 각각 crossing을 없앤 good 짝(`qa/lc-*-clear`)이 있고, 자기 끝 icon에 붙는 곳에서만 닿는 good 사례(`qa/lc-own-end-touch`)가 있다. 태그 불일치 **0**.
-- [x] 기준 대비 악화 0, 새 tier-0 identity 0(F6이 기존 crossing을 새로 보고하는 것 제외). 2차 리뷰 수정 뒤(`fix2/`) 재판정 기준 대비 **better 0 / same 775 / worse 0**, 새 tier-0 identity run **0**이다. 기준 대비 바뀐 draft도 **0**이다. 모든 draft가 main 601099d와 byte-identical이다.
+- [x] 기준 대비 악화 0, 새 tier-0 identity 0(F6이 기존 crossing을 새로 보고하는 것 제외). 2차 리뷰 수정 뒤(`fix2/`) 재판정 기준 대비 **better 0 / same 775 / worse 0**, 새 tier-0 identity run **0**이다. 기준 대비 바뀐 draft도 **0**이다. 기준 파일이 있는 759개 draft가 모두 main 601099d와 byte-identical이다(새 good 사례의 18개 draft는 기준이 없다).
 - [x] 시간: 0.5초 이상 run 중 최대 비율 **1.466×**(latest2-pipeline slide). 전체 최대는 아주 짧은 run의 1.706×(sides/t2t, 0.017→0.029초)다. 최악 run **18.29초**, 합계 **1.026×**. 3×·30초 초과 0.
 - [x] 아래 표가 bad 태그 사례마다 선택 전/후 crossing 수와 남은 이유를 적는다.
-- [ ] Codex review: 이 문서 뒤에 한다.
+- [x] Codex review: 3차 재리뷰(`rv/rv3.log`)에서 차단 0건.
 
 ## 2차 리뷰 수정 (사용자 승인, F6을 선택 전 단계에서 숨김)
 
-Codex 재리뷰(`rv/rv2.log`)에서 차단 2건(아래 1차 수정 2·3)이 남았고, 원인 설명 두 곳이 정정됐다. PNG 판정은 three-az-writer slide-no-title을 main보다 **나쁨**, gw-ret 두 slide를 같음으로 보았다.
+Codex 재리뷰(`rv/rv2.log`)에서 차단 2건(아래 1차 수정 2·3)이 남았고, 원인 설명 두 곳이 정정됐다. PNG 판정(`judge2/*.md`, 아이콘을 넣어 렌더)은 three-az-writer slide-no-title을 main보다 **나쁨**, gw-ret 두 slide를 같음으로 보았다.
 
 - **수정:** `RuleGuard`에 `ignore_codes`를 두었다. 다음 두 guard는 `PRE_SELECTION_IGNORED = {F6}`를 보지 않는다.
   - default drawing을 만드는 첫 단계(`protect=False, selection=False`)의 guard
@@ -210,8 +210,8 @@ worktree 루트에서:
 uv run --with pyyaml python tests/run_corpus.py --rule-checker scripts/rules.py:corpus -q -j 6 \
   --baseline ~/.cache/skill-design/baseline/main-601099d.json \
   --baseline-drafts ~/.cache/skill-design/baseline/main-601099d-drafts \
-  --keep ~/.cache/skill-design/improve/line-cross/t01/final/drafts \
-  --out ~/.cache/skill-design/improve/line-cross/t01/final/corpus.json
+  --keep ~/.cache/skill-design/improve/line-cross/t01/fix2/drafts \
+  --out ~/.cache/skill-design/improve/line-cross/t01/fix2/corpus.json
 uv run --with pyyaml python ~/.cache/skill-design/improve/line-cross/t01/rejudge.py \
   ~/.cache/skill-design/baseline/main-601099d.json ~/.cache/skill-design/baseline/main-601099d-drafts \
   ~/.cache/skill-design/improve/line-cross/t01/final/corpus.json ~/.cache/skill-design/improve/line-cross/t01/final/drafts \
