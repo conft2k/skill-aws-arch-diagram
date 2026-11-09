@@ -463,7 +463,7 @@ def official_icon(phrase):
     """The bundle icon a phrase names exactly (score ≥ 95), or None."""
     if len(find_icon.norm(phrase)) < 3:
         return None
-    for score, ref in find_icon.search(phrase, k=3):
+    for score, ref in find_icon.search(phrase, k=3, lookup=False):
         if score >= 95 and ref.split("/", 1)[0] in ICON_SETS:
             return ref
     return None

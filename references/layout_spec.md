@@ -238,8 +238,9 @@ workload accounts and a Network account this way.
 `{id, icon, label, sub?, in? | on?, at? | col? | row? | xy?, dx?, dy?, for?, via?}`
 
 - `icon`: the full `set/name` ref that `find_icon.py` printed. A bare alias is accepted
-  only when it has exactly one score-95 hit (`ec2` works; `alb`, `igw` score 85 and fail,
-  and the error lists the candidates) — write full refs.
+  only when it has exactly one score-95 hit (`ec2`, `dx`, `ram`, `ecs task` work; `alb`, `igw`
+  score 85 and fail, and the error lists the candidates, or the closest names when nothing
+  matches) — write full refs.
 - `label` (required, 14px); `sub`: a string or a list of 12px grey lines under it.
   In a template, `label: {1: RDS Primary, 2: RDS Standby}`.
 - Position: `at: [col, row]`; `at: [b1..b2, main]` centers between two columns (a colspan

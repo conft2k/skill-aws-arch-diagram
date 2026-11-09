@@ -1106,7 +1106,8 @@ class _Loader:
             if setname in find_icon.SETS and name in find_icon.SETS[setname]:
                 return q, None
             hits = find_icon.search(name.replace("-", " ").replace("_", " ") or q, k=3)
-            hint = f"; closest: {', '.join(ref for _, ref in hits)}" if hits else ""
+            hint = (f"; closest: {', '.join(ref for _, ref in hits)}" if hits
+                    else f"; {find_icon.no_match_hint(name.replace('-', ' ').replace('_', ' ') or q)}")
             self.err(loc, f"icon: {q!r} is not in the icon bundle (assets/icons.json){hint}")
             return None
         hits = find_icon.search(q, k=5)
@@ -1116,7 +1117,7 @@ class _Loader:
         cands = ", ".join(f"{ref} ({s})" for s, ref in hits[:3])
         why = "is ambiguous" if top else f"has no match scoring ≥ {ICON_MIN_SCORE}"
         self.err(loc, f"icon: alias {q!r} {why}; write the full ref"
-                      + (f" — candidates: {cands}" if cands else " — find_icon.py lists the icons"))
+                      + (f" — candidates: {cands}" if cands else f" — {find_icon.no_match_hint(q)}"))
         return None
 
     # ---- expansion

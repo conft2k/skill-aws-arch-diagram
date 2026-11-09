@@ -692,7 +692,9 @@ ERRORS = [
     ("steps key not an endpoint", no_steps_field,
      ["edges[0] igw -> ec2.*: steps: 'ec2.3' is not an endpoint of this edge's instances (ec2.1, ec2.2, igw)"]),
     ("icon ref not in the bundle", lambda d: d["nodes"][0].update(icon="service/Amazon-EC3"),
-     ["nodes[0] ec2: icon: 'service/Amazon-EC3' is not in the icon bundle (assets/icons.json)"]),
+     ["nodes[0] ec2: icon: 'service/Amazon-EC3' is not in the icon bundle (assets/icons.json); closest: "
+      "service/Amazon-EC2 ('ec2'), service/Amazon-Elastic-Container-Registry ('ecr'), "
+      "service/Amazon-Elastic-Container-Service ('ecs')"]),
     ("ambiguous icon alias", lambda d: d["nodes"][0].update(icon="management console"),
      ["nodes[0] ec2: icon: alias 'management console' is ambiguous; write the full ref — candidates: "
       "service/AWS-Management-Console (95), resource/AWS-Management-Console (95), "

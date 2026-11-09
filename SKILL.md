@@ -152,7 +152,11 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/find_icon.py ec2 "api gateway" s3 igw "s3 ga
 
 It prints ranked `set/name` references (e.g. `service/AWS-Lambda`, `group/AWS-Cloud-logo_32`,
 `resource/Amazon-VPC_Internet-Gateway`). Common
-abbreviations (alb, ecs, s3, vpc, igw, nat, vpce, eice, rtb, ...) are aliased. List a whole
+abbreviations and names are aliased (alb, ecs, s3, vpc, igw, nat, vpce, eice, rtb, tgw attachment,
+dx, dxgw, vpn/s2s, ram, sso, ecs task, aurora writer, on-prem, users, and Korean words such as
+사용자, 온프레미스, 데이터센터, 전용선), each word of a longer query too (`"s3 bucket"`); a query
+with no match prints the closest names, and one with no icon of its own (`az`, `sg`,
+`vpc origin`) says what to draw instead. List a whole
 set with `--list resource`. Sets available: `service` (303), `resource` (513),
 `group` (15), `category` (26). Write the full `set/name` ref as the spec's `icon:` (an
 abbreviation there works only when it scores 95 alone; container badges come from the

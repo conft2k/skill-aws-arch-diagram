@@ -9,8 +9,11 @@ Usage:
 Prints ranked matches as `set/name`. Icons live inside assets/icons.json
 (one file, not hundreds), so reference them by `set/name` and let embed.py
 inline the actual SVG/PNG when you build a diagram. Matches whole words,
-case/hyphen-insensitive, with common AWS abbreviation aliases.
+case/hyphen-insensitive, with common AWS abbreviation aliases (also the names and
+Korean words a first-time author types, word by word in a longer query). A query that
+matches nothing prints the closest names.
 """
+import difflib
 import re
 import sys
 from pathlib import Path
@@ -60,6 +63,97 @@ ALIASES = {
     "datacenter": "corporate data center",
     "agentcore": "bedrock agentcore",
 }
+
+# Names and abbreviations a first-time author types when looking an icon up (find_icon.py, a
+# spec's bare `icon:`). Keys match case-, hyphen- and space-insensitively, and each word of a
+# longer query is spelled out too ("ecs task"). Every target is an official icon in
+# assets/icons.json. Lookup only: the SERVICE AS TEXT check (search(..., lookup=False)) reads
+# connector labels with ALIASES alone, so "VPC attachment", "VPN" or "사용자" on a line stay labels.
+LOOKUP_ALIASES = {
+    "tgw attachment": "transit gateway attachment", "tgw attach": "transit gateway attachment",
+    "tgw vpc attachment": "transit gateway attachment", "vpc attachment": "transit gateway attachment",
+    "tgw vpn attachment": "transit gateway attachment", "tgw dx attachment": "transit gateway attachment",
+    "transitgateway attachment": "transit gateway attachment",
+    "dx": "direct connect", "aws dx": "direct connect", "dx connection": "direct connect",
+    "direct connect connection": "direct connect", "dx link": "direct connect",
+    "dxgw": "direct connect gateway", "dx gateway": "direct connect gateway",
+    "dx gw": "direct connect gateway", "dcgw": "direct connect gateway",
+    # "VPN" alone ties Client VPN and Site-to-Site VPN; in an architecture diagram it is the S2S one
+    "vpn": "site-to-site vpn", "s2s": "site-to-site vpn", "s2s vpn": "site-to-site vpn",
+    "aws vpn": "site-to-site vpn",
+    "virtual private gateway": "vpn gateway", "vpg": "vpn gateway",
+    "customer gateway device": "customer gateway",
+    "nat gw": "nat gateway", "ngw": "nat gateway",
+    "internet gw": "internet gateway",
+    "vpc endpoint": "vpc endpoints", "vpc interface endpoint": "vpc endpoints",
+    "vpc gateway endpoint": "vpc endpoints", "privatelink endpoint": "vpc endpoints",
+    "endpoint service": "privatelink", "vpc endpoint service": "privatelink",
+    "aws privatelink": "privatelink",
+    "internal alb": "application load balancer", "internal nlb": "network load balancer",
+    "loadbalancer": "elastic load balancing", "lb": "elastic load balancing",
+    "ecs task": "elastic container service task", "fargate task": "elastic container service task",
+    "ecs service": "elastic container service service",
+    "fargate service": "elastic container service service",
+    "aurora writer": "aurora instance", "aurora reader": "aurora instance",
+    "aurora primary": "aurora instance", "aurora replica": "aurora instance",
+    "aurora read replica": "aurora instance", "aurora cluster": "aurora",
+    "rds primary": "rds instance", "rds standby": "rds instance", "rds replica": "rds instance",
+    "web acl": "waf", "waf web acl": "waf", "webacl": "waf", "aws waf": "waf",
+    "cloudfront distribution": "cloudfront", "cf": "cloudfront",
+    "ram": "resource access manager", "aws ram": "resource access manager",
+    "org": "organizations", "aws organizations": "organizations",
+    "member account": "organizations account", "org account": "organizations account",
+    "workload account": "organizations account",
+    "management account": "organizations management account",
+    "payer account": "organizations management account",
+    "ou": "organizations organizational unit", "organizational unit": "organizations organizational unit",
+    "on prem": "corporate data center", "on premise": "corporate data center",
+    "corporate": "corporate data center", "corporate network": "corporate data center",
+    "corp": "corporate data center", "idc": "corporate data center", "dc": "corporate data center",
+    "office": "office building", "branch office": "office building",
+    "end user": "users", "end users": "users", "customers": "users",
+    "mobile": "mobile client", "mobile app": "mobile client",
+    "r53": "route 53", "route53": "route 53",
+    "nfw": "network firewall", "anfw": "network firewall",
+    "ga": "global accelerator", "aga": "global accelerator",
+    "cw": "cloudwatch", "kds": "kinesis data streams", "api gw": "api gateway",
+    "sso": "iam identity center", "aws sso": "iam identity center",
+    "identity center": "iam identity center", "ssm": "systems manager", "cfn": "cloudformation",
+    "firehose": "data firehose", "kinesis firehose": "data firehose", "kdf": "data firehose",
+    "cwl": "cloudwatch logs", "lambda function": "lambda lambda function",
+    "opensearch": "opensearch service",
+    # Korean labels are common in customer diagrams; the AWS Korean console names
+    "사용자": "users", "사용자들": "users", "고객": "users", "최종 사용자": "users",
+    "온프레미스": "corporate data center", "온프렘": "corporate data center",
+    "데이터센터": "corporate data center", "데이터 센터": "corporate data center",
+    "전산센터": "corporate data center",
+    "사무실": "office building", "지점": "office building",
+    "인터넷": "internet", "서버": "server", "모바일": "mobile client",
+    "전용선": "direct connect", "다이렉트 커넥트": "direct connect",
+    "전송 게이트웨이": "transit gateway", "트랜짓 게이트웨이": "transit gateway",
+    "인터넷 게이트웨이": "internet gateway", "nat 게이트웨이": "nat gateway",
+    "고객 게이트웨이": "customer gateway", "가상 프라이빗 게이트웨이": "vpn gateway",
+    "로드밸런서": "elastic load balancing", "로드 밸런서": "elastic load balancing",
+    "라우팅 테이블": "route 53 route table", "라우트 테이블": "route 53 route table",
+    "엔드포인트": "vpc endpoints", "계정": "aws account",
+}
+
+
+def akey(s: str) -> str:
+    """An alias key: lowercase, hyphens/underscores/runs of spaces → one space."""
+    return re.sub(r"[\s_\-]+", " ", s.lower()).strip()
+
+
+_ALIAS = {akey(k): v for k, v in {**ALIASES, **LOOKUP_ALIASES}.items()}
+
+# Things an author looks up that have no icon of their own: what to say, and the query whose
+# icons the CLI prints instead. Not aliases, so a line labeled "VPC origin" stays a label.
+NO_ICON_NOTES = {
+    "vpc origin": ("there is no separate VPC origin icon: a CloudFront VPC origin is a CloudFront "
+                   "setting, so draw service/Amazon-CloudFront and the internal ALB/NLB/EC2 it reaches, "
+                   "and write 'VPC origin' as that node's sub or the line's label", "cloudfront"),
+}
+NO_ICON_NOTES["cloudfront vpc origin"] = NO_ICON_NOTES["vpc origin"]
 
 
 # Logo-less AWS Cloud outlines: never offered, the AWS Cloud badge always has the logo.
@@ -125,10 +219,26 @@ def score(query: str, name: str) -> int:
     return 0
 
 
-def search(query: str, k: int = 5):
-    ql = query.lower().strip()
-    alias = ALIASES.get(ql, [])
+def word_aliases(query: str):
+    """The query with each word that is an alias spelled out ("ecs task" → "elastic container
+    service task"), or None when no word is one."""
+    words = akey(query).split(" ")
+    if len(words) < 2:
+        return None
+    out = [a if isinstance(a, str) else w for w in words for a in [_ALIAS.get(w)]]
+    return " ".join(out) if out != words else None
+
+
+def search(query: str, k: int = 5, lookup: bool = True):
+    """[(score, ref)], best first. lookup=False: the query's own words and ALIASES only."""
+    if lookup:
+        alias = _ALIAS.get(akey(query), [])
+    else:
+        alias = ALIASES.get(query.lower().strip(), [])
     queries = [query] + ([alias] if isinstance(alias, str) else alias)
+    spelled = word_aliases(query) if lookup else None
+    if spelled:
+        queries.append(spelled)
     results = []
     for setname, entries in SETS.items():
         for name in entries:
@@ -140,6 +250,63 @@ def search(query: str, k: int = 5):
                 results.append((s, rank, len(name), f"{setname}/{name}"))
     results.sort(key=lambda r: (-r[0], r[1], r[2]))
     return [(s, ref) for s, _, _, ref in results[:k]]
+
+
+def _names():
+    """{spelled name: ref or None} for close-match suggestions: each icon's name in words, and
+    each alias key (None: resolved by search() only when it is suggested)."""
+    out = {}
+    for setname, entries in SETS.items():
+        for name in entries:
+            ref = f"{setname}/{name}"
+            if ref not in NO_LOGO:
+                out.setdefault(" ".join(core(tokens(name))), ref)
+    for key in _ALIAS:
+        out.setdefault(key, None)
+    return out
+
+
+_NAMES = None
+
+
+def _shared_start(a: str, b: str) -> int:
+    n = 0
+    while n < min(len(a), len(b)) and a[n] == b[n]:
+        n += 1
+    return n
+
+
+def closest(query: str, k: int = 3):
+    """[(name, ref)] for the names nearest to a query that matched nothing (typos, near words)."""
+    global _NAMES
+    if _NAMES is None:
+        _NAMES = _names()
+    out, seen = [], set()
+    words = akey(query).split(" ")
+    while len(words) > 1 and words[0] in VENDOR:
+        words = words[1:]  # icon names are spelled without Amazon/AWS
+    q = " ".join(words)
+    near = difflib.get_close_matches(q, list(_NAMES), n=k * 3, cutoff=0.6)
+    # ties (ec3: ec2, ecr, ecs) go to the longest shared start, then the alphabet
+    near.sort(key=lambda n: (-round(difflib.SequenceMatcher(None, q, n).ratio(), 3),
+                             -_shared_start(q, n), n))
+    for name in near:
+        ref = _NAMES[name]
+        if ref is None:
+            hits = search(name, k=1)
+            ref = hits[0][1] if hits else None
+        if ref and ref not in seen:
+            seen.add(ref)
+            out.append((name, ref))
+    return out[:k]
+
+
+def no_match_hint(query: str) -> str:
+    """What to try when a search finds nothing: the closest names, else the --list commands."""
+    near = closest(query)
+    if near:
+        return "closest: " + ", ".join(f"{ref} ({name!r})" for name, ref in near)
+    return "try: find_icon.py --list service, then --list resource"
 
 
 def main():
@@ -164,9 +331,12 @@ def main():
                   "diagram_guide.md's group table, no corner badge)")
             print()
             continue
-        hits = search(query)
-        if not hits:
-            print("  (no match — try: find_icon.py --list service, then --list resource)")
+        note, instead = NO_ICON_NOTES.get(akey(query), (None, None))
+        if note:
+            print(f"  (no icon: {note})")
+        hits = search(instead or query)
+        if not hits and not note:
+            print(f"  (no match — {no_match_hint(query)})")
         for s, ref in hits:
             print(f"  [{s:3}] {ref}")
         print()
