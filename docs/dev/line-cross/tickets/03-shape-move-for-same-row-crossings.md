@@ -4,11 +4,11 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done (2026-11-09). Evidence: [ticket 03 results](../results/03-shape-move-for-same-row-crossings.md). Codex review 0 blocking. PNG judges of the 5 changed drafts are all better. Misread blockings: dns-trunk slide 5→0 and slide-no-title 4→0, nat-route-table slide and slide-no-title 2→1 each, three-az-writer document 5→0, with no new blocking. privatelink and three-az-writer slide are unchanged.
 
-- [ ] The F6 count on the bad-tagged cases is lower than after ticket 02 (28), and dns-trunk, nat-route-table or three-az-writer loses at least one crossing.
-- [ ] Corpus against the ticket 02 baseline: 0 worse cases and 0 new tier-0 identities. Drafts without F6 at baseline are byte-identical.
-- [ ] Runtime within 3× and 30 s per run.
-- [ ] Codex re-judges the PNGs of privatelink, dns-trunk, nat-route-table and three-az-writer. Misread blockings go down and no new blocking appears. (This criterion was moved here from ticket 02.)
-- [ ] Codex review: 0 blocking.
+- [x] The F6 count on the bad-tagged cases is lower than after ticket 02 (28), and dns-trunk, nat-route-table or three-az-writer loses at least one crossing.
+- [x] Corpus against the ticket 02 baseline: 0 worse cases and 0 new tier-0 identities. Drafts without F6 at baseline are byte-identical.
+- [x] Runtime within 3× and 30 s per run.
+- [x] Codex re-judges the PNGs of privatelink, dns-trunk, nat-route-table and three-az-writer. Misread blockings go down and no new blocking appears. (This criterion was moved here from ticket 02.)
+- [x] Codex review: 0 blocking.
 - Time box: 3 hours.

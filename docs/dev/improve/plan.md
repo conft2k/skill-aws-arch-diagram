@@ -22,6 +22,8 @@ main 160cb10에서 시작합니다. 사용자와 정한 범위, 순서, 완료 �
 | 4 | 선 관통 규칙 (`docs/dev/line-cross/`) | 3 | 하루 | 다른 노드의 아이콘·이름을 지나는 선을 R-flow 새 코드, tier 0으로 판정하고 후보 선택에 씀. 양 끝 노드 제외. `points`/`bend_*` 고정 선은 보고만 하고 시도할 값을 출력 |
 | 5 | 작성 속도 | 4 | 반나절 | spec 틀 3개(multi-account, DX+VPN+TGW와 RT 2개, CloudFront VPC origin → 내부 ALB), 아이콘 검색 별칭, F3/F5 `fix:` 안내, 범례·메시지에 표시 이름, `bend`/`points` 충돌 시 시도할 값. 처음 쓰는 사용자 QA로 전후 비교: 막힌 곳 0, 다시 그린 횟수 감소, 결과 그림 Codex 차단 0 (시간은 참고) |
 
+단계 4는 2026-11-09에 끝났습니다(line-cross 티켓 01–03). `bad` 태그 사례의 F6은 30에서 17로 줄었습니다. 오독 차단은 dns-trunk 9→0, nat-route-table 4→2, three-az-writer document 5→0이고 새 차단은 0입니다. 남은 F6은 백로그에 있습니다.
+
 ## 이번 계획에서 뺀 것 (백로그)
 
 - draw.io 내보내기: 단계 2가 끝난 뒤 다시 정합니다. Lucid 전용 형식은 그 뒤입니다.

@@ -164,6 +164,9 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
   - 선택 로그: 새 channel 후보가 채택돼도 `candidate 0`으로 표시됨. 후보 수와 번호를 로그에 반영해야 합니다.
   - privatelink slide 2 mode의 F6 4건은 작성자가 지정한 경로라 `try:` 안내만 나옵니다.
   - 기존 수제 SVG 단위 테스트를 `check()` seam으로 옮기기.
+  - 티켓 03 뒤 남은 F6: nat-route-table rt.2(2 mode)와 three-az-writer slide 2 mode의 11건, 합 13건. 선이 돌아갈 빈 통로가 없으므로 통로 자리를 만드는 geometry 이동이 필요합니다. merge-vfan과 sgw-ret의 관통도 남아 있습니다.
+  - nat-route-table slide-no-title의 작은 결함 2건: AZ1 outbound 응답선이 이름 아래에 붙고, VGW 옆 점선 stem의 일부가 실선처럼 보입니다.
+  - HVHV 세로 우회와 여러 작성자 배치 필드 보존에 대한 엔진 테스트 보강.
 - **gwlb slide의 corpus worse 2건은 면적만 늘어난 것(+5.7%)으로 사용자가 예외로 받았습니다.** 화살촉-테두리 검사가 생기면 다시 판정합니다.
 
 ## 알려진 문제 (막는 문제 아님)
