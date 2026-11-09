@@ -625,18 +625,19 @@ def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
         a = axis_of(run[k])
         alt = f"; or {_f(other)}" if other is not None else ""
         if e.points:
-            return f"{e.src} points: move {piece(k)} to {a}={_f(v)}{alt}"
+            return f"{M.edge_name(spec, e.n)} points: move {piece(k)} to {a}={_f(v)}{alt}"
         if 0 < k < n - 1:
-            return f"{e.src} bend_{a}: {_f(v)} (moves {piece(k)}{alt})"
+            return f"{M.edge_name(spec, e.n)} bend_{a}: {_f(v)} (moves {piece(k)}{alt})"
         end = at_icon(k)
         if end is None:             # ends on the trunk it joins: the trunk's shared bend
-            return f"{e.src} bend_{a}: {_f(v)} (moves {piece(k)}{', the trunk' + chr(39) + 's shared bend' if e.trunk else ''}{alt})"
+            shared = ", the trunk's shared bend" if e.trunk else ""
+            return f"{M.edge_name(spec, e.n)} bend_{a}: {_f(v)} (moves {piece(k)}{shared}{alt})"
         field, ref, box, _ = end
         c = _centre(box)[0 if a == "x" else 1]
         half = (box[2] - box[0] if a == "x" else box[3] - box[1]) / 2
         if abs(v - c) < half:
-            return f"{e.src} {field}: {_f(v - c)} (moves {piece(k)} to {a}={_f(v)})"
-        tip = (f"{e.src} shape / from_side / to_side ({piece(k)} leaves {_display(spec, ref)} on "
+            return f"{M.edge_name(spec, e.n)} {field}: {_f(v - c)} (moves {piece(k)} to {a}={_f(v)})"
+        tip = (f"{M.edge_name(spec, e.n)} shape / from_side / to_side ({piece(k)} leaves {_display(spec, ref)} on "
                f"{_display(spec, nid)}'s {'column' if a == 'x' else 'row'})")
         node = spec.nodes.get(nid)
         stacked = {x for ids in spec.flow_stacks().values() for x in ids}
@@ -651,7 +652,7 @@ def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
 
     a = axis_of(s)
     if a is None:
-        return f"{e.src} points / shape that keep the line off {_display(spec, nid)}"
+        return f"{M.edge_name(spec, e.n)} points / shape that keep the line off {_display(spec, nid)}"
     end = at_icon(i)
     if end is not None and end[1] == nid and n >= 2:
         # across its own end's icon: bring the line to the side it attaches on first

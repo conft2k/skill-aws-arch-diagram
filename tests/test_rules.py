@@ -290,11 +290,11 @@ class LineOverNode(unittest.TestCase):
         self.sp.edges[0].points = [(M.Expr("num", offset=x), M.Expr("num", offset=y)) for x, y in run]
         bad = self.f6(self.sp, *parts, edge(0, run))
         self.assertEqual([v.owners for v in bad], [("edge:0", "node:c")])
-        self.assertIn("try: edges[0] points: move the vertical piece at x=274 to x=", bad[0].message)
+        self.assertIn("try: edges[0] (Client → Database) points: move the vertical piece at x=274 to x=", bad[0].message)
         self.sp.edges[0].points = None
         self.sp.edges[0].bend_x = M.Expr("num", offset=274)
         bad = self.f6(self.sp, *parts, edge(0, run))
-        self.assertIn("try: edges[0] bend_x: 242 ", bad[0].message)
+        self.assertIn("try: edges[0] (Client → Database) bend_x: 242 ", bad[0].message)
         # pinned edges are never rerouted by selection
         self.assertFalse(layout.layout_route.skippable(self.sp.edges[0]))
 
@@ -316,7 +316,7 @@ class LineOverNodeEngine(unittest.TestCase):
             text, _ = self.draw(src, Path(tmp) / "a.svg", "--mode", "slide")
             rule = next(l for l in text.splitlines() if l.startswith("rule: R-flow F6 edges[11] (S3 gateway EP (Consumer B VPC) → S3) ")
                         and "its own end S3's icon" in l)
-            m = re.search(r"try: edges\[11\] bend_y: ([0-9.]+) ", rule)
+            m = re.search(r"try: edges\[11\] \(S3 gateway EP \(Consumer B VPC\) → S3\) bend_y: ([0-9.]+) ", rule)
             self.assertIsNotNone(m, rule)
             fixed = Path(tmp) / "pl.layout.yaml"
             spec_text = src.read_text()
@@ -406,7 +406,8 @@ class LineOverNodeMoves(unittest.TestCase):
                 mock.patch.object(layout, "step_moves", lambda *a: []):
             text, _ = self.draw(self.SSM, "--mode", "slide")
         self.assertIn("rule: R-flow F6 edges[2] (SSM endpoints (Availability Zone 2) ↔ Session Manager) ", text)      # kept: the trunk is drawn as written
-        self.assertIn("warning: author trunk edges[2] (trunk: true) keeps R-flow F6; "
+        self.assertIn("warning: author trunk edges[2] (SSM endpoints (Availability Zone 1) ↔ Session Manager, "
+                      "SSM endpoints (Availability Zone 2) ↔ Session Manager) (trunk: true) keeps R-flow F6; "
                       "try: drop `trunk: true` from edges[2]", text)
 
 
@@ -474,7 +475,8 @@ class LineOverNodeShapeMove(unittest.TestCase):
         text, _ = self.draw(self.QA / "t1-privatelink.layout.yaml", "--mode", "slide")
         self.assertIn("rule: R-flow F6 edges[11] (S3 gateway EP (Consumer B VPC) → S3) ", text)
         self.assertNotIn("step-around", text)
-        self.assertIn("warning: hand placement edges[11] (shape, bend_y, from_side, to_side) keeps R-flow F6; "
+        self.assertIn("warning: hand placement edges[11] (S3 gateway EP (Consumer B VPC) → S3) "
+                      "(shape, bend_y, from_side, to_side) keeps R-flow F6; "
                       "try: drop `shape` / `bend_y` / `from_side` / `to_side` from edges[11]", text)
         self.assertIn("tried: F6 −2", text)
 

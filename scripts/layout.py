@@ -1170,6 +1170,15 @@ def spec_item(spec: Spec, owner: str) -> str:
     return owner
 
 
+def edge_ref(spec: Spec, owner: str) -> str:
+    """The spec entry an edge owner's hint edits, with the line it draws:
+    "edges[0] (Order 2 → Aurora writer)" (spec_item's first word when it is no edge)."""
+    e = edge_of(owner)
+    if e is not None and e[0] < len(spec.edges):
+        return M.edge_name(spec, e[0])
+    return spec_item(spec, owner).split(" ")[0]
+
+
 def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
     """A spec change to try for a problem the engine could not clear."""
     tips = []
@@ -1183,7 +1192,7 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
     for o in p.owners:
         kind, ref, part = M.split_eid(o)
         if kind == "edge" and part in ("label", "badge"):
-            tips.append(f"{spec_item(spec, o).split(' ')[0]}: "
+            tips.append(f"{edge_ref(spec, o)}: "
                         + ("step_at: start|end|gap|[x, y]" if part == "badge" else "label_at: above|below|left|right"))
         elif kind == "edge":
             # two flows out of (into) one port: an offset gives one a port of its own; one
@@ -1194,11 +1203,11 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
                 offs = " / from_offset / to_offset" + (
                     " (instances of one line: trunk: true when they merge, else one spec line each with its"
                     " own offset)" if one_line else "")
-            tips.append(f"{spec_item(spec, o).split(' ')[0]}: shape / bend_x / bend_y / from_side / to_side{offs}")
+            tips.append(f"{edge_ref(spec, o)}: shape / bend_x / bend_y / from_side / to_side{offs}")
             if p.iss.kind == "LOOSE END" and ref.isdigit() and int(ref) < len(spec.edges) \
                     and spec.edges[int(ref)].trunk:
                 # a trunk follower that stops short of its lead
-                tips.append(f"{spec_item(spec, o).split(' ')[0]}: drop `trunk: true` so each instance has its "
+                tips.append(f"{edge_ref(spec, o)}: drop `trunk: true` so each instance has its "
                             "own arrow")
         elif kind == "node" and ref in stacked:
             # a flow-column node takes no dy: the stack sets its y
@@ -1311,11 +1320,25 @@ def var_name(spec: Spec, v: str) -> str:
 
 
 OWNER_TOKEN = re.compile(r"\b(?:node|group|edge):[\w.\-]+(?::[a-z]+)?")
+# a bare spec id in a reason ("landed on box cloud", "flow pitch 100 acm ↓ cw", "az.1"): not
+# part of an expression ("cloud.x0+40", "sn.y1-54", "az.1.B"), a key ("dx:") or a locator
+BARE_ID = re.compile(r"(?<![\w.:\-\[{$])[A-Za-z_][\w\-]*(?:\.\d+)?(?![\w:\-\[(])(?!\.[A-Za-z_\d])(?!'(?!s\b))")
+# quoted text (labels, `spec keys`) is the author's own and stays as written
+QUOTED = re.compile(r"(?<![\w)])'[^']*'|`[^`]*`")
+# ids after these name a track or a key, not a node or box
+TRACK_CONTEXT = ("row ", "col ", "rows ", "cols ", "row:", "col:", "row.", "col.", "column ", "columns ",
+                 "track ", "id: ", "per ")
+# message words a test spec may also use as an id ("a", "p", "box"): never renamed
+PLAIN_WORDS = frozenset("""a an the to of on in at by or and it is its no not as for from with off up down
+    left right top bottom box node line row col gap pad edge group x y dx dy xy px so be both then that this
+    there here keep keeps move give drop write nothing other another each one two all""".split())
 
 
 def named_tokens(spec: Spec, text: str) -> str:
-    """Owner ids and box-side variables a reason quotes ("sibling gap 16 group:cloud |
-    node:kms", "feedback: line over icon, node:ep.2") by their display names."""
+    """The ids a reason quotes by their display names: owner ids and box-side variables
+    ("sibling gap 16 group:cloud | node:kms" → "… AWS Cloud | KMS") and bare node / group
+    ids ("landed on box cloud" → "… AWS Cloud", "header of snb" → "… Web subnet (AZ b)").
+    Quoted text, expressions, keys and track ids stay as written."""
     def name(m):
         tok = m.group()
         kind, ref, _ = M.split_eid(tok)
@@ -1325,18 +1348,45 @@ def named_tokens(spec: Spec, text: str) -> str:
             got = var_name(spec, tok)
             return tok if got == tok else got
         return tok
-    return OWNER_TOKEN.sub(name, text)
+
+    def bare(part: str) -> str:
+        def one(m):
+            tok = m.group()
+            if tok in PLAIN_WORDS or part[:m.start()].endswith(TRACK_CONTEXT):
+                return tok
+            if tok in spec.nodes or tok in spec.groups:
+                return M.item_name(spec, tok)
+            return tok
+        return BARE_ID.sub(one, part)
+
+    out, at = [], 0
+    for q in QUOTED.finditer(text):
+        out += [bare(OWNER_TOKEN.sub(name, text[at:q.start()])), q.group()]
+        at = q.end()
+    out.append(bare(OWNER_TOKEN.sub(name, text[at:])))
+    return "".join(out)
+
+
+def named_check(spec: Spec, msg: str) -> str:
+    """A check_layout problem as the engine prints it: a box check_layout can only name by
+    its drawn title and owner id ("box 'Data' (group:datasn.2)") by its display name
+    ("Data (Availability Zone 2)")."""
+    def box(m):
+        gid = m.group(2)
+        return M.group_name(spec, gid) if gid in spec.groups else m.group()
+    return re.sub(r"box ('[^']*') \(group:([\w.\-]+)\)", box, msg)
 
 
 def named_warning(spec: Spec, w: str) -> str:
     """An engine warning with the display names of the spec item it starts with, so the
     author can find it in the picture as well as in the spec: "edges[0] orders.2 -> db.1
-    (Order 2 → Aurora writer): …", "nodes[2] s3 s3 (Log bucket): …". The engine reads its
-    own warnings (shape misses, re-solve) in the plain form, so names go in only here."""
-    w = named_tokens(spec, w)
+    (Order 2 → Aurora writer): …", "nodes[2] s3 (Log bucket): …", and of the ids its
+    reason quotes (named_tokens). The engine reads its own warnings (shape misses,
+    re-solve) in the plain form, so names go in only here."""
     head, sep, rest = w.partition(": ")
-    if not sep:
-        return w
+    if not sep or not head.startswith(("edges[", "nodes[", "groups[", "note", "spec")):
+        return named_tokens(spec, w)
+    rest = named_tokens(spec, rest)
     toks = head.split(" ")
     loc = toks[0]
     if loc.startswith("edges[") and len(toks) == 4:
@@ -1352,7 +1402,7 @@ def named_warning(spec: Spec, w: str) -> str:
                 # a single item gives its id once ("nodes[2] q (Q)"), as layout_model.node_ref
                 at = f"{loc} {toks[1]}" if ids == toks[1:2] == toks[2:] else head
                 return f"{at} ({', '.join(dict.fromkeys(names))}){sep}{rest}"
-    return w
+    return f"{head}{sep}{rest}"
 
 
 def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None,
@@ -1933,7 +1983,9 @@ def hard_placement_warnings(b: Build, violations):
                 if n is not None:
                     pinned = [f for f in ("xy", "dx", "dy") if getattr(n, f, None)]
             if pinned:
-                line = f"warning: hard placement {owner} ({', '.join(pinned)}) keeps {v.rule} {v.code}"
+                where = (M.edge_name(b.spec, edge[0]) if edge is not None and edge[0] in edges
+                         else M.node_ref(b.spec, owner[5:]))
+                line = f"warning: hard placement {where} ({', '.join(pinned)}) keeps {v.rule} {v.code}"
                 if line not in warnings:
                     warnings.append(line)
     return warnings
@@ -2190,7 +2242,8 @@ def line_over_node_moves(best, source: str, scratch: Path, rule_guard: RuleGuard
             added = sorted(tier0_identities(after) - then[2], key=str)
             cost = ("no new tier-0 violation" if not added else
                     "new " + ", ".join(f"{r} {c} ({M.owners_name(b.spec, sorted(o))})" for r, c, o in added))
-            lines.append(f"warning: hand placement {e.src} ({', '.join(fields)}) keeps R-flow F6; try: drop "
+            lines.append(f"warning: hand placement {M.entry_name(b.spec, e.line)} ({', '.join(fields)}) keeps "
+                         f"R-flow F6; try: drop "
                          f"{' / '.join(f'`{f}`' for f in fields)} from {e.src} so selection can route it "
                          f"around the node (tried: F6 −{removed}, tier-0 {then[0].tier_0_count} → "
                          f"{sc.tier_0_count}, {cost})")
@@ -2228,7 +2281,8 @@ def line_over_node_moves(best, source: str, scratch: Path, rule_guard: RuleGuard
         if removed <= 0:
             continue
         key = "fork: bus" if e.fork else "trunk: true"
-        lines.append(f"warning: author trunk {e.src} ({key}) keeps R-flow F6; try: drop `{key}` "
+        lines.append(f"warning: author trunk {M.entry_name(b.spec, e.line)} ({key}) keeps R-flow F6; "
+                     f"try: drop `{key}` "
                      f"from {e.src} so its {len(members)} lines are drawn separately "
                      f"(tried: F6 −{removed}, no new tier-0 violation, verdict better)")
     return best, chosen, lines
@@ -2571,7 +2625,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(line)
     if rnd:
         print(f"check: {rnd} feedback round{'s' if rnd != 1 else ''} ("
-              + ", ".join(f"{r.why[len('feedback: '):]}: {var_name(spec, r.a)} → {var_name(spec, r.b)} "
+              + ", ".join(f"{named_tokens(spec, r.why[len('feedback: '):])}: {var_name(spec, r.a)} → "
+                          f"{var_name(spec, r.b)} "
                           f"≥ {M.fmt_num(r.d)}" for r in used)
               + (f"; next routing candidate for {', '.join(f'{M.edge_name(spec, k)} ×{v}' for k, v in skipped.items())}"
                  if skipped else "")
@@ -2588,10 +2643,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     hint_of = {id(iss): h for iss, h in hints}
     for p in probs:
-        print(p.iss.msg)
+        print(named_check(spec, p.iss.msg))
         h = hint_of.get(id(p.iss))
         if h is not None and h.text:
-            print(f"  fix: {h.text}")
+            print(f"  fix: {named_check(spec, h.text)}")
         if p.owners:
             print(f"  spec: {', '.join(spec_item(spec, o) for o in p.owners)}")
         tip = spec_fix(spec, b.geom, p)

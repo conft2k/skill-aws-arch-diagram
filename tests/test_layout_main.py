@@ -780,7 +780,7 @@ class DetourRoom(unittest.TestCase):
     def test_cloud_grows_under_the_route(self):
         rc, text, root = self.run_main(row_spec())
         self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
-        self.assertIn("check: 1 feedback round (line off canvas (cloud bottom): NA → AWS Cloud bottom ≥ ", text)
+        self.assertIn("check: 1 feedback round (line off canvas (AWS Cloud bottom): NA → AWS Cloud bottom ≥ ", text)
         self.assertNotIn("drew another shape:", text)              # the room is the answer, not wider gaps
         cloud = next(e for e in root.iter(NS + "rect") if e.get("stroke"))
         line = next(e for e in root.iter(NS + "polyline"))
@@ -804,7 +804,7 @@ class DetourRoom(unittest.TestCase):
             n["in"] = "vpc"
         rc, text, _ = self.run_main(d)
         self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
-        self.assertIn("line leaves box (vpc bottom): NA → VPC bottom ≥ ", text)
+        self.assertIn("line leaves box (VPC bottom): NA → VPC bottom ≥ ", text)
 
 
 def flow_column_spec():
@@ -1391,7 +1391,7 @@ class XyMoved(unittest.TestCase):
                 src.write_text(json.dumps(d), encoding="utf-8")
                 rc, text, kinds = main_file(src, mode, *more)
                 self.assertEqual((rc, kinds), (0, []), text)
-                self.assertIn("f1 (F1): its moved xy landed on node o", text)
+                self.assertIn("f1 (F1): its moved xy landed on node O", text)
 
     def test_the_value_to_write_loads_and_lands_where_the_solve_put_it(self):
         # Codex review ③: `cloud.x0+0` / `-0` moved 40 → `cloud.x0+40` (not `cloud.x0+0+40`);
@@ -1460,7 +1460,7 @@ class XyMoved(unittest.TestCase):
                 src.write_text(json.dumps(d), encoding="utf-8")
                 rc, text, kinds = main_file(src, mode, *more)
                 self.assertEqual(kinds, [], text)
-                self.assertIn("t (T): its moved xy landed on node o", text)
+                self.assertIn("t (T): its moved xy landed on node O", text)
 
     def test_a_moved_border_node_keeps_off_its_vpcs_children(self):
         d = layout_spec._read(CORPUS / "xy/xy-border.layout.yaml")[0]
@@ -1834,7 +1834,8 @@ class LooseEndUnderALabelStack(unittest.TestCase):
         trunk = next(e for e in spec.edges if e.trunk)
         plain = next(e for e in spec.edges if not e.trunk)
         tip = layout.spec_fix(spec, b.geom, layout.Problem(iss, [f"edge:{trunk.n}"], []))
-        self.assertIn(f"{trunk.src}: drop `trunk: true`", tip)
+        self.assertIn(f"{trunk.src} (", tip)
+        self.assertIn("): drop `trunk: true`", tip)
         tip = layout.spec_fix(spec, b.geom, layout.Problem(iss, [f"edge:{plain.n}"], []))
         self.assertNotIn("trunk", tip)
 

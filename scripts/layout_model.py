@@ -1152,6 +1152,17 @@ def edge_name(spec: "Spec", n: int) -> str:
     return f"{e.src or f'edges[{e.line}]'} ({line_name(spec, n)})"
 
 
+def entry_name(spec: "Spec", line: int) -> str:
+    """A spec edge entry (all its instances) by its locator and the lines it draws:
+    "edges[2] (SSM endpoints (Availability Zone 1) ↔ Session Manager, … ↔ …)"; at most
+    three lines are named, then how many more."""
+    ns = [e.n for e in spec.edges if e.line == line]
+    if not ns:
+        return f"edges[{line}]"
+    names = [line_name(spec, n) for n in ns[:3]] + ([f"{len(ns) - 3} more"] if len(ns) > 3 else [])
+    return f"{spec.edges[ns[0]].src or f'edges[{line}]'} ({', '.join(names)})"
+
+
 def owner_name(spec: "Spec", eid: str) -> str:
     """A draft owner id ("edge:3", "edge:3:label", "node:nat.1", "group:az.2", "canvas",
     "note") by its display name."""

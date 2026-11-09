@@ -244,7 +244,7 @@ def test_pinned_route_table_keeps_its_position(tmp_path, capsys):
 
     assert icon(draft) == icon(expected)
     assert "rule: R-rt" in text
-    assert "hard placement node:rtsp (xy)" in text
+    assert re.search(r"hard placement nodes\[\d+\] rtsp \([^)]+\) \(xy\)", text)
 
 
 def test_enabling_route_tables_keeps_the_previous_group_winner(tmp_path, capsys, monkeypatch):

@@ -15,6 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import layout
+import layout_spec
 
 OWNER_ID = re.compile(r"\b(?:edge|node|group):[\w.\-]+")
 
@@ -26,26 +27,57 @@ def draw(case, tmp_path, capsys, *args):
 
 
 def author_lines(out):
-    """What the author reads as guidance: rule verdicts, warnings, spec hints, the summary."""
-    return [line for line in out if line.startswith(("rule: ", "warning: ", "check: ", "  spec: ", "  try: "))]
+    """Everything the author reads but the draft path: summary, warnings, selection, check
+    rounds, --explain, problems with their fix / spec / try lines, rule verdicts."""
+    return [line for line in out if line and not line.startswith("draft: ")]
 
 
-@pytest.mark.parametrize(("case", "mode"), [
-    ("qa/t4-three-az-writer", "slide"),      # F5, F6, B2 and feedback rounds on template copies
-    ("qa/t3-nat-route-table", "slide"),      # F6 over a copy whose label repeats in each AZ
-    ("bench/engine1-egress", "document"),    # RT1 / RT4 on route tables and their hub
-])
-def test_guidance_names_no_owner_ids(tmp_path, capsys, case, mode):
-    lines = author_lines(draw(case, tmp_path, capsys, "--mode", mode))
-    assert any(line.startswith("rule: ") for line in lines)
-    leaked = [line for line in lines if OWNER_ID.search(line)]
-    assert leaked == []
+# spec locators the author searches for ("nodes[2] db db.2", "edges[0] orders.2 -> db.1"),
+# quoted text and `keys`, tracks ("row:az2", "x col app", "{id: db"): ids belong there
+LOCATOR = re.compile(r"(?:nodes|groups)\[\d+\](?: [\w.\-]+,?)+|edges\[\d+\] [\w.\-*]+ \S+ [\w.\-*]+")
+QUOTED = re.compile(r"(?<![\w)])'[^']*'|`[^`]*`")
+TRACK = re.compile(r"(?:\b(?:row|col|rows|cols|column|flow \S+|id)[ :.]|\bid: )[\w.\-]+")
+WORD = re.compile(r"(?<![\w.\-])[A-Za-z_][\w\-]*(?:\.\d+)?(?![\w\-])(?!\.[A-Za-z_\d])")
+
+
+def bare_ids(spec, line):
+    """Node / group ids a line shows where a display name differs from the id."""
+    for pat in (QUOTED, LOCATOR, TRACK):
+        line = pat.sub(" ", line)
+    # words of the display names themselves ("S3 raw" is a label, not the id raw)
+    names = {layout.M.item_name(spec, i) for i in list(spec.nodes) + list(spec.groups)}
+    for name in sorted(names, key=len, reverse=True):
+        line = line.replace(name, " ")
+    return [w for w in WORD.findall(line)
+            if (w in spec.nodes or w in spec.groups) and layout.M.item_name(spec, w) != w]
+
+
+CASES = [
+    ("qa/t4-three-az-writer", ("--mode", "slide")),       # F5, F6, B2 and feedback rounds on template copies
+    ("qa/t3-nat-route-table", ("--mode", "slide")),       # F6 over a copy whose label repeats in each AZ
+    ("bench/engine1-egress", ("--mode", "document")),     # RT1 / RT4 on route tables and their hub
+    ("flowcol/r3-xy-30", ("--mode", "document", "--explain")),   # moved-xy warnings, --explain chains
+    ("twin/grid", ("--mode", "document")),                # an overlay header warning naming a subnet copy
+    ("qa/t2-false-junction", ("--mode", "slide")),        # hard placement warnings
+    ("qa/t1-privatelink", ("--mode", "slide")),           # hand placement try, selection skips, B1 / F1 / F3
+    ("twin/three", ("--mode", "slide")),                  # selection: an overlay header flipped
+]
+
+
+@pytest.mark.parametrize(("case", "args"), CASES)
+def test_guidance_names_no_owner_or_bare_ids(tmp_path, capsys, case, args):
+    lines = author_lines(draw(case, tmp_path, capsys, *args))
+    spec = layout_spec.load(ROOT / f"tests/corpus/{case}.layout.yaml", mode=args[1])
+    assert any(line.startswith(("rule: ", "warning: ")) for line in lines)
+    assert [line for line in lines if OWNER_ID.search(line)] == []
+    assert [(line, bare_ids(spec, line)) for line in lines if bare_ids(spec, line)] == []
 
 
 def test_edges_by_spec_line_and_ends_nodes_by_label(tmp_path, capsys):
     out = draw("qa/t4-three-az-writer", tmp_path, capsys, "--mode", "slide")
     assert ("rule: R-flow F6 edges[0] (Order 2 → Aurora writer) runs over Endpoint 2's icon "
-            "(120,436)→(401,436): the flow reads as passing through Endpoint 2; try: edges[0] shape / "
+            "(120,436)→(401,436): the flow reads as passing through Endpoint 2; try: edges[0] (Order 2 → "
+            "Aurora writer) shape / "
             "from_side / to_side (the horizontal piece at y=436 leaves Order 2 on Endpoint 2's row), or "
             "nodes[1] ep ep.2 (Endpoint 2): dy: 32 (moves Endpoint 2 off the piece)") in out
     # a box title shared by its AZ copies says which copy

@@ -96,7 +96,7 @@ def test_badge_attribution_suggests_step_place(tmp_path, capsys, monkeypatch):
     _, _, text = draw(source, tmp_path, capsys)
     warning = next(line for line in text.splitlines()
                    if line.startswith("warning: unresolved R-flow F5 "))
-    assert "edges[0]: step_at: start|end|gap|[x, y]" in warning
+    assert "edges[0] (a → b): step_at: start|end|gap|[x, y]" in warning
 
 
 def test_no_check_and_checker_failure_do_not_invent_spec_hints(tmp_path, capsys, monkeypatch):
