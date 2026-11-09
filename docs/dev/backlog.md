@@ -159,6 +159,11 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
 - **gwlb slide AZ 1 step 2 화살촉이 GWLBe subnet·AZ 아래 테두리에 걸침.** 이전 그림에도 있었고, spec으로 고치면 글자가 9.4pt로 줄어 두었습니다.
 - **gwlb 문서 노트 2행에서 제목 "GWLBe ⇄ GWLB"가 설명 첫 줄에 거의 닿음.** 노트 칸 간격 문제입니다.
 - **문서 예제의 작은 글자:** 760px 칼럼에서 bedrock-dx 6.0px, centralized-egress 5.1px, serverless 6.9px, tgw 7.8px, nfw 8.3px(하한 9px). 글자를 키울 때 아이콘도 함께 키우는 엔진 변경, 또는 그림 분할이 필요합니다.
+- **선 관통 티켓 02의 남은 일.**
+  - v-fork slide: 통로 넓히기 후 위쪽 NAT→IGW 선이 NAT의 `10.0.0.0/8 → 방화벽` 캡션 아래에서 나와 어느 선인지 헷갈림(PNG 판정 better, 새 결함 1건).
+  - 선택 로그: 새 channel 후보가 채택돼도 `candidate 0`으로 표시됨. 후보 수와 번호를 로그에 반영해야 합니다.
+  - privatelink slide 2 mode의 F6 4건은 작성자가 지정한 경로라 `try:` 안내만 나옵니다.
+  - 기존 수제 SVG 단위 테스트를 `check()` seam으로 옮기기.
 - **gwlb slide의 corpus worse 2건은 면적만 늘어난 것(+5.7%)으로 사용자가 예외로 받았습니다.** 화살촉-테두리 검사가 생기면 다시 판정합니다.
 
 ## 알려진 문제 (막는 문제 아님)
