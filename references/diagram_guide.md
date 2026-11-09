@@ -16,16 +16,18 @@ that readers recognize instantly. Respect the containment order:
 
 ```
 AWS Cloud (group)
-└── Region (group)
-    └── AWS Account (group) — in a multi-account diagram; an Organization / OU is a plain box around the accounts
-        └── VPC (group)
-            └── Availability Zone (group, no icon) — when HA matters
-                └── Subnet (public or private, group)
-                └── Service icons (EC2, ECS, RDS, ...)
+└── Organization / OU (plain box) — in a multi-account diagram, around the accounts
+    └── AWS Account (group) — global, so outside every Region
+        └── Region (group) — one in each account, around what it owns there
+            └── VPC (group)
+                └── Availability Zone (group, no icon) — when HA matters
+                    └── Subnet (public or private, group)
+                    └── Service icons (EC2, ECS, RDS, ...)
 ```
 
 Not every diagram needs every layer — a serverless diagram may skip VPC/subnets
-entirely, and a single-account diagram skips the Account box. But when you show networking (EC2, ALB, RDS, NAT), draw the containers.
+entirely, and a single-account diagram skips the Organization and Account boxes (AWS Cloud >
+Region > VPC). Never put the accounts inside one Region box; that reads as regional accounts. But when you show networking (EC2, ALB, RDS, NAT), draw the containers.
 Putting a private-only service (like RDS) outside a subnet box is a red flag to
 any AWS reviewer.
 

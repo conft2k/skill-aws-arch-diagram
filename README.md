@@ -157,7 +157,8 @@ assets/icons.json            아이콘 857개를 담은 JSON 번들 (세트: ser
                              group, category); 설치할 때(건너뛰면 처음 쓸 때) 만들며
                              커밋하지 않음
 templates/                   처음 쓰는 사용자가 복사해 고치는 starter spec 3개(multi-account,
-                             DX + VPN + TGW, CloudFront VPC origin); 문서·슬라이드 모두 규칙 통과
+                             DX + VPN + TGW, CloudFront VPC origin); 문서·슬라이드 모두 규칙 통과,
+                             DX + VPN + TGW에는 슬라이드를 더 깔끔하게 그리는 슬라이드 전용 쌍이 더 있음
 docs/examples/specs/         참조 예제마다 하나인 레이아웃 spec과 골격 `example.layout.yaml`;
                              각 spec이 그 예제의 레이아웃을 다시 만듦 (`slides/`: 슬라이드 예제용)
 scripts/find_icon.py         이름으로 아이콘 찾기: `find_icon.py alb igw "s3 gateway endpoint"`

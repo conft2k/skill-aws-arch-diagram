@@ -2,10 +2,12 @@
 # into one Transit Gateway with two route tables: On-prem RT (associated with the DX gateway and VPN attachments) and
 # VPC RT (associated with the two VPC attachments), and two VPCs each drawn with its private subnet.
 # Copy it into your scratchpad and change the lines marked EDIT; every other line already draws cleanly.
-# Two specs, one per medium: this one is the document (12.0px in a 760px column, margin over the 11px target for a
-# slightly longer label); dx-vpn-tgw-slide.layout.yaml is the slide (≥ 10pt, titled or not). With the VPC and subnet
-# boxes kept (never drop the subnet box to win R-fit) no one layout passes both: this narrow one puts VPC RT between
-# the two VPCs and On-prem RT above the VPN connection, the slide one gives each table its own column. Edit both alike.
+# This spec passes every rule as a document (12.0px in a 760px column, margin over the 11px target for a slightly
+# longer label) and as a slide (11.0pt titled, 12.3pt untitled). On a slide, though, three lines take a detour (the
+# engine warns it refused their HV / VH shape) and the text is small, so for a slide use dx-vpn-tgw-slide.layout.yaml:
+# it gives each route table its own column and reaches 13.5pt, but it is slide-only (10.4px as a document). This
+# narrow one puts VPC RT between the two VPCs and On-prem RT above the VPN connection to stay narrow enough for a
+# document with the VPC and subnet boxes kept (never drop the subnet box to win R-fit). Edit both alike.
 # Placement: Direct Connect (a colocation facility), the Internet and the customer gateway are outside the AWS Cloud;
 # the DX gateway is global (in the Cloud, outside the Region); the Site-to-Site VPN connection, its TGW attachment, the
 # TGW and both route tables are regional, so the VPN connection (resource/Amazon-VPC_VPN-Connection) sits in the Region.

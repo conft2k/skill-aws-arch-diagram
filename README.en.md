@@ -167,7 +167,8 @@ assets/icons.json            857 icons in one JSON bundle (sets: service, resour
                              group, category); built at install time (or on first
                              use), not committed
 templates/                   three starter specs to copy and edit (multi-account, DX + VPN + TGW,
-                             CloudFront VPC origin); each passes every rule as a document and a slide
+                             CloudFront VPC origin); each passes every rule as a document and a slide,
+                             and DX + VPN + TGW adds a slide-only twin that draws a cleaner slide
 docs/examples/specs/         one layout spec per reference example plus the skeleton
                              `example.layout.yaml`; each regenerates its example's layout
                              (`slides/`: the slide examples' specs)

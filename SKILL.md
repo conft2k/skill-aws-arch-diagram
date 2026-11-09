@@ -75,7 +75,8 @@ settle the slide titles (one line each, or none) and the list of slides.
 ### 2. Copy the closest starter template or example spec
 **Starter templates first.** `templates/` holds small specs that pass every rule
 (`Layout OK`, no `rule:` line) as a document *and* as a slide, titled or not — from the
-same file, except `dx-vpn-tgw`, which ships a document spec and its `-slide` twin; each line you are meant to change is marked `# EDIT`, and the comments say
+same file; `dx-vpn-tgw` also ships a slide-only `-slide` twin, which draws a cleaner slide than
+the document spec does (each route table on its own column, larger text); each line you are meant to change is marked `# EDIT`, and the comments say
 which keys keep it passing. When one is close to the request, copy it and change only
 the `EDIT` lines first:
 

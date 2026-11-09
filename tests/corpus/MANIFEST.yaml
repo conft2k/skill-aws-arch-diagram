@@ -1319,7 +1319,7 @@ examples:
 #     label_at: stem)
 #   - var*.py mutations whose result equals a kept case; the scratch gen*.py that draw SVG
 #     directly (no spec) and review-check/cases*.py (raw SVG check cases, no spec)
-  # templates/: the starter specs SKILL.md step 2 points a first-time author to; each passes every rule in every mode.
+  # templates/: the starter specs SKILL.md step 2 points a first-time author to; each passes every rule in every mode it lists (dx-vpn-tgw-slide: slide only).
   - path: ../../templates/cloudfront-vpc-origin.layout.yaml
     rules: [R-flow, R-label, R-twin, R-border, R-fit]
     good: [R-flow, R-label, R-twin, R-border, R-fit]
