@@ -118,6 +118,10 @@ _Avoid_: crossing (two lines crossing each other), line through icon
 The piece of a line that ends on one of its own end nodes. It is the only part of the line exempt from line over node at that node, and only while it runs at most 4px into the icon (the icon box shrunk by 2px, as LINE OVER ICON measures). A line over its own end's name, or across its own end's icon anywhere else, is a line over node.
 _Avoid_: end segment, stub
 
+**Channel move**:
+Selection's answer to a line over node that its routing alternatives leave: the track gap the crossing piece runs through, beside the crossed node, is widened so the router finds a clear stretch, and a trunk's shared bend is searched along every member's run. Like every candidate it replaces the drawing only on a strictly better verdict, and only when it removes a line over node without adding any tier-0 violation.
+_Avoid_: spreading, push apart
+
 **Tier**:
 The rank of a rule when drawings are compared. Tier 0 means a reader misreads the diagram; tier 2 means fit and size. Tier 0 counts before tier 2.
 _Avoid_: severity, priority

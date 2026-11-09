@@ -1089,10 +1089,12 @@ cases:
     what: "good pair of t3-dns-trunk: the outbound ENIs sit between the VGW and the inbound ENIs; the outbound trunk crosses no icon"
   # SSM trunk가 서비스 라벨을 관통합니다(T3 ssm-trunk).
   # line-cross 01: F6 reports a trunk member over its own end's name (own ends are exempt only where they attach).
+  # line-cross 02: the channel move (wider endpoint → service gap, stem bend searched along both members) clears the
+  # crossing on both slide modes (F6 1 → 0, drafts checked as PNG); R-flow stays bad for the label F5 that main has too.
   - path: qa/t3-ssm-trunk.layout.yaml
     rules: [R-flow]
-    what: "6-node SSM trunk crosses the Session Manager service label on slides"
-    bad: {R-flow: {slide: node:ssm, slide-no-title: node:ssm}}   # F6: edge:4 joins the trunk stem up across Session Manager's own name lines; trunk follower: no routing alternative (ticket 02); try: edges[2] bend_x
+    what: "6-node SSM trunk crossed the Session Manager service label on slides (cleared in line-cross 02); the endpoint HTTPS label reads as the Engineer line's"
+    bad: {R-flow: {slide: edge:2, slide-no-title: edge:2}}   # F5 (edge:2, edge:0): edge:2's 'HTTPS :443' sits 8px from edge:0's line, 6px from its own; was F6 node:ssm before line-cross 02
   - path: qa/lc-ssm-trunk-clear.layout.yaml
     rules: [R-flow]
     good: [R-flow]

@@ -982,6 +982,7 @@ class _Ctx:
         self.text_t = [(b.expand(K.LINE_CLEAR).t(), b) for b in self.texts]
         self.segment_checks = {}  # static obstacles; shared legs recur across route candidates
         self.obstacle_bands = {}  # many bends share a horizontal row or vertical column
+        self.stem_span = {}       # draw(stems=): trunk leads searched along the whole trunk
         cloud = spec.cloud_id()
         self.cloud = geom.groups[cloud].rect if cloud in geom.groups else None
         # {(node id, side): [(edge n, end, port offset, spec line, trunk)]}: the ports the
@@ -1289,6 +1290,21 @@ def _path(shape: str, pa: Pt, pb: Pt, bend: Optional[float]) -> List[Pt]:
     raise ValueError(shape)
 
 
+def _stem_spans(xs: Dict[int, "_Edge"], stems) -> Dict[int, Tuple[Pt, Pt]]:
+    """{lead n: ((x lo, x hi), (y lo, y hi))} of the ends of every member of the trunks led
+    by `stems`: the run their shared bend's leg covers once the followers join it."""
+    out = {}
+    for n in stems:
+        lead = xs.get(n)
+        if lead is None or lead.t.trunk is None or lead.t.first != n:
+            continue
+        ends = [p for x in xs.values() if x.t.trunk is not None and x.t.first == n
+                for p in ((x.A.cx, x.A.cy), (x.B.cx, x.B.cy))]
+        out[n] = ((min(p[0] for p in ends), max(p[0] for p in ends)),
+                  (min(p[1] for p in ends), max(p[1] for p in ends)))
+    return out
+
+
 def _bends(ctx: _Ctx, x: _Edge, shape: str, pa: Pt, pb: Pt) -> List[float]:
     """Ordered bend coordinates for a HVH (x of the vertical) / VHV (y of the horizontal);
     a V / H with a jog uses the same search. [] for shapes without a free bend."""
@@ -1316,6 +1332,10 @@ def _bends(ctx: _Ctx, x: _Edge, shape: str, pa: Pt, pb: Pt) -> List[float]:
     if shape in (H, V):          # a jog: the bend runs along the other axis
         a, b = pa[i], pb[i]
     s0, s1 = pa[1 - i], pb[1 - i]
+    span = ctx.stem_span.get(e.n) if shape in (HVH, VHV) else None
+    if span is not None:
+        # a stem the followers extend: its leg runs along the whole trunk
+        s0, s1 = min(s0, s1, span[1 - i][0]), max(s0, s1, span[1 - i][1])
     min_a = K.MIN_ARROW if x.hs else MIN_SEG
     min_b = K.MIN_ARROW if x.he else MIN_SEG
     lo, hi = (a + min_a, b - min_b) if d > 0 else (b + min_b, a - min_a)
@@ -2453,7 +2473,8 @@ def _bend_groups(xs: Dict[int, _Edge]) -> List[List[int]]:
 # draw()
 
 def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
-         avoid_headers=None, alternatives=None, alternative_edges=None) -> Tuple[List[Element], List[str]]:
+         avoid_headers=None, alternatives=None, alternative_edges=None,
+         stems=()) -> Tuple[List[Element], List[str]]:
     skip = dict(skip or {})
     ctx = _Ctx(spec, geom)
     ctx.avoid_headers = set(avoid_headers or ())
@@ -2465,6 +2486,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
             xs[e.n] = _Edge(ctx, e, topo[e.n])
         except KeyError as err:
             warns.append(f"{_where(e)}: endpoint {err} not in the geometry; edge skipped")
+    ctx.stem_span = _stem_spans(xs, stems)
     for e in spec.edges:
         if e.fork and e.n in xs:
             warns.append(f"{_where(e)}: fork: {e.fork} is phase 2; drawn as a trunk fork")

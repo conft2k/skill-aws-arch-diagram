@@ -17,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -328,12 +329,79 @@ class LineOverNodeEngine(unittest.TestCase):
 
     def test_a_winner_with_only_f6_still_tries_text_scale(self):
         # review repro (trunk/v-fork slide): the TGW fork over Firewall RT's name existed on
-        # main; reporting it must not cost the gentle text enlargement main made (12 → 14px)
+        # main; reporting it must not cost the gentle text enlargement main made (12 → 14px).
+        # Since line-cross 02 the channel move then takes the fork's stem off the name.
         with tempfile.TemporaryDirectory() as tmp:
             text, _ = self.draw(ROOT / "tests/corpus/trunk/v-fork.layout.yaml", Path(tmp) / "v.svg",
                                 "--mode", "slide")
-        self.assertIn("rule: R-flow F6 edge:9 ", text)
+        self.assertNotIn("rule: R-flow F6 ", text)
+        self.assertIn("gap col:tgw → col:rtfw", text)
         self.assertIn("the smallest text (14px)", text)
+
+
+class LineOverNodeMoves(unittest.TestCase):
+    """Line-cross ticket 02: selection's channel and trunk moves for the F6 it is left with,
+    judged through the engine (layout.main) and the drawn geometry."""
+
+    SSM = ROOT / "tests/corpus/qa/t3-ssm-trunk.layout.yaml"
+
+    def draw(self, source, *args):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "d.svg"
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                layout.main([str(source), "-o", str(out), *args])
+            return buf.getvalue(), out.read_bytes()
+
+    def test_channel_widening_takes_the_trunk_stem_off_its_end_name(self):
+        # t3-ssm-trunk slide: edge:4 joins the ep.* <..> ssm stem, which ran up across
+        # Session Manager's own name; the wider endpoint → service gap, with the stem's bend
+        # searched along both members, puts the stem left of the name
+        for mode in (("--mode", "slide"), ("--mode", "slide", "--no-title")):
+            text, draft = self.draw(self.SSM, *mode)
+            self.assertNotIn("rule: R-flow F6 ", text)
+            self.assertIn("rule: R-flow F5 edge:2", text)          # the label clash stays
+            line = next(l for l in text.splitlines() if l.startswith("selection:"))
+            self.assertIn("trunk stem along every member: edge:3", line)
+            self.assertIn("gap col:endpoint → col:service", line)
+            self.assertIn("removed R-flow F6 ×1", line)
+            d = rules.Drawn.parse(draft)
+            names = [CL.shrink(t["box"]) for t in d.stacks[id(d.node_icon["ssm"]["el"])]]
+            self.assertEqual(len(names), 2)                     # name and sub caption
+            for n in (3, 4):
+                self.assertFalse(any(CL.seg_hits_box(s["p"], s["q"], t) for s in d.edge_segs(n)
+                                     for t in names), n)
+
+    def test_no_f6_draws_as_before(self):
+        # a run whose winner has no F6 never enters the moves (t3-ssm-trunk document)
+        text, _ = self.draw(self.SSM, "--mode", "document")
+        self.assertNotIn("rule: R-flow F6 ", text)
+        self.assertNotIn("F6 channel", text)
+        self.assertNotIn("trunk stem", text)
+
+    def test_author_placed_line_is_not_widened(self):
+        # privatelink edge:12 is the author's VHV (shape, bend_y, sides): its F6 keeps its
+        # try: value and no channel candidate is built for it
+        calls = []
+        orig = layout.channel_widenings
+        def spy(b, violations, extra):
+            got = orig(b, violations, extra)
+            calls.append(got)
+            return got
+        with mock.patch.object(layout, "channel_widenings", spy):
+            text, _ = self.draw(ROOT / "tests/corpus/qa/t1-privatelink.layout.yaml", "--mode", "slide")
+        self.assertIn("rule: R-flow F6 edge:12 ", text)
+        self.assertTrue(calls)
+        self.assertEqual([c for c in calls if c], [])
+
+    def test_author_trunk_is_reported_not_unbundled(self):
+        # with the channel move unavailable, drawing ssm's trunk as two lines removes the F6:
+        # the trunk is the author's `trunk: true`, so it is reported as a try:, not drawn
+        with mock.patch.object(layout, "channel_widenings", lambda *a: []):
+            text, _ = self.draw(self.SSM, "--mode", "slide")
+        self.assertIn("rule: R-flow F6 edge:4 ", text)      # kept: the trunk is drawn as written
+        self.assertIn("warning: author trunk edges[2] (trunk: true) keeps R-flow F6; "
+                      "try: drop `trunk: true` from edges[2]", text)
 
 
 class LabelRules(unittest.TestCase):

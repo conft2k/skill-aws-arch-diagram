@@ -79,7 +79,7 @@ import math
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
@@ -129,6 +129,9 @@ class Violation:
     cost: float = 1.0           # how far off (px, pt, or 1 for a yes/no predicate)
     tier: int = TIER_HARD       # 0 hard, 2 slide fit
     code: str = ""              # the predicate (F1, RT1, L2, ...)
+    # F6: (p, q, footprint box) of the piece over the crossed node and that node's footprint
+    # (icon and name block), for selection's channel-widening move; not part of the identity.
+    at: Tuple = field(default=(), compare=False)
 
     def as_dict(self) -> dict:
         return {"rule": self.rule, "code": self.code, "owners": ",".join(self.owners),
@@ -707,7 +710,8 @@ def _over_nodes(spec, d: Drawn) -> List[Violation]:
             out.append(Violation(
                 "R-flow", (eid, f"node:{nid}"),
                 f"F6 {eid} ({_display(spec, e.a)} → {_display(spec, e.b)}) {why}; "
-                f"try: {_over_try(spec, d, e, run, i, nid)}", 1.0, code="F6"))
+                f"try: {_over_try(spec, d, e, run, i, nid)}", 1.0, code="F6",
+                at=(tuple(s["p"]), tuple(s["q"]), tuple(d.foot.get(nid, d.node_icon[nid]["box"])))))
     return out
 
 

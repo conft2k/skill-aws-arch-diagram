@@ -81,12 +81,16 @@ class Decisions:
 
     diag=None uses the prior; otherwise the named open pairs go on x and the other open
     pairs go on y. Overlay choices are beside/above the first member row, skip entries
-    name edge instances and their routing alternative, and place selects the note.
+    name edge instances and their routing alternative, and place selects the note;
+    stems names trunk leads whose stem bend is searched along the whole trunk.
     """
     diag: Optional[FrozenSet[PairKey]] = None
     overlay: Tuple[Tuple[str, str], ...] = ()
     skip: Tuple[Tuple[int, int], ...] = ()
     place: Optional[str] = None
+    # trunk leads whose shared bend clears the obstacles along every member's run, not only
+    # its own (line-cross ticket 02: selection's channel move for a stem over a node)
+    stems: Tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

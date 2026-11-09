@@ -30,7 +30,10 @@ drawn in another shape, is written.
 The CLI keeps the existing complete default as an incumbent, reusing its solves to judge
 feedback rounds, fixed-answer repairs and text scale by the rule checker's Verdict from
 the first render. It then tries at most 12 document / 16 slide Candidates, generated from
-R-border, R-flow, R-rt and R-fit violations. Skip-only Candidates share solved geometry. Only
+R-border, R-flow, R-rt and R-fit violations. A winner left with a line over a node (F6) then
+gets at most 4 channel candidates (the gap the crossing piece runs through widened, a trunk's
+stem bend searched along every member) and, for an author trunk, a separate-lines try that is
+only reported. Skip-only Candidates share solved geometry. Only
 a strictly better Verdict replaces the incumbent; ties retain the earlier Draft. Later
 stages preserve the winner's Verdict. Explicit Spec placements have no neighbouring move.
 Before ranking, a new tier-0 identity (rule, code, owner set) requires a strictly lower
@@ -428,6 +431,8 @@ def _build(spec: Spec, extra: Sequence[Requirement], skip: Dict[int, int], place
             warns.append(f"note: requirement {r.why!r} short by {M.fmt_num(r.d - got)}px on the final geometry")
     route_kw = {"avoid_headers": avoid_headers} if avoid_headers else {}
     alternatives = {} if collect_alternatives else None
+    if decisions.stems:
+        route_kw["stems"] = decisions.stems
     edges, route_warns = layout_route.draw(spec, geom, chosen_skip, alternatives=alternatives, **route_kw)
     raws, raw_warns = raw_elements(spec, geom)
     drawing = layout_solve.draw(spec, geom) + edges
@@ -1804,7 +1809,7 @@ def redraw_routes(b: Build, decisions, source: str) -> Build:
     """A skip-only Candidate shares the solved geometry, note and raw elements."""
     with layout_text.font_context(b.spec.font_factor, b.spec.font_steps):
         edges, warns = layout_route.draw(b.spec, b.geom, dict(decisions.skip),
-                                        avoid_headers=b.avoid_headers)
+                                        avoid_headers=b.avoid_headers, stems=decisions.stems)
         elements = [e for e in b.elements if not e.owner.startswith("edge:")] + edges
         # Route warnings describe this Candidate's lines, not the previous route.
         warnings = [w for w in b.warnings if not w.startswith("edges[")] + warns
@@ -1828,6 +1833,8 @@ def selection_changes(before, after):
             changes.append(f"overlay {gid} header {place}")
     if after.place != before.place:
         changes.append(f"note place={after.place}")
+    if after.stems != before.stems:
+        changes.append("trunk stem along every member: " + ", ".join(f"edge:{n}" for n in after.stems))
     return "; ".join(changes)
 
 
@@ -1857,6 +1864,176 @@ def hard_placement_warnings(b: Build, violations):
                 if line not in warnings:
                     warnings.append(line)
     return warnings
+
+
+def tier0_identities(violations) -> set:
+    return {(v.rule, v.code, frozenset(v.owners)) for v in violations if v.tier == 0}
+
+
+def channel_widenings(b: Build, violations, extra: Sequence[Requirement]):
+    """Line-cross ticket 02 (b), channel widening: for each F6 on a line the engine routes
+    (no author placement: layout_route.skippable) whose piece runs through a gap beside the
+    crossed node, not through its centre, the track gap that piece lies in, widened by the
+    footprint's overlap with the piece plus ICON_CLEAR on both sides, so the router has a
+    clear stretch for it. A piece on the node's own track (a straight line through a node in
+    its row or column) has no gap to widen. One candidate per gap, in violation order:
+    [(key, Requirement, trunk leads whose stem bend is searched along the whole trunk)]."""
+    have = {(r.axis, r.a, r.b): r for r in extra}
+    out: Dict[Tuple[str, str, str], Tuple[Requirement, set]] = {}
+    for v in sorted(violations, key=lambda v: (v.owners, v.message)):
+        if v.code != "F6" or not v.at:
+            continue
+        nid = next((o[5:] for o in v.owners if o.startswith("node:")), None)
+        n = edge_of(v.owners[0])[0] if edge_of(v.owners[0]) is not None else None
+        e = b.spec.edges[n] if n is not None and n < len(b.spec.edges) else None
+        if nid is None or nid not in b.geom.nodes or e is None or not layout_route.skippable(e):
+            continue        # an author-placed line is reported with its try: value only
+        (px, py), (qx, qy), foot = v.at
+        if abs(px - qx) < 0.5:
+            axis, at = "x", px
+        elif abs(py - qy) < 0.5:
+            axis, at = "y", py
+        else:
+            continue
+        i = 0 if axis == "x" else 1
+        centre = value(f"node:{nid}", b.geom, axis)
+        if abs(at - centre) < 1:
+            continue
+        need = (at - foot[i] if at < centre else foot[i + 2] - at) + 2 * CL.ICON_CLEAR
+        br = (stack_bracket(b.spec, b.geom, [f"node:{nid}"], at) if axis == "y" else None) \
+            or bracket(b.geom, axis, at)
+        if br is None or need <= 0:
+            continue
+        a, c, cur = br[:3]
+        key = (axis, a, c)
+        old = have.get(key)
+        d = max(cur, old.d if old else 0.0) + need
+        # a trunk member's piece may be the stem its followers extend: search the lead's
+        # bend along the whole trunk, so the wider channel is used where they all run
+        lead = (min((x for x in b.spec.edges if x.line == e.line), key=lambda x: x.k).n
+                if e.trunk or e.fork else None)
+        if key not in out or d > out[key][0].d:
+            out[key] = (Requirement(axis, a, c, d, f"selection: widen the channel past {nid} (F6)",
+                                    v.owners[0]), out.get(key, (None, set()))[1])
+        if lead is not None:
+            out[key][1].add(lead)
+    return [(key, req, tuple(sorted(stems))) for key, (req, stems) in out.items()]
+
+
+def unbundled(spec: Spec, line: int) -> Spec:
+    """The spec with the instances of spec line `line` drawn as separate lines (no trunk)."""
+    probe = copy.copy(spec)
+    probe.edges = [dataclasses.replace(e, trunk=False, fork=None) if e.line == line else e
+                   for e in spec.edges]
+    return probe
+
+
+MAX_LINE_OVER_MOVES = 4    # extra candidates for F6 after the hill-climb (line-cross ticket 02)
+
+
+def line_over_node_moves(best, source: str, scratch: Path, rule_guard: RuleGuard):
+    """Line-cross ticket 02: two moves for the F6 the hill-climb leaves on its winner.
+
+    (b) channel widening: one candidate per gap a crossing piece runs through
+    (channel_widenings), built with the winner's decisions and requirements plus the wider
+    gap. It replaces the winner only on the same strict-improvement verdict as every other
+    candidate (enabled and full verdicts, no more checks, admits), and only when its tier-0
+    identities are a strict subset of the winner's (it removes an F6 and adds nothing) and
+    its smallest text does not drop below the medium floor it was above.
+    (a) trunk unbundling: a trunk line whose instance is an F6 owner is drawn once with its
+    members as separate lines. Every trunk is the author's `trunk: true`, so the result is
+    never adopted; when it removes F6 on the same verdict it is reported as a try: value.
+    Runs only when the winner has F6, so a run without F6 draws exactly as before.
+    Returns (best, chosen requirement or None, warning lines)."""
+    b, data = best[0], best[1]
+    violations = rule_guard.check(b.spec, b.geom, data)
+    if not violations or not any(v.code == "F6" for v in violations):
+        return best, None, []
+    score = rule_guard.verdict(b, data, best[3])
+    full = rule_guard.verdict(b, data, best[3], enabled=False)
+    if score is None or full is None:
+        return best, None, []
+    held = tier0_identities(violations)
+    (actual, _, _, floor), _, _ = rule_guard.text(b.spec, data)
+
+    def keeps_text(spec, cd):
+        # A strict tier-0 subset is a strict tier-0 decrease, which already pays for a
+        # below-target shrink (Glossary: Candidate); text above the floor stays above it.
+        return not (actual >= floor and rule_guard.text(spec, cd)[0][0] < floor - 1e-9)
+
+    def better(cb, cd, cp, then):
+        s = rule_guard.verdict(cb, cd, cp)
+        f = rule_guard.verdict(cb, cd, cp, enabled=False)
+        after = rule_guard.check(cb.spec, cb.geom, cd)
+        if s is None or f is None or after is None:
+            return None
+        ids = tier0_identities(after)
+        # It must take an F6 away and add no tier-0 identity at all.
+        if not (s < then[0] and f < then[1] and s.checks <= then[0].checks and ids < then[2]
+                and any(code == "F6" for _, code, _ in then[2] - ids) and keeps_text(cb.spec, cd)):
+            return None
+        return s, f, ids, after
+
+    count, chosen, lines = 0, None, []
+    place = b.nb.place if b.nb.place != "none" else None
+    then = (score, full, held)
+    base = best         # every channel candidate is one change of the winner; the best one wins
+    for key, req, stems in channel_widenings(b, violations, base[5]):
+        if count >= MAX_LINE_OVER_MOVES:
+            break
+        count += 1
+        extra = [r for r in base[5] if (r.axis, r.a, r.b) != key] + [req]
+        decisions = dataclasses.replace(b.decisions, stems=tuple(sorted(set(b.decisions.stems) | set(stems))))
+        try:
+            cb = rule_guard.build(b.spec, extra, dict(base[6]), place, source,
+                                  decisions=decisions, avoid_headers=b.avoid_headers)
+        except M.LayoutError:
+            continue
+        cd, fixed = fixed_build(cb, scratch, rule_guard)
+        cp = rule_guard.problems(cd)
+        got = better(cb, cd, cp, then)
+        if rule_guard.error is not None:
+            return best, None, []
+        if got is not None and rule_guard.admits(b, data, cb, cd, later=False):
+            best, chosen, then = (cb, cd, fixed, cp, base[4], extra, dict(base[6])), req, got[:3]
+    b, data = best[0], best[1]
+    violations = rule_guard.check(b.spec, b.geom, data) or []
+    edges = {e.n: e for e in b.spec.edges}
+    probed = set()
+    for v in sorted(violations, key=lambda v: (v.owners, v.message)):
+        if v.code != "F6" or count >= MAX_LINE_OVER_MOVES:
+            continue
+        n = next((edge_of(o)[0] for o in v.owners if edge_of(o) is not None), None)
+        e = edges.get(n)
+        if e is None or not (e.trunk or e.fork) or e.line in probed:
+            continue
+        members = [x for x in b.spec.edges if x.line == e.line]
+        if len(members) < 2:
+            continue
+        probed.add(e.line)
+        count += 1
+        probe = unbundled(b.spec, e.line)
+        try:
+            # The probe's spec differs from the cached one: build it outside the cache.
+            cb = build(probe, best[5], dict(best[6]), place, source,
+                       decisions=b.decisions, avoid_headers=b.avoid_headers)
+        except M.LayoutError:
+            continue
+        cd, _ = fixed_build(cb, scratch, rule_guard)
+        cp = rule_guard.problems(cd)
+        got = better(cb, cd, cp, then)
+        if rule_guard.error is not None:
+            return best, None, []
+        if got is None:
+            continue
+        removed = sum(x.code == "F6" for x in violations) - sum(x.code == "F6" for x in got[3])
+        if removed <= 0:
+            continue
+        key = "fork: bus" if e.fork else "trunk: true"
+        lines.append(f"warning: author trunk {e.src} ({key}) keeps R-flow F6; try: drop `{key}` "
+                     f"from {e.src} so its {len(members)} lines are drawn separately "
+                     f"(tried: F6 −{removed}, no new tier-0 violation, verdict better)")
+    return best, chosen, lines
 
 
 def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, original_spec=None,
@@ -2070,10 +2247,21 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         if (result_score < best_score and result_score.checks <= best_score.checks
                 and rule_guard.admits(best[0], best[1], result[0], result[1])):
             best = result
+    widened, trunk_tries = None, []
+    if _budget is None:
+        # Only the outermost selection, after its winner repair: the line-cross moves.
+        best, widened, trunk_tries = line_over_node_moves(best, source, scratch, rule_guard)
+        if rule_guard.error is not None:
+            return default, ["selection: default kept (rule checker unavailable)"]
+    if best[1] != default[1]:
         after = rule_guard.check(best[0].spec, best[0].geom, best[1])
         removed = Counter((v.rule, v.code) for v in first) - Counter((v.rule, v.code) for v in after)
         detail = ", ".join(f"{r} {c} ×{n}" for (r, c), n in sorted(removed.items())) or "none"
-        changes = selection_changes(base_decisions, best[0].decisions) or "default decisions; verdict-selected rounds"
+        changes = selection_changes(base_decisions, best[0].decisions)
+        if widened is not None:
+            changes = "; ".join(filter(None, (changes, f"gap {widened.a} → {widened.b} ≥ "
+                                                       f"{M.fmt_num(widened.d)} (F6 channel)")))
+        changes = changes or "default decisions; verdict-selected rounds"
         final_score = rule_guard.verdict(best[0], best[1], best[3])
         if final_score is None or rule_guard.error is not None:
             return default, ["selection: default kept (rule checker unavailable)"]
@@ -2091,7 +2279,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         after = first
         lines = [f"selection: default kept; evaluated {count}/{budget} candidates"]
     shared.update(count=count, index=index)
-    return best, lines + hard_placement_warnings(best[0], after)
+    return best, lines + hard_placement_warnings(best[0], after) + trunk_tries
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

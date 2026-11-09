@@ -26,7 +26,8 @@ def draw(source, tmp_path, capsys, *args):
     ("qa/t3-cache-label", "slide", "R-flow", "F5", "label_at: above|below|left|right"),
     ("qa/t4-order-14steps", "slide", "R-flow", "F5", "label_at: above|below|left|right"),
     # line-cross 01: F6 leads with its own try value (the piece or the node moved clear)
-    ("qa/t3-ssm-trunk", "slide", "R-flow", "F6", "edges[2] bend_x: "),
+    # (t3-ssm-trunk slide's F6 is gone since line-cross 02's channel move; dns-trunk keeps its own)
+    ("qa/t3-dns-trunk", "slide", "R-flow", "F6", "inbound.1: dy: "),
     ("qa/t3-nat-route-table", "slide", "R-flow", "F6", "rt.1: dy: "),
 ])
 def test_each_remaining_enabled_violation_has_an_owner_hint(
