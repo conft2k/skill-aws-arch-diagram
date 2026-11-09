@@ -8,21 +8,62 @@
 
 - [x] 새 코드 **F6**이 rule checker에 있다. R-flow, tier 0, owners `(edge:n, node:x)`, 메시지는 표시 이름(label)을 쓰고 `try:` 값을 붙인다. GLOSSARY(Line over node, Attach piece)와 rules-design(§1 R-flow F6, §6 사용자 결정)에 적었다.
 - [x] Corpus 태그: dns-trunk·nat-route-table·privatelink·ssm-trunk의 slide 두 mode, three-az-writer 세 mode가 `bad: {R-flow: node:…}`다. 각각 crossing을 없앤 good 짝(`qa/lc-*-clear`)이 있고, 자기 끝 icon에 붙는 곳에서만 닿는 good 사례(`qa/lc-own-end-touch`)가 있다. 태그 불일치 **0**.
-- [ ] 기준 대비 악화 0, 새 tier-0 identity 0(F6이 기존 crossing을 새로 보고하는 것 제외). **두 건이 남는다**: `trunk/v-fork` slide 악화 1건, `qa/t4-three-az-writer` slide-no-title의 새 F5 identity 1건. 아래 "의도하지 않은 변화"에 원인을 적었다. crossing이 없는 draft는 `rt/gw-ret` slide 두 mode를 빼고 모두 byte-identical이다(그 둘은 verdict상 better).
-- [x] 시간: run 최대 비율 **1.647×**, 최악 run **18.16초**, wall **1.008×**. 3×·30초 초과 0.
+- [ ] 기준 대비 악화 0, 새 tier-0 identity 0(F6이 기존 crossing을 새로 보고하는 것 제외). 리뷰 수정 뒤 악화는 **0**이다(`trunk/v-fork` slide는 main과 byte-identical로 돌아왔다). **남는 것**: `qa/t4-three-az-writer` slide-no-title의 새 F5 identity 1건(예외 판단 필요), crossing 없는 `rt/gw-ret` slide 두 mode의 draft 변경(verdict상 better). 아래 "리뷰 수정"과 "의도하지 않은 변화"에 원인을 적었다.
+- [x] 시간: run 최대 비율 **1.647×**(0.5초 이상 run 중 최대 1.467×), 최악 run **18.12초**, 합계 **1.010×**. 3×·30초 초과 0.
 - [x] 아래 표가 bad 태그 사례마다 선택 전/후 crossing 수와 남은 이유를 적는다.
 - [ ] Codex review: 이 문서 뒤에 한다.
+
+## 리뷰 수정 (Codex 차단 4건, 1회 수정)
+
+수정 뒤 corpus: `~/.cache/skill-design/improve/line-cross/t01/fix/corpus.json`. 재판정 기준 대비 **better 3 / same 772 / worse 0 / uncompared 18**, 태그 불일치 0이다. 이전 브랜치 실행(`final/`) 대비로 바뀐 draft는 **`trunk/v-fork` slide 하나**뿐이다(main과 byte-identical로 돌아옴).
+
+1. **`trunk/v-fork` slide 악화 → 해결.**
+   - `render_readable`의 gentle text scale 조건을 바꿨다. 예전: "승자에 tier-0 위반이 없다". 지금: "승자의 tier-0 위반이 없거나 모두 F6이다".
+   - F6-only 승자에서는 확대한 결과를 기존 gate(`accepts`: 새 identity gate, 글자 gate, 엄격한 verdict 개선)에 더해 **tier-0 identity 집합이 보유 집합의 부분집합일 때만** 받는다.
+   - 승자의 tier-0가 없는 경우의 동작은 같다. 예전에도 `accepts`가 tier-0가 0인 그림에 새 identity를 받지 않았다.
+   - F6 아닌 tier-0가 있는 승자는 이 경로에 들어오지 않는다. 그래서 F6-only 승자 밖의 draft는 바뀌지 않는다. corpus에서 바뀐 draft는 v-fork slide 하나다.
+   - 더 일반적인 "tier-0 집합이 늘지 않으면 시도" 규칙은 F6 아닌 tier-0 승자 전체의 동작을 바꾸므로 택하지 않았다.
+   - 테스트: `LineOverNodeEngine.test_a_winner_with_only_f6_still_tries_text_scale`(v-fork slide: F6 (9, rtfw)가 남고 가장 작은 글자 14px).
+2. **`qa/t4-three-az-writer` slide-no-title의 새 F5 identity → 남김(예외 판단 필요).** 수정 1로 바뀌지 않는다(이 run의 승자에는 B2·F5도 있다).
+   - 원인은 render_checked의 feedback round 하나다. tier-0 11→9로 엄격히 줄어서 기존 gate가 받는다. 그 round가 하는 일:
+     - 없앰: F6 (0, ep.1), L1 (edge:1), L1 (edge:2)
+     - 더함: F5 (edge:1, edge:0)
+     - 글자: 8.64→7.45pt
+   - 이 run은 이어서 repair_headers로 L1을 정리한다. text scale이 시도한 9.37pt 그림(F5 (1,2)와 F6 (0, ep.1))은 tier-0가 다시 10으로 늘어 받지 않는다.
+   - "tier-0 엄격 감소면 새 identity와 글자 축소를 허용한다"는 정책은 step 2의 일반 선택 정책이다. 이 ticket 안에서 좁게 고칠 원칙 있는 방법을 찾지 못해 바꾸지 않았다.
+   - 정확한 전/후:
+
+     | | main 601099d(F6 재판정) | 이 브랜치 |
+     |---|---|---|
+     | tier-0 | B2 (1, datasn.2), B2 (2, datasn.2), B2 (2, datasn.3), **F5 (1, 2)**, F6 (0, ep.1), F6 (1, db.2), F6 (1, ep.2), F6 (2, db.2), F6 (2, db.3), F6 (2, ep.3) = 10 | B2 ×3 같음, **F5 (1, 0)**, F6 (1, db.2), F6 (1, ep.2), F6 (2, db.2), F6 (2, db.3), F6 (2, ep.3) = 9 |
+     | 가장 작은 글자 | 9.37pt (canvas 552 × 861) | 7.45pt (canvas 518 × 812, 8pt 하한 아래) |
+     | shape miss | 0 | 1 (`orders.1 -> db.1: drew UVHV instead of H`) |
+3. **`rt/gw-ret` slide·slide-no-title draft 변경 → 그대로 다르다(엔진은 바꾸지 않음).** main의 최종 draft에는 crossing이 없다. 원인은 이 브랜치에서 선택에 들어가는 default draft다.
+   - default draft에 F6 (edge:8, node:gwlbe.1)이 있다. AZ 1 EC2 → Users 반환선(`edges[5] ec2.1 ..> users`)이 GWLBe 1 icon을 가로지른다.
+   - default를 만드는 text scale trial의 draft에는 F6 (8, gwlbe.1)·(9, gwlbe.2)가 있다.
+   - 그래서 선택의 첫 이동이 그 edge의 이웃이 된다. main은 `skip edges[2]=1`, 이 브랜치는 `skip edges[8]=1; diagonal pairs on x: group:secaz.1 / node:gwlb, group:secaz.2 / node:gwlb`다.
+   - 그 후보(candidate 0)가 crossing 없이 이긴다. shape miss 3→2, 글자 부족분 2.351→2.082pt(untitled 1.433→1.132pt)다.
+4. **privatelink `try:` 필드 → 해결.** `_over_try`가 그 piece를 놓는 필드를 shape에서의 역할로 고른다.
+   - `points` 선: `points`
+   - HVH / VHV의 가운데 piece: `bend_x` / `bend_y`
+   - trunk에 붙는 follower의 끝 piece: trunk 공유 bend
+   - 노드 면에 붙는 끝 piece(HV / VH / H / V의 끝, HVH / VHV의 양끝): `from_offset` / `to_offset`. 값이 그 면 밖이면 routing 필드와 crossing 노드의 dx / dy를 준다.
+   - 자기 끝 icon을 붙는 곳까지 관통하는 attach piece는 움직일 수 없다. 그래서 그 앞 piece를 붙는 쪽 footprint 밖(그리고 화살 shaft MIN_ARROW만큼)으로 옮기는 값을 준다.
+     - privatelink (12, s3): `edges[11] bend_y: 340 (moves the horizontal piece at y=180), so the vertical piece at x=1818.2 reaches s3's bottom side without crossing it`
+     - 예전 `bend_x: 1786.2`는 VHV가 읽지 않는 필드였다.
+   - 테스트 `test_privatelink_try_value_moves_the_piece_off_the_node`: privatelink slide를 그린다. 위반 줄의 `try:` 값을 spec에 써서 다시 그린다. 그다음 세 가지를 확인한다.
+     - 위반 줄에 (12, S3 icon)이 없다.
+     - edge:12의 가로 piece가 그 y에 있다.
+     - S3 icon을 지나는 piece가 없다.
+     - 적용 뒤에는 그 가로 piece가 Endpoint service / Internal NLB의 이름을 지나는 새 F6 두 건과 B1이 나온다. hint는 보장이 아니다.
+   - 새 테스트는 Codex backlog대로 엔진(`layout.main` → `rules.check`의 rule 줄)과 그린 geometry를 seam으로 쓴다. 예전 hand-made SVG 단위 테스트를 `check()`로 옮기는 일은 backlog로 남긴다.
 
 ## 구현
 
 - **규칙(`scripts/rules.py` `_over_nodes`):** 각 spec edge instance의 drawn piece가 노드 icon box(2px 줄임)나 이름 줄(`node_stacks`: label과 sub 줄, 1px 줄임)에 닿으면 위반이다. 상자와 mask 처리는 check_layout의 LINE OVER ICON / LINE OVER TEXT와 같다. (edge, node) 쌍마다 하나, cost 1이다.
 - **자기 끝 면제:** edge의 spec 끝 노드 x에 대해, 끝점이 x의 footprint에서 END_REACH 안에 있는 첫/마지막 piece(attach piece)만 x의 icon에서 면제된다. 그것도 줄인 icon 안으로 `ATTACH_DEPTH` 이하만 들어갈 때다. x의 이름 줄은 면제되지 않는다.
 - **세지 않는 것:** group 제목과 CIDR 줄은 node 그룹의 글이 아니다(B2). edge label과 badge 숫자는 `edge:n:label`/`edge:n:badge` 그룹이다(F5, R-label). 그래서 F6에 들어오지 않는다.
-- **`try:` 값(`_over_try`):** 지나는 piece를 crossing 노드의 footprint 가까운 쪽에서 ICON_CLEAR(8px) 밖으로 옮기는 값을 그 piece를 쥔 필드로 준다.
-  - `points` 선: `points: move the vertical piece at x=… to x=…`
-  - 노드 면에 붙는 끝 piece이고 값이 그 면 안에 있으면 `from_offset`/`to_offset`
-  - 그 밖은 `bend_x`/`bend_y`
-  - 끝 piece가 자기 노드 면 안에서 비킬 수 없으면 routing 필드와 crossing 노드의 `dx`/`dy`(flow column이면 dy는 주지 않는다)
+- **`try:` 값(`_over_try`):** 지나는 piece를 crossing 노드의 footprint 가까운 쪽에서 ICON_CLEAR(8px) 밖으로 옮기는 값을, 그 piece를 놓는 필드로 준다. 필드 선택은 위 "리뷰 수정" 4를 본다.
 - **선택:** 새 선택 코드는 없다. F6은 R-flow라서 `neighbours`의 일반 edge 분기(다음 routing alternative), `wanted`, `hard_placement_warnings`, tier-0 점수에 그대로 들어간다. `layout_route.skippable`이 손으로 둔 edge를 제외한다.
 - **경고 문구(`scripts/layout.py` `unfixable_warnings`):** `check_kind`에 `F6: (LINE OVER ICON, LINE OVER TEXT)`를 넣었다. F6의 spec hint는 규칙의 `try:` 값을 먼저 주고, 그 뒤에 맞는 check 문제의 기존 spec_fix 힌트를 붙인다.
   - 예: `edges[0] shape / from_side / to_side (…), or nodes[1] rt rt.1: dy: 32; nodes[1] rt rt.1: dx / dy; …`
@@ -82,7 +123,7 @@ F6 전체는 **39 → 38**(20 run)이다. 기준 json 대비 runner의 "worse 20
 
 278 entries, 793 runs(새 사례 6개 18 runs 포함). drawn 777 / rejected 16, 태그 불일치 **0**.
 
-재판정 기준 대비 결과: **better 3 / same 771 / worse 1 / uncompared 18 / unjudged 0**. 바뀐 draft는 4개다. 재실행 draft는 첫 실행과 byte-identical이었다(결정성).
+리뷰 수정 전 실행(`final/`)의 재판정 기준 대비 결과: **better 3 / same 771 / worse 1 / uncompared 18 / unjudged 0**, 바뀐 draft 4개다. 재실행 draft는 첫 실행과 byte-identical이었다(결정성). 수정 뒤(`fix/`)에는 better 3 / same 772 / worse 0이고, 바뀐 draft는 3개다(v-fork slide 제외). 아래 수치는 두 실행에서 같다.
 
 | 항목 | 재판정 기준 | 최종 | 증감 |
 |---|---:|---:|---:|
@@ -103,17 +144,14 @@ F6 전체는 **39 → 38**(20 run)이다. 기준 json 대비 runner의 "worse 20
 | `rt/gw-ret` | slide | better | shape miss 3→2, shortfall 2.351→2.082pt, 면적 874734→834086 | main 최종 draft에는 crossing이 없다. 다만 선택 중 default draft에 F6 (8, gwlbe.1)·(9, gwlbe.2)가 있었다. 그래서 첫 이동이 `skip edges[2]=1`에서 `skip edges[8]=1; diagonal pairs …`로 바뀌었고, crossing 없는 더 나은 그림을 고른다 |
 | `rt/gw-ret` | slide-no-title | better | shape miss 3→2, shortfall 1.433→1.132pt | 위와 같다 |
 | `qa/t4-three-az-writer` | slide-no-title | better(tier-0 10→9) | shortfall 0.634→2.552pt, shape miss 0→1 | F6 (0, ep.1)을 없앤 feedback round를 tier-0 감소로 받아들였다. 글자 9.37→7.45pt 축소도 tier-0 엄격 감소라서 gate가 허용한다 |
-| `trunk/v-fork` | slide | **worse** | shortfall 3.935→4.349pt, shape miss 1→2, 면적 2143665→1781496 | 아래 참고 |
+| `trunk/v-fork` | slide | worse → 수정 뒤 **same(byte-identical)** | 수정 전 shortfall 3.935→4.349pt, shape miss 1→2 | 리뷰 수정 1 |
 
-### 의도하지 않은 변화 (미해결 2건)
+### 의도하지 않은 변화
 
-1. **`trunk/v-fork` slide 악화.**
-   - 고르는 후보는 main과 같다(`note place=pane`).
-   - 그런데 그 승자에 main에도 있던 F6 (9, rtfw)가 붙는다. 그래서 step 2의 "rule-clean 승자만 gentle text scale을 시도한다"(`render_readable`의 `gentle` 조건, step2 spec 58행)가 더는 적용되지 않는다.
-   - main의 14px 확대가 빠지고 12px로 남는다. tier-0는 같고 글자·shape miss만 나빠진다.
-   - 고치는 길은 둘이다. (a) gentle 조건을 "tier-0 위반이 없다"에서 "보유 그림보다 tier-0가 늘지 않는다"로 바꾼다. (b) ticket 02가 이 crossing을 없애기를 기다린다.
-   - 선택 코드 변경이 필요해 이 ticket 범위 밖이다. 판단을 요청한다.
-2. **`qa/t4-three-az-writer` slide-no-title의 새 F5 identity.**
+1. **`trunk/v-fork` slide 악화(해결).**
+   - 원인: 승자에 main에도 있던 F6 (9, rtfw)가 붙어, "rule-clean 승자만 gentle text scale"(step2 spec 58행)에서 빠졌다. 그래서 14px 확대가 사라졌다.
+   - 리뷰 수정 1로 main과 byte-identical이다.
+2. **`qa/t4-three-az-writer` slide-no-title의 새 F5 identity(미해결, 예외 판단 필요).** 정확한 전/후는 리뷰 수정 2를 본다.
    - 같은 label 'PostgreSQL :5432'(edge:1)의 F5가 (edge:1, edge:2)에서 (edge:1, edge:0)으로 바뀌었다. orders.1 선이 UVHV로 돌아 그 label 옆을 지나기 때문이다.
    - 엔진 gate는 tier-0 합계가 10→9로 줄어서 허용한다. 하지만 "새 tier-0 identity 0" 기준으로는 1건이다.
    - 같은 변화로 slide 글자가 8pt 하한 아래(7.45pt)로 내려간다. ticket 10의 multiregion-dr 예외와 같은 종류(tier-0 엄격 감소로 축소 허용)다.
@@ -122,12 +160,14 @@ F6 전체는 **39 → 38**(20 run)이다. 기준 json 대비 runner의 "worse 20
 
 | 항목 | 기준 601099d | 최종 |
 |---|---:|---:|
-| Corpus wall (s) | 113.60 | 114.55 |
-| 합계 (s) | 653.42 | 658.67 |
-| 최악 run (s) | 17.817 | 18.161 (`qa/t1-multiregion-dr` slide-no-title) |
+| Corpus wall (s) | 113.60 | 114.55 (수정 뒤 114.78) |
+| 합계 (s) | 653.42 | 658.67 (수정 뒤 660.08, 1.010×) |
+| 최악 run (s) | 17.817 | 18.161 (수정 뒤 18.123, `qa/t1-multiregion-dr`) |
 
-- run 최대 비율은 `sides/t2` slide-no-title의 **1.647×**(0.017→0.028초)다.
-- 0.5초 이상 run 중 최대는 `bench/latest2-pipeline` slide의 1.447×(4.786→6.924초)다.
+- run 최대 비율은 아주 짧은 run에서 나온다.
+  - 수정 전: `sides/t2` slide-no-title 1.647×(0.017→0.028초)
+  - 수정 뒤: reject 사례 2.0×(0.001→0.002초), sides/t2b 1.647×
+- 0.5초 이상 run 중 최대는 `bench/latest2-pipeline` slide다. 수정 전 1.447×(4.786→6.924초), 수정 뒤 1.467×(4.786→7.023초)다.
 - 3×·30초 초과는 0이다.
 
 ## 테스트
@@ -140,8 +180,9 @@ F6 전체는 **39 → 38**(20 run)이다. 기준 json 대비 runner의 "worse 20
   - 자기 끝의 이름 위
   - group 제목·CIDR·edge label·badge는 세지 않음
   - `points`/`bend_x` 선의 `try:` 값
+- `tests/test_rules.py` `LineOverNodeEngine` 2개(리뷰 수정): privatelink `try:` 값을 적용하면 그 piece가 S3에서 빠진다. F6-only 승자도 text scale을 시도한다(v-fork slide 14px).
 - `tests/test_unfixable_warnings.py`: ssm-trunk slide(F6, `edges[2] bend_x: `)와 nat-route-table slide(F6, `rt.1: dy: `) 두 사례를 추가했다.
-- 전체 pytest(`uv run --with pyyaml --with pytest --with cairosvg --with python-pptx --with lxml python -m pytest -q`): **899 passed, 1 xfailed, 2581 subtests passed**, 243.30초(`final/pytest.log`). `tests/test_examples.py`(예제 golden·결정성)와 `tests/fixtures/examples-91062e1/`에 고정한 모듈 테스트를 포함한다. golden은 바꾸지 않았다.
+- 전체 pytest(`uv run --with pyyaml --with pytest --with cairosvg --with python-pptx --with lxml python -m pytest -q`): 수정 전 899 passed(`final/pytest.log`), 리뷰 수정 뒤 **901 passed, 1 xfailed, 2581 subtests passed**, 264.73초(`fix/pytest.log`). `tests/test_examples.py`(예제 golden·결정성)와 `tests/fixtures/examples-91062e1/`에 고정한 모듈 테스트를 포함한다. golden은 바꾸지 않았다.
 
 ## 재현
 
@@ -162,7 +203,9 @@ uv run --with pyyaml python ~/.cache/skill-design/improve/line-cross/t01/rejudge
 ## 증거 파일
 
 `~/.cache/skill-design/improve/line-cross/t01/`:
-- `final/`: `corpus.json`, `corpus.log`, `drafts/`, `rejudged-compare.txt`, `times.txt`, `pytest.log`
+- `fix/`: 리뷰 수정 뒤 `corpus.json`, `corpus.log`, `drafts/`, `rejudged-compare.txt`, `times.txt`, `pytest.log`
+- `final/`: 리뷰 수정 전 `corpus.json`, `corpus.log`, `drafts/`, `rejudged-compare.txt`, `times.txt`, `pytest.log`
+- `rv/rv.md`: Codex 리뷰
 - `run1/`: 같은 코드의 첫 실행. draft는 final과 같다
 - `main-601099d-rejudged-f6.json`: F6으로 재판정한 기준
 - `baseline-f6.txt`: 기준 draft의 F6 목록과 attach 깊이 분포
@@ -171,5 +214,6 @@ uv run --with pyyaml python ~/.cache/skill-design/improve/line-cross/t01/rejudge
 ## 남은 것
 
 - ticket 02: trunk 풀기와 통로 넓히기로 위 29건을 줄인다.
-- 위 미해결 2건에 대한 판단(gentle text scale 조건, three-az-writer의 F5 identity 교체).
+- three-az-writer slide-no-title의 F5 identity 교체와 7.45pt 축소에 대한 예외 판단.
+- hand-made SVG 단위 테스트(`LineOverNode`)를 `check()` seam으로 옮기기(Codex backlog).
 - `rt/gw-ret`의 노트 본문 위 LINE OVER TEXT는 노드 이름이 아니라서 F6 대상이 아니다. check로만 남는다.
