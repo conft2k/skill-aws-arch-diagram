@@ -164,6 +164,9 @@ NO_ICON_GROUPS = {
     "security group": "Security group", "sg": "Security group",
     "generic group": "Generic group", "step functions workflow": "Step Functions workflow",
 }
+# The spec group `type` for each of them.
+GROUP_TYPES = {"Availability Zone": "az", "Security group": "sg", "Generic group": "generic",
+               "Step Functions workflow": "sfn"}
 VENDOR = {"amazon", "aws"}
 # Size/theme suffixes on group icons (AWS-Cloud_32_Dark) are not part of the name.
 SUFFIX = {"32", "dark", "light"}
@@ -221,9 +224,13 @@ def score(query: str, name: str) -> int:
 
 def word_aliases(query: str):
     """The query with each word that is an alias spelled out ("ecs task" → "elastic container
-    service task"), or None when no word is one."""
+    service task"), or None when no word is one, when the whole query is an alias (that alias
+    names the whole phrase), or when a word left as it is would not count in score() (a Korean
+    word: "인터넷 게이트웨이" must not score as plain "internet")."""
     words = akey(query).split(" ")
-    if len(words) < 2:
+    if len(words) < 2 or akey(query) in _ALIAS:
+        return None
+    if any(w not in _ALIAS and not tokens(w) for w in words):
         return None
     out = [a if isinstance(a, str) else w for w in words for a in [_ALIAS.get(w)]]
     return " ".join(out) if out != words else None
@@ -301,6 +308,20 @@ def closest(query: str, k: int = 3):
     return out[:k]
 
 
+def no_icon(query: str, spec: bool = False):
+    """Why a query has no icon of its own and what to draw instead, or None. spec=True words
+    it for a layout spec (a group `type`) instead of an SVG draft."""
+    group = NO_ICON_GROUPS.get(query.lower().strip())
+    if group:
+        if spec:
+            return (f"{group} is a label-only group with no icon: make it a group "
+                    f"(`groups:` entry with `type: {GROUP_TYPES[group]}`), not a node")
+        return (f"{group} is a label-only group — draw a rect in the color from "
+                "diagram_guide.md's group table, no corner badge")
+    note = NO_ICON_NOTES.get(akey(query))
+    return note[0] if note else None
+
+
 def no_match_hint(query: str) -> str:
     """What to try when a search finds nothing: the closest names, else the --list commands."""
     near = closest(query)
@@ -325,13 +346,12 @@ def main():
         return
     for query in args:
         print(f"# {query}")
-        group = NO_ICON_GROUPS.get(query.lower().strip())
-        if group:
-            print(f"  (no icon: {group} is a label-only group — draw a rect in the color from "
-                  "diagram_guide.md's group table, no corner badge)")
+        note = no_icon(query)
+        if note and NO_ICON_GROUPS.get(query.lower().strip()):
+            print(f"  (no icon: {note})")
             print()
             continue
-        note, instead = NO_ICON_NOTES.get(akey(query), (None, None))
+        instead = NO_ICON_NOTES.get(akey(query), (None, None))[1]
         if note:
             print(f"  (no icon: {note})")
         hits = search(instead or query)

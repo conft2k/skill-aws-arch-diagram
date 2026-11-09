@@ -1114,6 +1114,10 @@ class _Loader:
         top = [h for h in hits if h[0] >= ICON_MIN_SCORE]
         if top and (len(top) == 1 or top[0][0] > top[1][0]):
             return top[0][1], q
+        note = find_icon.no_icon(q, spec=True)
+        if note:
+            self.err(loc, f"icon: {q!r} has no icon of its own — {note}")
+            return None
         cands = ", ".join(f"{ref} ({s})" for s, ref in hits[:3])
         why = "is ambiguous" if top else f"has no match scoring ≥ {ICON_MIN_SCORE}"
         self.err(loc, f"icon: alias {q!r} {why}; write the full ref"
