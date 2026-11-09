@@ -137,9 +137,6 @@ def hint_value(line, item, key):
     ("ports/g1", "slide", "F3", "edge:0", "edges[0]", "bend_y"),
     ("qa/t2-false-junction", "slide", "F5", "edge:1", "edges[1]", "label_at"),
     ("qa/t4-order-14steps", "slide", "F5", "edge:14", "edges[14]", "label_at"),
-    ("lanes/a", "slide", "F4", "edge:9", "nodes[8]", "dy"),
-    # the smaller move (dx) is taken back by the solver here; the other axis is offered too
-    ("xy/xy-off", "document", "F4", "edge:0", "nodes[2]", "dy"),
 ])
 def test_flow_hint_value_clears_the_violation_when_applied(tmp_path, capsys, case, mode, code, owner, item, key):
     source = ROOT / f"tests/corpus/{case}.layout.yaml"
@@ -234,3 +231,32 @@ def test_slide_too_small_names_the_note_and_drops_circular_slide_advice(tmp_path
     assert floor.endswith("; split the diagram")       # the run is a slide already
     # a document spec drawn with --mode slide still learns it can become a slide spec
     assert "write a slide spec (see docs/examples/specs/slides/)" in text.splitlines()[-1]
+
+
+@pytest.mark.parametrize(("case", "mode"), [
+    ("lanes/a", "slide"),
+    # r's dx is taken back by the solver here: only moves that clear it when drawn again
+    ("xy/xy-off", "document"),
+    # s is pinned with xy on q: its xy is moved past q's footprint
+    ("sides/xy3", "document"),
+])
+def test_every_offered_f4_move_clears_it_when_applied(tmp_path, capsys, case, mode):
+    source = ROOT / f"tests/corpus/{case}.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", mode)
+    warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F4 "))
+    owner = re.search(r"F4 \((edge:\d+)", warning).group(1)
+    hint = warning.split("spec hint (not a guarantee): ", 1)[1].split(" (each drawn again", 1)[0]
+    moves = re.findall(r"(nodes\[\d+\]) \S+ \S+: (dx|dy|xy): (\[[^\]]*\]|-?[\d.]+)", hint)
+    assert moves, warning
+    for item, key, value in moves:
+        _, _, again = draw(applied(source, tmp_path, item, key, value), tmp_path, capsys, "--mode", mode)
+        assert not any(line.startswith(f"rule: R-flow F4 {owner}") for line in again.splitlines()), \
+            (item, key, value, again)
+
+
+def test_no_value_says_why(tmp_path, capsys):
+    source = ROOT / "tests/corpus/trunk/merge-v3az-top.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", "slide", "--no-title")
+    warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F3 "))
+    assert ("spec hint (not a guarantee): no value: edges[2] draws several lines (a trunk or a `.*` line)"
+            in warning), warning

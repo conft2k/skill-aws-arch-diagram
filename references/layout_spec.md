@@ -538,13 +538,21 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   text of an engine warning or `--explain` line (what moved a node, what keeps a gap) may
   still name nodes and boxes by their spec ids (`landed on box cloud`, `flow pitch 100 acm ↓
   cw`): search the spec for them.
-  F3, F4, F5, F6 and L1 lead with a value to write, the nearest one that clears the
-  rule on this draft: F3 the `bend_x` / `bend_y` / `from_offset` / `to_offset` /
-  `points` piece move that takes the crossing off the bend or end (`edges[3] from_offset:
-  16`), F4 the `dx` / `dy` of the node the arrowhead lands on, F5 / L1 a `label_at:
-  {x: <end>.cx±n, y: <end>.cy±n, anchor: …}` or `step_at: [<end>.cx±n, <end>.cy±n]`
-  on one of the edge's end nodes (none for a `.*` line drawn several times: one point
-  would stack its labels).
+  F3, F4, F5, F6 and L1 lead with a value to write, or with `no value: <why>` when
+  there is none:
+  - F3: the nearest `bend_x` / `bend_y` / `from_offset` / `to_offset` / `points` move of
+    one piece of either line that takes the crossing off the bend or end and keeps every
+    other tier-0 test on this draft (`edges[3] from_offset: 16`). No value when both lines
+    belong to a trunk or a `.*` line drawn several times (one value would move all its
+    lines), or when no one-piece move within 160px clears.
+  - F4: one or two node moves, each drawn again from your spec (feedback rounds and text
+    scale included) and kept only when that F4 is gone: the `dx` / `dy` of the node the
+    arrowhead also points at, or the `xy` of a node pinned on it (`nodes[2] s: xy:
+    [q.cx+63, q.cy]`). No value when none of the six nearest moves clears it.
+  - F5 / L1: a `label_at: {x: <end>.cx±n, y: <end>.cy±n, anchor: …}` or `step_at:
+    [<end>.cx±n, <end>.cy±n]` on one of the edge's end nodes (L1: above / right of the
+    line only). No value for a line drawn on several instances (one point would stack
+    their labels), or when no spot beside its own line clears the others.
   Try the suggested spec change and draw again to check it.
   They are report-only: they change neither the draft nor the exit status. The last line
   starts with `Layout OK` (exit 0) or `N problems` (exit 1), followed, when needed, by

@@ -1244,6 +1244,51 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
     return "; ".join(out)
 
 
+# (the spec as loaded, its source path) of the run being reported: f4_tip draws a node move
+# again from it to keep only the moves that clear the F4. Set by main() around summary().
+HINT_SOURCE: Optional[Tuple[Spec, str]] = None
+F4_TRIES = 6           # node moves drawn again per F4 (nearest first)
+F4_KEEP = 2            # verified moves offered
+
+
+def f4_tip(spec: Spec, drawn, v) -> str:
+    """The node moves (rules.f4_moves) that, drawn again from the loaded spec (feedback
+    rounds and text scale included, no candidate selection), leave no F4 with these owners;
+    `no value: <why>` when none does or the run has no loaded spec to draw again."""
+    import rules
+    moves, why = rules.f4_moves(spec, drawn, v)
+    if not moves:
+        return f"no value: {why}" if why else ""
+    if HINT_SOURCE is None:
+        return ""
+    base, source = HINT_SOURCE
+    ident = (v.rule, v.code, frozenset(v.owners))
+    kept = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for mv in moves[:F4_TRIES]:
+            trial = copy.deepcopy(base)
+            node = trial.nodes.get(mv.nid)
+            if node is None:
+                continue
+            setattr(node, mv.key, mv.value)
+            try:
+                guard = RuleGuard(protect=False, build_cache={})
+                b, data = render_readable(trial, source, Path(tmp) / "f4.svg", False, guard)[:2]
+                with layout_text.font_context(b.spec.font_factor, b.spec.font_steps):
+                    after = rules.check(b.spec, b.geom, data)
+            except Exception:  # noqa: BLE001 — a move that cannot be drawn is not offered
+                continue
+            if not any((w.rule, w.code, frozenset(w.owners)) == ident for w in after):
+                kept.append(mv.text)
+                if len(kept) == F4_KEEP:
+                    break
+    if not kept:
+        return (f"no value: none of the {min(len(moves), F4_TRIES)} nearest node moves "
+                f"({'; '.join(mv.text for mv in moves[:2])}, …) clears it when drawn again")
+    return (f"{' or '.join(kept)} (each drawn again: the arrowhead then points at "
+            f"{rules._display(spec, v.owners[1][5:]) if len(v.owners) > 1 else 'its target'} only)")
+
+
 def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequence[Problem],
                        draft: Optional[bytes] = None) -> List[str]:
     """Reuse spec-fix guidance for each enabled violation in the written draft.
@@ -1282,7 +1327,12 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
             if v.code == "F6" and "; try: " in v.message:
                 # the value that moves the crossing piece (or the node) clear comes first
                 tip = "; ".join(t for t in (v.message.split("; try: ", 1)[1], tip) if t)
-            elif (v.rule, v.code) in (("R-flow", "F3"), ("R-flow", "F4"), ("R-flow", "F5"), ("R-label", "L1")) \
+            elif (v.rule, v.code) == ("R-flow", "F4") and draft is not None:
+                import rules
+                if drawn is None:
+                    drawn = rules.Drawn.parse(draft)
+                tip = "; ".join(t for t in (f4_tip(spec, drawn, v), tip) if t)
+            elif (v.rule, v.code) in (("R-flow", "F3"), ("R-flow", "F5"), ("R-label", "L1")) \
                     and draft is not None:
                 # the nearest clear value for one piece, label or badge (rules.flow_try)
                 import rules
@@ -2564,6 +2614,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("\n".join(e.problems))
         print(f"{len(e.problems)} problem{'s' if len(e.problems) != 1 else ''} in the spec")
         return 1
+    loaded = copy.deepcopy(spec)       # as loaded, for hints that draw a spec change again
     out = a.out or a.spec.resolve().parent / f"{spec.name}.draft.svg"
     out.parent.mkdir(parents=True, exist_ok=True)
     source = str(a.spec)
@@ -2625,7 +2676,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     probs, hints = ([], []) if a.no_check else problems_of(data, hints=True)[0::2]
     sp = slide_problem(spec, data, b.nb)
     n = len(probs) + (1 if sp else 0)
-    for line in summary(spec, b, out, data, None if a.no_check else rule_guard):
+    global HINT_SOURCE
+    HINT_SOURCE = (loaded, source)
+    try:
+        report = summary(spec, b, out, data, None if a.no_check else rule_guard)
+    finally:
+        HINT_SOURCE = None
+    for line in report:
         print(line)
     for line in selection:
         print(line)

@@ -908,7 +908,16 @@ def _move_try(spec, d: Drawn, pids: Sequence[int], why: str) -> str:
                         break
                 if hit:
                     break
-    return f"{best[1]}, the nearest {why}" if best else ""
+    if best:
+        return f"{best[1]}, the nearest {why}"
+    shared = [spec.edges[d.path_edge[p]].src for p in pids if d.path_edge.get(p) is not None
+              and d.path_edge[p] < len(spec.edges) and (spec.edges[d.path_edge[p]].trunk or sum(
+                  1 for x in spec.edges if x.src == spec.edges[d.path_edge[p]].src and d.edge_paths.get(x.n)) > 1)]
+    if len(shared) == len(pids):
+        return (f"no value: {' and '.join(dict.fromkeys(shared))} draw{'s' if len(set(shared)) == 1 else ''} "
+                "several lines (a trunk or a `.*` line) whose bend and offsets one spec value moves together; "
+                "give the crossing instance its own spec line to place it")
+    return f"no value: no one-piece move within {TRY_REACH}px clears the crossing and every other tier-0 test"
 
 
 def _f3_try(spec, d: Drawn, v: Violation) -> str:
@@ -956,7 +965,10 @@ def _f5_try(spec, d: Drawn, v: Violation, rule_side: bool = False) -> str:
     drawn_on = (lambda x: d.labels.get(x.n) or d.on_line.get(x.n)) if what == "label" else \
         (lambda x: d.badges.get(x.n))
     if sum(1 for x in spec.edges if x.src == e.src and drawn_on(x)) > 1:
-        return ""      # a point is one place for every instance of the line: they would overlap
+        # a point is one place for every instance of the line: they would overlap
+        return (f"no value: {e.src} draws its {what} on several instances and one "
+                f"{'label_at' if what == 'label' else 'step_at'} point would stack them; give this instance its "
+                "own spec line")
     if what == "label":
         texts = sorted(d.labels.get(n) or d.on_line.get(n) or [], key=lambda t: t["box"][1])
         if not texts:
@@ -1002,7 +1014,8 @@ def _f5_try(spec, d: Drawn, v: Violation, rule_side: bool = False) -> str:
         if best is not None:
             break
     if best is None:
-        return ""
+        return (f"no value: no spot {'above / right of' if rule_side else 'beside'} its own line keeps the "
+                f"{what} nearer it than the other lines and clear of text and icons")
     _, c, b = best
     dx, dy = c[0] - cx0, c[1] - cy0
     if what == "badge":
@@ -1019,13 +1032,36 @@ def _f5_try(spec, d: Drawn, v: Violation, rule_side: bool = False) -> str:
             f"own line and clear of the others)")
 
 
-def _f4_try(spec, d: Drawn, v: Violation) -> str:
-    """F4 into a node whose arrowhead lands on (or within ICON_CLEAR of) another node: that
-    other node's dx / dy that takes its footprint ICON_CLEAR + TRY_MARGIN off the tip."""
+class NodeMove(NamedTuple):
+    """One spec change that moves a node: `key` is dx / dy (the new value) or xy (a pair of
+    Expr / numbers); `text` is how the hint writes it."""
+    nid: str
+    key: str
+    value: object
+    text: str
+
+
+def _xy_text(spec, c) -> str:
+    if isinstance(c, M.Expr):
+        base = {"num": "", "col": f"col.{c.ref}", "row": f"row.{c.ref}", "gap": f"gap({c.ref},{c.ref2})",
+                "label": f"{c.ref}.label.{c.attr}"}.get(c.kind, f"{c.ref}.{c.attr}")
+        if not base:
+            return _f(c.offset)
+        return base + (f"{'+' if c.offset > 0 else '-'}{_f(abs(c.offset))}" if c.offset else "")
+    return _f(c)
+
+
+def f4_moves(spec, d: Drawn, v: Violation) -> Tuple[List[NodeMove], str]:
+    """F4 into a node whose arrowhead lands on (or within ICON_CLEAR of) another node: the
+    node moves that would take the two footprints apart at the tip, nearest first — the other
+    node's dx / dy (both ways on each axis, ICON_CLEAR + TRY_MARGIN off the tip), and for a
+    node pinned with `xy` to the other (xy: [q.cx, q.cy]) that xy moved past the other's
+    footprint. Unverified: layout.unfixable_warnings draws each again and keeps the ones that
+    clear the F4. With none, (no moves, why)."""
     m = [o for o in v.owners if o.startswith("node:")]
     at = re.search(r"at \((-?[\d.]+),(-?[\d.]+)\)", v.message)
     if at is None:
-        return ""
+        return [], ""
     tip = (float(at.group(1)), float(at.group(2)))
     target = m[0][5:] if m else None
     wrong = m[1][5:] if len(m) > 1 else None
@@ -1033,35 +1069,51 @@ def _f4_try(spec, d: Drawn, v: Violation) -> str:
         hit = CL.end_icon(tip, d.feet)
         wrong = d.icon_node.get(id(hit)) if hit is not None else None
     if wrong is None or wrong == target or wrong not in d.foot:
-        return ""
-    node = spec.nodes.get(wrong)
-    if node is None or node.xy is not None:
-        return ""
-    if any(isinstance(c, M.Expr) and c.ref == wrong for x in spec.nodes.values() for c in (x.xy or ())):
-        return ""       # a node pinned to it (xy: [q.cx, …]) moves with it
-    foot = d.foot[wrong]
+        return [], "the arrowhead is on no other node: move the line's end (to_side / to_offset) onto it"
     clear = CL.ICON_CLEAR + TRY_MARGIN
     stacked = {x for ids in spec.flow_stacks().values() for x in ids}
-    moves = {"x": min((tip[0] + clear - foot[0], tip[0] - clear - foot[2]), key=abs)}
-    if wrong not in stacked:
-        moves["y"] = min((tip[1] + clear - foot[1], tip[1] - clear - foot[3]), key=abs)
-    # both axes, the smaller move first: the solver can take a dx (dy) back when the track
-    # beside it is free to close up (xy-off document), so the other axis is the fallback
-    vals = [f"d{a}: {_f(round((node.dx if a == 'x' else node.dy) + sh))}"
-            for a, sh in sorted(moves.items(), key=lambda t: abs(t[1]))]
-    return (f"{node.src} {wrong}: {' or '.join(vals)} (moves {_display(spec, wrong)} {clear}px off the "
-            f"arrowhead into {_display(spec, target) if target else 'its target'})")
+    out: List[Tuple[float, NodeMove]] = []
+    foot = d.foot[wrong]
+    node = spec.nodes.get(wrong)
+    pinned_to = any(isinstance(c, M.Expr) and c.ref == wrong for x in spec.nodes.values() for c in (x.xy or ()))
+    if node is not None and node.xy is None and not pinned_to:
+        for a in ("x", "y"):
+            if a == "y" and wrong in stacked:
+                continue        # a flow-column node's y is the stack's
+            k = 0 if a == "x" else 1
+            now = node.dx if a == "x" else node.dy
+            for sh in (tip[k] + clear - foot[k], tip[k] - clear - foot[k + 2]):
+                val = round(now + sh)
+                out.append((abs(sh), NodeMove(wrong, f"d{a}", val, f"{node.src} {wrong}: d{a}: {_f(val)}")))
+    # a node pinned with xy on the other one: its own xy moved past the other's footprint
+    for pin, other in ((target, wrong), (wrong, target)):
+        pn = spec.nodes.get(pin) if pin else None
+        if pn is None or pn.xy is None or other not in d.foot or pin not in d.foot:
+            continue
+        pf, of = d.foot[pin], d.foot[other]
+        for k in (0, 1):
+            c = pn.xy[k]
+            for sh in (of[k + 2] - pf[k] + clear, of[k] - pf[k + 2] - clear):
+                sh = round(sh)
+                c2 = (M.Expr(c.kind, c.ref, c.attr, c.ref2, c.offset + sh) if isinstance(c, M.Expr)
+                      else c + sh)
+                xy = tuple(c2 if j == k else pn.xy[j] for j in (0, 1))
+                out.append((abs(sh), NodeMove(pin, "xy", xy, f"{pn.src} {pin}: xy: [{_xy_text(spec, xy[0])}, "
+                                                             f"{_xy_text(spec, xy[1])}]")))
+    out.sort(key=lambda t: t[0])
+    if not out:
+        return [], f"{wrong} is placed by another node's xy: move that node"
+    return [mv for _, mv in out], ""
 
 
 def flow_try(spec, d: Drawn, v: Violation) -> str:
-    """A concrete spec change with its value for an F3 / F4 / F5 / L1 violation of draft d, or ""."""
+    """A concrete spec change with its value for an F3 / F5 / L1 violation of draft d, `no
+    value: <why>` when there is none, or "" (F4: f4_moves, verified by the engine)."""
     try:
         if v.code == "F3" and len(v.owners) == 2:
             return _f3_try(spec, d, v)
         if v.code == "F5":
             return _f5_try(spec, d, v)
-        if v.code == "F4":
-            return _f4_try(spec, d, v)
         if v.code == "L1":          # the label on its rule side (above / right), F5 kept too
             return _f5_try(spec, d, v, rule_side=True)
     except (KeyError, ValueError, IndexError, AttributeError):
