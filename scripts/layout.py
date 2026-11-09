@@ -88,6 +88,9 @@ MAX_SKIP = 3            # candidates an edge may skip before its gap is widened 
 # R-flow, group 2 R-rt, group 3 R-twin and R-label. All tier-0 rules now count.
 RULE_GROUPS = (frozenset(("R-border", "R-flow")), frozenset(("R-rt",)), frozenset(("R-twin", "R-label")))
 SELECTION_RULES = frozenset().union(*RULE_GROUPS)
+# Rule codes the pre-selection stages (the default drawing, the original spec's
+# re-evaluation) do not see: F6 counts only where selection compares candidates.
+PRE_SELECTION_IGNORED = frozenset(("F6",))
 MAX_CANDIDATES = {"document": 12, "slide": 16}
 MIN_TEXT_RETENTION = 0.9  # below-target text keeps at least 90% of the completed default's size
 REPAIR_TEXT_RETENTION = 0.99  # greater later shrink below target requires fewer tier-0 violations
@@ -141,8 +144,13 @@ class RuleGuard:
     """
 
     def __init__(self, protect: bool = True, selection: bool = False, build_cache=None,
-                 enabled_rules=None, min_text_size=None, candidate_build=False, incumbent=None):
+                 enabled_rules=None, min_text_size=None, candidate_build=False, incumbent=None,
+                 ignore_codes=frozenset()):
         self.protect = protect
+        # Codes this guard does not see. The default drawing (the unprotected first stage)
+        # and the original spec's re-evaluation in select_drawing are built without F6:
+        # only selection's candidate comparisons weigh a line over a node (line-cross 01).
+        self.ignore_codes = frozenset(ignore_codes)
         self.selection = selection
         self.error = None
         self._checked = {}
@@ -211,7 +219,7 @@ class RuleGuard:
     def check(self, spec: Spec, geom: Geometry, data: bytes):
         key = (id(spec), id(geom), data)
         if key in self._checked:
-            return self._checked[key][2]
+            return self._seen(self._checked[key][2])
         try:
             import rules
             with layout_text.font_context(spec.font_factor, spec.font_steps):
@@ -221,7 +229,12 @@ class RuleGuard:
             return None
         # Retain the objects too, so ids cannot be reused by a later build.
         self._checked[key] = (spec, geom, violations)
-        return violations
+        return self._seen(violations)
+
+    def _seen(self, violations):
+        if not self.ignore_codes or violations is None:
+            return violations
+        return [v for v in violations if v.code not in self.ignore_codes]
 
     def counts(self, spec: Spec, geom: Geometry, data: bytes):
         if not self.protect:
@@ -1906,7 +1919,7 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         guarded = RuleGuard(selection=True, build_cache=rule_guard.build_cache,
                             enabled_rules=rule_guard.enabled_rules,
                             min_text_size=rule_guard.min_text_size, candidate_build=True,
-                            incumbent=incumbent)
+                            incumbent=incumbent, ignore_codes=PRE_SELECTION_IGNORED)
         guarded._checked = rule_guard._checked
         guarded._problems = rule_guard._problems
         guarded._text = rule_guard._text
@@ -2112,7 +2125,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         with tempfile.TemporaryDirectory() as tmp:
             scratch = Path(tmp) / "round.svg"
-            default_guard = RuleGuard(protect=False, build_cache={})
+            default_guard = RuleGuard(protect=False, build_cache={}, ignore_codes=PRE_SELECTION_IGNORED)
             rule_guard.build_cache = default_guard.build_cache
             default = render_readable(spec, source, scratch, a.no_check, default_guard)
             actual = drawn_text(default[0].spec, default[1])[0][0]
