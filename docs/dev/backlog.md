@@ -29,8 +29,11 @@
 
 ## 남은 일 (순서대로)
 
-1. **2단계: 엔진이 규칙 판정으로 후보를 고르기 (진행 중, 2026-11-08).**
-   - spec과 티켓은 `docs/dev/step2/`에 있습니다. 01–06, 08, 10은 병합했습니다. 07(R-twin·R-label)은 [검증 결과](step2/results/07-enable-twin-and-label-rules.md)를 냈습니다(main 6e3fb7a 대비 8 better / 752 same / 0 worse). 09의 3단계 목록은 다음 세션에 합니다.
+1. **2단계: 엔진이 규칙 판정으로 후보를 고르기 (완료, 2026-11-09).**
+   - spec과 티켓은 `docs/dev/step2/`에 있습니다. 01–10과 AZ twin 보완을 모두 병합했습니다. 최종 인수: [09 결과](step2/results/09-final-acceptance-and-step3-list.md).
+     - main 36c7ea3 → 601099d: tier-0 201 → 160(R-flow 82→46, R-rt 94→90, R-border 17→15, R-label 2→0, R-twin 6→9는 의도한 반전 사례), 흐름 오독 차단 21 → 15(새 차단 0), worse는 사용자가 예외로 받은 gwlb slide 면적 2건뿐.
+     - 남은 오독 차단 7개 QA(privatelink, false-junction, cache-label, dns-trunk, nat-route-table, order-14steps, three-az-writer)는 선 관통 규칙(계획 단계 4)의 시험 사례입니다.
+   - 아래는 이전 중간 기록입니다.
    - corpus 결과 (main 36c7ea3 → main 6e3fb7a, 티켓 10 포함):
      - R-flow 82 → 46
      - R-rt 94 → 90
@@ -58,7 +61,7 @@
      - 흐름을 잘못 읽게 만드는 차단은 QA 6→4, 8→6, 예제 0→0으로 합계 14→10입니다.
      - 새 결함은 1건입니다(hybrid-dns slide, 위 글머리 참고). 티켓 10 뒤 hybrid-dns는 36c7ea3 그림(6.26pt, VGW 옆 F3)으로 돌아왔습니다. 인수 재판정은 07 뒤에 다시 합니다.
 2. **3단계: 경우별 휴리스틱 제거.**
-   - 대상은 `rules-design.md` §3 끝의 Removable later 목록입니다.
+   - 대상과 실험 결과는 [`step2/step3-list.md`](step2/step3-list.md)입니다(지금 제거 1, 선행 조건 뒤 제거 3, 유지 5).
    - 휴리스틱 하나당 커밋 하나로 지우고, 지울 때마다 corpus 판정과 검사 건수가 같거나 좋아야 합니다.
 3. **R-border B2의 잔여 경로 개선.**
    - `b2-check`에서 공통 판정을 check_layout으로 옮겨 `LINE IN HEADER`로 보고하고,

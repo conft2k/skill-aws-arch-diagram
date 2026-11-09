@@ -1,6 +1,6 @@
 # Step 2: the engine picks its drawing by rule verdict
 
-Status: ready-for-agent
+Status: done (2026-11-09; ticket 09 results in results/09-final-acceptance-and-step3-list.md)
 
 ## Problem Statement
 

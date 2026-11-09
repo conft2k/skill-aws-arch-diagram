@@ -4,7 +4,7 @@
 
 **Blocked by:** 05, 08
 
-**Status:** ready-for-agent
+**Status:** done (2026-11-09). Results: [results/09-final-acceptance-and-step3-list.md](../results/09-final-acceptance-and-step3-list.md).
 
 - [ ] Done criteria are met:
   - No case is worse than the step 1 baseline.
