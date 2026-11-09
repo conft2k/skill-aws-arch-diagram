@@ -491,10 +491,13 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   try — a clean `bend_y: 181`, widening the gap between the ends, or for a same-side
   out-and-back `give <box> pad_right`; a refused request runs no re-solve of its own).
 - `selection: default kept; evaluated N/M candidates`: when the rule checker flags the
-  draft, the engine tries up to M alternative drawings (other shapes or moves for the
-  flagged edges) and keeps one only if it scores better; `default kept` means none did
-  (N = 0: nothing was flagged), `selection: candidate i (…)` names the one it kept.
-  Informational: nothing to change for it.
+  draft, the engine tries alternative drawings (other shapes or moves for the flagged
+  edges) within a budget of M and keeps one only if it scores better. N is the number of
+  candidates it evaluated; `default kept` means none scored better, and
+  `selection: candidate i (…)` names the one it kept. N = 0 does not mean the draft is
+  clean: it can also mean no automatic candidate applies to what was flagged (an R-twin
+  row order, an R-fit text size), so the `rule:` lines stay — fix those in the spec as
+  their `try:` / hint says. The line itself needs no action.
 - `check: …` lines: what the engine already widened or repaired on its own — e.g. `line
   leaves box (vpc bottom): node:a → group:vpc.B ≥ 94` when a route went round the outside of
   the box both ends are in (or `line off canvas (canvas top)` past the canvas edge): it
