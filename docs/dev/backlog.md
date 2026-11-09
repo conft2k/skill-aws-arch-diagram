@@ -159,6 +159,16 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
 - **gwlb slide AZ 1 step 2 화살촉이 GWLBe subnet·AZ 아래 테두리에 걸침.** 이전 그림에도 있었고, spec으로 고치면 글자가 9.4pt로 줄어 두었습니다.
 - **gwlb 문서 노트 2행에서 제목 "GWLBe ⇄ GWLB"가 설명 첫 줄에 거의 닿음.** 노트 칸 간격 문제입니다.
 - **문서 예제의 작은 글자:** 760px 칼럼에서 bedrock-dx 6.0px, centralized-egress 5.1px, serverless 6.9px, tgw 7.8px, nfw 8.3px(하한 9px). 글자를 키울 때 아이콘도 함께 키우는 엔진 변경, 또는 그림 분할이 필요합니다.
+- **5단계 QA(처음 쓰는 사용자 3명, 전후 비교)에서 나온 엔진 쪽 막힘.** 증거는 `~/.cache/skill-design/improve/stage5/qa-{before,after}/*/log.md`와 `qa-judge/*.md`에 있습니다.
+  - **오버레이 그룹 선의 옵션이 무시됨 (가장 큰 막힘).** ECS service나 Aurora cluster 같은 overlay에서 나가거나 들어오는 선은 `trunk`, `shape`, `from_offset`, `to_offset`이 경고 없이 무시됩니다. 그래서 AZ마다 곧은 선이 따로 그려지고 "AZ 1 태스크 → writer"처럼 잘못 읽힙니다. cf-vpc-origin QA의 막힘 7곳 중 4곳이 이 원인입니다.
+  - **document 글자 하한(760px 칼럼에서 11px).** 변경 전 QA 3/3과 배포된 예제(alb, nfw, centralized-egress, bedrock-dx)가 통과하지 못했습니다. 템플릿은 통과하지만 여유가 작아서, 라벨 하나만 길어도 떨어집니다. subnet 상자를 넣으면 통과하지 못하는 구성도 있습니다. 엔진이 폭을 줄이거나 그림을 나누는 일, 아이콘과 글자 비율을 함께 바꾸는 일이 필요합니다.
+  - **번호 배지가 선 아래에 붙음.** quick reference는 선 위 4px를 요구하지만, QA 3건에서 배지가 선 아래에 붙었습니다. 라벨과 겹치지 않을 때 위로 올리지 않습니다.
+  - **검사기가 못 보는 오독.** 선 라벨이 RT 캡션 바로 밑에 붙어 캡션의 세 번째 줄처럼 읽혔습니다(dx-vpn-tgw slide, "VPN attachment"). 라벨-캡션 근접 검사가 필요하고, 축소 재현을 corpus에 넣어야 합니다.
+  - **slide 노트 4줄이 경고만 나고 막히지 않음.** 경고 문구는 해당 없는 "route line"을 말합니다.
+  - **`text_scale: auto`가 멈춘 이유를 출력하지 않음.** 넓은 캔버스에서 두 번째에 멈추고, pane을 좁혀도 1.18 대신 1.08을 고릅니다.
+  - **slide가 들어가지 않는데도 pane을 고름.** 1115px로, 한도 1108px를 넘습니다. 세로가 넘칠 때 SLIDE TOO SMALL 안내는 AZ 접기를 말하지 않습니다.
+  - **`--explain` 폭 이유의 순서.** `pad 16 sna.1 ⊃ node ec2a.1`에서 상자 이름이 노드보다 먼저 나와, 서브넷 제목이 폭을 정한다고 읽힙니다. 실제 원인은 EC2 sub-caption이었습니다.
+  - **plain-line 노트·범례에서 hop과 설명이 공백 하나로 붙음.** 지금은 문서에 콜론이나 괄호로 피하는 방법만 적었습니다.
 - **고칠 값 안내의 남은 일 (5단계 s5-hints에서 나옴).**
   - F3: trunk나 `.*`로 여러 번 그려지는 선은 값 대신 "no value"와 이유만 나옵니다(merge-v3az, hybrid-dns, sgw-ret, privatelink).
   - F5: t3-cache-label slide에서 안내를 적용하면 그 F5는 풀리지만, selection이 다른 후보를 골라 다른 선의 F5가 다시 생깁니다.
