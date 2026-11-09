@@ -616,7 +616,7 @@ def test_label_violation_skips_its_edge_route(tmp_path, capsys):
                for v in rules.check(before[0].spec, before[0].geom, before[1]))
     status, draft, text = invoke(BEDROCK_DX, tmp_path, capsys, "--mode", "slide")
     assert "rule: R-label" not in text
-    assert "skip edges[2]=" in text and "removed R-label L1 ×1" in text
+    assert "skip edges[2] (개발자 PC → 사내 DNS)=" in text and "removed R-label L1 ×1" in text
     assert len(CL.run_checks(ET.fromstring(draft))) <= len(CL.run_checks(ET.fromstring(before[1])))
     assert invoke(BEDROCK_DX, tmp_path, capsys, "--mode", "slide")[1] == draft
 
@@ -627,7 +627,7 @@ def test_header_conflict_flips_the_overlay_header(tmp_path, capsys):
     assert any(v.rule == "R-border" and "group:asg" in v.owners
                for v in rules.check(before[0].spec, before[0].geom, before[1]))
     _, draft, text = invoke(source, tmp_path, capsys, "--mode", "slide")
-    assert "overlay asg header beside" in text
+    assert "overlay ASG · web tier target group header beside" in text
     assert "rule: R-border" not in text
     assert len(CL.run_checks(ET.fromstring(draft))) < len(CL.run_checks(ET.fromstring(before[1])))
 

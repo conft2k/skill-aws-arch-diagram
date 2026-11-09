@@ -1191,7 +1191,10 @@ def run_checks(root):
         need = band[i + 2] + LINE_CLEAR - min(s["p"][i], s["q"][i])
         direction = "right" if vertical else "down"
         gid = owner[id(r[4])]
-        add("LINE IN HEADER", f"LINE IN HEADER {fmt(s)} passes through {gid}'s header band {how} "
+        # the box by the title it draws (the id, which a hand-drawn SVG may not mean, after it)
+        title = next((t["s"] for t in texts if owner.get(id(t["el"])) == gid and t["header"]), None)
+        box = f"box {title!r} ({gid})" if title else gid
+        add("LINE IN HEADER", f"LINE IN HEADER {fmt(s)} passes through the header band of {box} {how} "
             f"(band {fnum(band[0])},{fnum(band[1])}–{fnum(band[2])},{fnum(band[3])}) — "
             f"move this run {direction} {fnum(need)}px to clear the header by {LINE_CLEAR}px",
             [s, r], s=s, r=r, band=band, how=how)

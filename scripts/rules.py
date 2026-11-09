@@ -350,7 +350,8 @@ def flow_rules(spec, d: Drawn) -> List[Violation]:
                and math.hypot(s["q"][0] - s["p"][0], s["q"][1] - s["p"][1]) >= STRAIGHT]
         if bad:
             s = bad[0]
-            out.append(Violation("R-flow", (d.eid(pid),), f"F0 {d.eid(pid)}: diagonal piece {CL.fmt(s)} — "
+            out.append(Violation("R-flow", (d.eid(pid),), f"F0 {_name(spec, d.eid(pid))}: diagonal piece "
+                                 f"{CL.fmt(s)} — "
                                  "connectors run horizontal and vertical only", len(bad), code="F0"))
     # F1 / F2: check_layout's own LINE ON LINE predicates (masked runs aside, as it does)
     on = CL.lines_on_lines(d.paths)
@@ -358,16 +359,18 @@ def flow_rules(spec, d: Drawn) -> List[Violation]:
         if _masked(d, s, o):
             continue
         a, b = d.eid(id(s["el"])), d.eid(id(o["el"]))
-        out.append(Violation("R-flow", (a, b), f"F1 {a} runs on top of {b} for {_f(dd)}px "
+        out.append(Violation("R-flow", (a, b), f"F1 {_name(spec, a)} runs on top of {_name(spec, b)} "
+                             f"for {_f(dd)}px "
                              f"({CL.fmt(s)} / {CL.fmt(o)}): two flows read as one line", dd, code="F1"))
     seen = {(id(s["el"]), id(o["el"])) for s, o, _ in on}
     for s, o, dd in CL.lines_in_line(d.paths, seen):
         if _masked(d, s, o):
             continue
         a, b = d.eid(id(s["el"])), d.eid(id(o["el"]))
-        out.append(Violation("R-flow", (a, b), f"F2 {a} lies on one line with {b}, {_f(dd)}px apart "
+        out.append(Violation("R-flow", (a, b), f"F2 {_name(spec, a)} lies on one line with {_name(spec, b)}, "
+                             f"{_f(dd)}px apart "
                              f"({CL.fmt(s)} / {CL.fmt(o)}): read as one line through the gap", 1.0, code="F2"))
-    out += _junctions(d)
+    out += _junctions(spec, d)
     out += _tips(spec, d)
     out += _attribution(spec, d)
     out += _over_nodes(spec, d)
@@ -391,7 +394,7 @@ def _end_boxes(d: Drawn, pid: int) -> List[BoxT]:
     return out
 
 
-def _junctions(d: Drawn) -> List[Violation]:
+def _junctions(spec, d: Drawn) -> List[Violation]:
     """F3: two flows crossing at a bend or at a node one of them ends at."""
     out = []
     ids = list(d.paths)
@@ -417,7 +420,8 @@ def _junctions(d: Drawn) -> List[Violation]:
             if hit:
                 ea, eb = d.eid(a), d.eid(b)
                 c, why = hit
-                out.append(Violation("R-flow", (ea, eb), f"F3 {ea} crosses {eb} at ({_f(c[0])},{_f(c[1])}) within "
+                out.append(Violation("R-flow", (ea, eb), f"F3 {_name(spec, ea)} crosses {_name(spec, eb)} at "
+                                     f"({_f(c[0])},{_f(c[1])}) within "
                                      f"{JUNCTION_REACH}px of {why}: the crossing reads as a junction", 1.0, code="F3"))
     return out
 
@@ -442,8 +446,10 @@ def _tips(spec, d: Drawn) -> List[Violation]:
                     if hit is None or d.icon_node.get(id(hit)) != target:
                         got = d.icon_node.get(id(hit)) if hit is not None else None
                         out.append(Violation("R-flow", (eid, f"node:{target}"),
-                                             f"F4 {eid}'s arrowhead at {where} does not end on {target} "
-                                             f"({'on ' + got if got else 'on no node'})", _pt_box(tip, foot),
+                                             f"F4 {_name(spec, eid)}'s arrowhead at {where} does not end on "
+                                             f"{_display(spec, target)} "
+                                             f"({'on ' + _display(spec, got) if got else 'on no node'})",
+                                             _pt_box(tip, foot),
                                              code="F4"))
                         continue
                     near = [(nid, _pt_box(tip, b)) for nid, b in d.foot.items() if nid != target]
@@ -451,8 +457,10 @@ def _tips(spec, d: Drawn) -> List[Violation]:
                     if near:
                         nid, dd = min(near, key=lambda t: t[1])
                         out.append(Violation("R-flow", (eid, f"node:{target}", f"node:{nid}"),
-                                             f"F4 {eid}'s arrowhead at {where} into {target} is {_f(dd)}px from "
-                                             f"{nid} too (< {CL.ICON_CLEAR}): it points at both", CL.ICON_CLEAR - dd,
+                                             f"F4 {_name(spec, eid)}'s arrowhead at {where} into "
+                                             f"{_display(spec, target)} is {_f(dd)}px from "
+                                             f"{_display(spec, nid)} too (< {CL.ICON_CLEAR}): it points at both",
+                                             CL.ICON_CLEAR - dd,
                                              code="F4"))
                 else:
                     r = d.group_rect.get(target)
@@ -461,7 +469,8 @@ def _tips(spec, d: Drawn) -> List[Violation]:
                     dd = _border_dist(tip, r)
                     if dd > CL.END_REACH:
                         out.append(Violation("R-flow", (eid, f"group:{target}"),
-                                             f"F4 {eid}'s arrowhead at {where} is {_f(dd)}px from {target}'s border "
+                                             f"F4 {_name(spec, eid)}'s arrowhead at {where} is {_f(dd)}px from "
+                                             f"{_display(spec, target)}'s border "
                                              f"(> {CL.END_REACH})", dd - CL.END_REACH, code="F4"))
                         continue
                     other = [(g, _border_dist(tip, b)) for g, b in d.group_rect.items() if g != target]
@@ -469,8 +478,10 @@ def _tips(spec, d: Drawn) -> List[Violation]:
                     if other:
                         g, x = min(other, key=lambda t: t[1])
                         out.append(Violation("R-flow", (eid, f"group:{target}", f"group:{g}"),
-                                             f"F4 {eid}'s arrowhead at {where} into {target} is {_f(x)}px from "
-                                             f"{g}'s border too (< {CL.BORDER_CLEAR})", CL.BORDER_CLEAR - x,
+                                             f"F4 {_name(spec, eid)}'s arrowhead at {where} into "
+                                             f"{_display(spec, target)} is {_f(x)}px from "
+                                             f"{_display(spec, g)}'s border too (< {CL.BORDER_CLEAR})",
+                                             CL.BORDER_CLEAR - x,
                                              code="F4"))
     return out
 
@@ -524,12 +535,15 @@ def _attribution(spec, d: Drawn) -> List[Violation]:
             d_other, near = min(((_box_seg(box, g), g) for g in other), key=lambda t: t[0], default=(math.inf, None))
             eid = f"edge:{n}"
             if d_own > CL.LABEL_REACH:
-                out.append(Violation("R-flow", (eid,), f"F5 {eid}'s {what} {s!r} is {_f(d_own)}px from its line "
+                out.append(Violation("R-flow", (eid,), f"F5 {_name(spec, eid)}'s {what} {s!r} is {_f(d_own)}px "
+                                     f"from its line "
                                      f"(> {CL.LABEL_REACH})", d_own - CL.LABEL_REACH, code="F5"))
             elif d_other <= d_own + CL.TEXT_GAP:
                 o = d.eid(id(near["el"]))
-                out.append(Violation("R-flow", (eid, o), f"F5 {eid}'s {what} {s!r} is {_f(d_other)}px from {o}'s line, "
-                                     f"{_f(d_own)}px from its own line: it reads as {o}'s",
+                on = _name(spec, o)
+                out.append(Violation("R-flow", (eid, o), f"F5 {_name(spec, eid)}'s {what} {s!r} is "
+                                     f"{_f(d_other)}px from "
+                                     f"{on}'s line, {_f(d_own)}px from its own line: it reads as {on}'s",
                                      d_own + CL.TEXT_GAP - d_other + 1, code="F5"))
     return out
 
@@ -554,14 +568,21 @@ def _inside_len(p: Pt, q: Pt, b: BoxT) -> float:
 
 
 def _display(spec, ref: str) -> str:
-    """A node's or group's name as the drawing shows it (its label / title), else its id."""
-    n = spec.nodes.get(ref)
-    if n is not None and n.label:
-        return " ".join(n.label.split())
-    g = spec.groups.get(ref)
-    if g is not None and g.label:
-        return " ".join(g.label.split())
-    return ref
+    """A node's or group's name as the drawing shows it (its label / title, with which copy
+    when another shows the same), else its id (layout_model.item_name)."""
+    return M.item_name(spec, ref)
+
+
+def _name(spec, owner: str) -> str:
+    """A draft owner id ("edge:3", "node:rtsp", "group:vpca") as messages name it: the spec
+    line and the ends the drawing shows for an edge, the label for a node, the title for a
+    group (layout_model.owner_name)."""
+    return M.owner_name(spec, owner)
+
+
+def _node_ref(spec, nid: str) -> str:
+    """Where to edit a node, and its name: "nodes[2] db db.2 (Aurora reader 2)"."""
+    return M.node_ref(spec, nid)
 
 
 def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
@@ -615,8 +636,8 @@ def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
         half = (box[2] - box[0] if a == "x" else box[3] - box[1]) / 2
         if abs(v - c) < half:
             return f"{e.src} {field}: {_f(v - c)} (moves {piece(k)} to {a}={_f(v)})"
-        tip = (f"{e.src} shape / from_side / to_side ({piece(k)} leaves {ref} on {nid}'s "
-               f"{'column' if a == 'x' else 'row'})")
+        tip = (f"{e.src} shape / from_side / to_side ({piece(k)} leaves {_display(spec, ref)} on "
+               f"{_display(spec, nid)}'s {'column' if a == 'x' else 'row'})")
         node = spec.nodes.get(nid)
         stacked = {x for ids in spec.flow_stacks().values() for x in ids}
         if node is not None and node.xy is None and not (a == "y" and nid in stacked):
@@ -625,12 +646,12 @@ def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
             hi_shift = at + OVER_CLEAR - foot[0 if a == "x" else 1]
             shift = lo_shift if abs(lo_shift) <= abs(hi_shift) else hi_shift
             now = node.dx if a == "x" else node.dy
-            tip += f", or {node.src} {nid}: d{a}: {_f(now + shift)} (moves {nid} off the piece)"
+            tip += f", or {_node_ref(spec, nid)}: d{a}: {_f(now + shift)} (moves {_display(spec, nid)} off the piece)"
         return tip
 
     a = axis_of(s)
     if a is None:
-        return f"{e.src} points / shape that keep the line off {nid}"
+        return f"{e.src} points / shape that keep the line off {_display(spec, nid)}"
     end = at_icon(i)
     if end is not None and end[1] == nid and n >= 2:
         # across its own end's icon: bring the line to the side it attaches on first
@@ -647,7 +668,7 @@ def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
                 "top": ("y", min(foot[1] - OVER_CLEAR, pt[1] - CL.MIN_ARROW)),
                 "bottom": ("y", max(foot[3] + OVER_CLEAR, pt[1] + CL.MIN_ARROW))}[side]
         if axis_of(run[j]) == want[0]:
-            return (field_for(j, want[1]) + f", so {piece(i)} reaches {nid}'s {side} side "
+            return (field_for(j, want[1]) + f", so {piece(i)} reaches {_display(spec, nid)}'s {side} side "
                     f"without crossing it")
     if a == "x":
         lo, hi, at = foot[0] - OVER_CLEAR, foot[2] + OVER_CLEAR, s["p"][0]
@@ -709,7 +730,7 @@ def _over_nodes(spec, d: Drawn) -> List[Violation]:
                 why = f"runs over its own end {name}'s {what} {CL.fmt(s)}: the name is hidden"
             out.append(Violation(
                 "R-flow", (eid, f"node:{nid}"),
-                f"F6 {eid} ({_display(spec, e.a)} → {_display(spec, e.b)}) {why}; "
+                f"F6 {_name(spec, eid)} {why}; "
                 f"try: {_over_try(spec, d, e, run, i, nid)}", 1.0, code="F6",
                 at=(tuple(s["p"]), tuple(s["q"]), tuple(d.foot.get(nid, d.node_icon[nid]["box"])))))
     return out
@@ -789,6 +810,7 @@ def rt_rules(spec, d: Drawn) -> List[Violation]:
         foot = d.foot[rid]
         rc = _centre(d.node_icon[rid]["box"])
         me = f"node:{rid}"
+        rn = _display(spec, rid)
         if a.hub is None:
             if a.ends and all(x in spec.groups and spec.groups[x].type in SUBNET_TYPES for x in a.ends):
                 out += _rt_subnet(spec, d, rid, foot, rc, a.ends)
@@ -800,6 +822,7 @@ def rt_rules(spec, d: Drawn) -> List[Violation]:
         A = [n for n in a.edges if d.edge_paths.get(n)]
         N = [t for t in lines if t[0] not in set(a.edges)]
         hn = f"node:{hub}"
+        hname = _display(spec, hub)
         lim = spec.S + spec.const.sibling_gap
         if len(A) >= 2:
             polys = bracket(spec, d, hub, A)
@@ -807,9 +830,9 @@ def rt_rules(spec, d: Drawn) -> List[Violation]:
             # the hub associated with it — passes right beside the hub, with no bracket (tgw TGW B RT)
             only = not N and _box_box(foot, d.foot[hub]) <= lim
             if not only and not any(inside(rc, p) for p in polys):
-                out.append(Violation("R-rt", (me, hn), f"RT1 {rid} at ({_f(rc[0])},{_f(rc[1])}) is outside the bracket "
-                                     f"its {len(A)} associated lines at {hub} draw "
-                                     f"(edges {', '.join(map(str, A))})", 1.0, code="RT1"))
+                out.append(Violation("R-rt", (me, hn), f"RT1 {rn} at ({_f(rc[0])},{_f(rc[1])}) is outside the bracket "
+                                     f"its {len(A)} associated lines at {hname} draw "
+                                     f"({', '.join(M.edge_name(spec, n) for n in A)})", 1.0, code="RT1"))
         elif len(A) == 1:
             segs = d.edge_segs(A[0])
             gap = min(_box_seg(foot, s) for s in segs)
@@ -819,13 +842,14 @@ def rt_rules(spec, d: Drawn) -> List[Violation]:
                               if (c := seg_cross(rc, q, s["p"], s["q"])) is not None and math.dist(c, q) > 1})
             reach = rt2_reach(spec)
             if gap > reach:
-                out.append(Violation("R-rt", (me, f"edge:{A[0]}"), f"RT2 {rid} is {_f(gap)}px from its one associated "
-                                     f"line edge:{A[0]} (> {RT2_REACH_ICONS}S + sibling_gap = {_f(reach)})",
+                out.append(Violation("R-rt", (me, f"edge:{A[0]}"), f"RT2 {rn} is {_f(gap)}px from its one associated "
+                                     f"line {M.edge_name(spec, A[0])} "
+                                     f"(> {RT2_REACH_ICONS}S + sibling_gap = {_f(reach)})",
                                      gap - reach, code="RT2"))
             elif crossed:
                 out.append(Violation("R-rt", (me, f"edge:{A[0]}") + tuple(crossed),
-                                     f"RT2 {rid} reaches its associated line edge:{A[0]} only across "
-                                     f"{', '.join(crossed)}", len(crossed), code="RT2"))
+                                     f"RT2 {rn} reaches its associated line {M.edge_name(spec, A[0])} only across "
+                                     f"{', '.join(_name(spec, c) for c in crossed)}", len(crossed), code="RT2"))
         # RT3: nothing of N or of another hub between the table and its hub
         hcen = _centre(d.node_icon[hub]["box"])
         hbox = d.node_icon[hub]["box"]
@@ -839,7 +863,8 @@ def rt_rules(spec, d: Drawn) -> List[Violation]:
                     crossed.add(f"edge:{n}")
         if crossed:
             out.append(Violation("R-rt", (me, hn) + tuple(sorted(crossed)),
-                                 f"RT3 the way from {rid} to its hub {hub} crosses {', '.join(sorted(crossed))} "
+                                 f"RT3 the way from {rn} to its hub {hname} crosses "
+                                 f"{', '.join(_name(spec, c) for c in sorted(crossed))} "
                                  f"(lines not associated with it)", len(crossed), code="RT3"))
         # RT4: nearer its hub than any other hub or any far end of N
         g_hub = _box_box(foot, d.foot[hub])
@@ -848,7 +873,8 @@ def rt_rules(spec, d: Drawn) -> List[Violation]:
         closer = [(o, g) for o, g in rivals if g is not None and g <= g_hub]
         if closer:
             o, g = min(closer, key=lambda t: t[1])
-            out.append(Violation("R-rt", (me, hn, o), f"RT4 {rid} is {_f(g)}px from {o}, not nearer its hub {hub} "
+            out.append(Violation("R-rt", (me, hn, o), f"RT4 {rn} is {_f(g)}px from {_name(spec, o)}, not nearer its "
+                                 f"hub {hname} "
                                  f"({_f(g_hub)}px)", g_hub - g + 1, code="RT4"))
     return out
 
@@ -861,7 +887,8 @@ def _rt_subnet(spec, d: Drawn, rid: str, foot: BoxT, rc: Pt, ends: Sequence[str]
     others = {g: r for g, r in subnets.items() if g not in ends}
     for g, r in sorted(others.items()):
         if r[0] <= rc[0] <= r[2] and r[1] <= rc[1] <= r[3]:
-            out.append(Violation("R-rt", (me, f"group:{g}"), f"RT5 {rid} sits inside {g}, a subnet it is not "
+            out.append(Violation("R-rt", (me, f"group:{g}"), f"RT5 {_display(spec, rid)} sits inside "
+                                 f"{_display(spec, g)}, a subnet it is not "
                                  f"associated with", 1.0, code="RT5"))
             return out
     for s in ends:
@@ -873,7 +900,8 @@ def _rt_subnet(spec, d: Drawn, rid: str, foot: BoxT, rc: Pt, ends: Sequence[str]
         if near:
             g, x = min(near, key=lambda t: t[1])
             out.append(Violation("R-rt", (me, f"group:{s}", f"group:{g}"),
-                                 f"RT5 {rid} is {_f(ds)}px from its subnet {s} but {_f(x)}px from {g} (not "
+                                 f"RT5 {_display(spec, rid)} is {_f(ds)}px from its subnet {_display(spec, s)} but "
+                                 f"{_f(x)}px from {_display(spec, g)} (not "
                                  f"{RT_SUBNET_MARGIN}px nearer its own)", ds + RT_SUBNET_MARGIN - x, code="RT5"))
     return out
 
@@ -907,22 +935,26 @@ def twin_rules(spec, geom) -> List[Violation]:
                 spread = max(v[0] for v in vals) - min(v[0] for v in vals)
                 if spread > TWIN_TOL and (worst is None or spread > worst[0]):
                     a, b = min(vals)[1:], max(vals)[1:]
-                    worst = (spread, a[0], b[0], f"node {a[1]} / {b[1]}")
+                    worst = (spread, a[0], b[0], f"node {_display(spec, a[1])} / {_display(spec, b[1])}")
             if worst:
                 spread, a, b, what = worst
                 out.append(Violation("R-twin", (f"group:{a}", f"group:{b}"),
-                                     f"TW {a} and {b} have one structure but are drawn {_f(spread)}px unlike on "
+                                     f"TW {_display(spec, a)} and {_display(spec, b)} have one structure but are "
+                                     f"drawn {_f(spread)}px unlike on "
                                      f"{axis} ({what})", spread, code="TW"))
     at = {r.id: k for k, r in enumerate(spec.rows)}
     for a, b, rows_a, rows_b in layout_solve.twin_row_orders(spec):
         if set(rows_a) & set(rows_b):    # shared rows: reordering `rows:` moves a's as well
             top = sorted(rows_b, key=at.get)
             moves = ", ".join(f"{r} to {t}" for r, t in zip(rows_b, top) if r != t)
-            tip = f"move what {b} has on each row to the row that matches {a}'s order: {moves}"
+            tip = (f"move what {M.group_ref(spec, b)} has on each row to the row that matches "
+                   f"{M.group_ref(spec, a)}'s order: {moves}")
         else:
-            tip = f"in `rows:` put {b}'s rows in {a}'s order: {', '.join(rows_b)} (like {', '.join(rows_a)})"
+            tip = (f"in `rows:` put {M.group_ref(spec, b)}'s rows in {M.group_ref(spec, a)}'s order: "
+                   f"{', '.join(rows_b)} (like {', '.join(rows_a)})")
         out.append(Violation("R-twin", (f"group:{a}", f"group:{b}"),
-                             f"TWR {a} and {b} have one structure but their rows are in another order, so they "
+                             f"TWR {_display(spec, a)} and {_display(spec, b)} have one structure but their rows "
+                             f"are in another order, so they "
                              f"read as two (the engine keeps the spec's row order); try: {tip}", code="TWR"))
     return out
 
@@ -960,12 +992,15 @@ def label_rules(spec, d: Drawn) -> List[Violation]:
         eid = f"edge:{e.n}"
         if on and not texts:
             if not any(CL.seg_hits_box(g["p"], g["q"], CL.expand(box, 0.5)) for g in by):
-                out.append(Violation("R-label", (eid,), f"L1 {eid}'s label {on[0]['s']!r} over a background is on none "
+                out.append(Violation("R-label", (eid,), f"L1 {_name(spec, eid)}'s label {on[0]['s']!r} "
+                                     f"over a background "
+                                     f"is on none "
                                      f"of the pieces of its line it sits by ({', '.join(CL.fmt(g) for g in by)})",
                                      1.0, code="L1"))
             continue
         if not any(_rule_side(box, g) for g in by):
-            out.append(Violation("R-label", (eid,), f"L1 {eid}'s label {texts[0]['s']!r} is neither above a horizontal "
+            out.append(Violation("R-label", (eid,), f"L1 {_name(spec, eid)}'s label {texts[0]['s']!r} is neither above "
+                                 f"a horizontal "
                                  f"nor right of a vertical piece of its line it sits by "
                                  f"({', '.join(CL.fmt(g) for g in by)})", 1.0, code="L1"))
     # L2: the badges drawn are the note's steps — each once, or on each instance the spec
@@ -991,7 +1026,7 @@ def label_rules(spec, d: Drawn) -> List[Violation]:
 # =======================================================================================
 # R-border
 
-def border_rules(d: Drawn) -> List[Violation]:
+def border_rules(spec, d: Drawn) -> List[Violation]:
     out = []
     # B1: check_layout's LINE HUGS BORDER predicate, once per connector and border owner
     seen = set()
@@ -1001,13 +1036,15 @@ def border_rules(d: Drawn) -> List[Violation]:
             continue
         seen.add((a, g))
         where = "on top of" if dd == 0 else f"{_f(dd)}px from"
-        out.append(Violation("R-border", (a, g), f"B1 {a} runs {where} {g}'s border ({CL.fmt(s)} / {CL.fmt(b)}, "
+        out.append(Violation("R-border", (a, g), f"B1 {_name(spec, a)} runs {where} {_name(spec, g)}'s border "
+                             f"({CL.fmt(s)} / {CL.fmt(b)}, "
                              f"< {K.HUG_CLEAR}px): the line reads as the border", K.HUG_CLEAR - dd, code="B1"))
     # B2: the same visible pieces and bands as check_layout's LINE IN HEADER.
     bands = CL.header_bands(d.rects, d.icons, d.texts, d.owner)
     for s, r, band, how in CL.lines_in_headers(d.segs, d.masks, bands, d.owner):
         a, g = d.eid(id(s["el"])), d.owner[id(r[4])]
-        out.append(Violation("R-border", (a, g), f"B2 {a} passes through {g}'s header band {CL.fmt(s)} {how} "
+        out.append(Violation("R-border", (a, g), f"B2 {_name(spec, a)} passes through {_name(spec, g)}'s header band "
+                             f"{CL.fmt(s)} {how} "
                              f"(band {_f(band[0])},{_f(band[1])}–{_f(band[2])},{_f(band[3])})", 1.0, code="B2"))
     return out
 
@@ -1028,7 +1065,8 @@ def containment_rules(spec, d: Drawn) -> List[Violation]:
             for eid, box, _ in items:
                 if not CL.contains(outer, box, 1):
                     out.append(Violation("R-border", (eid, f"group:{parent}"),
-                                         f"B3 {eid} lies outside its declared container {parent}",
+                                         f"B3 {_name(spec, eid)} lies outside its declared container "
+                                         f"{_display(spec, parent)}",
                                          code="B3"))
         for i, (ae, ab, ag) in enumerate(items):
             for be, bb, bg in items[i + 1:]:
@@ -1037,7 +1075,8 @@ def containment_rules(spec, d: Drawn) -> List[Violation]:
                 if (min(ab[2], bb[2]) - max(ab[0], bb[0]) > 0.5
                         and min(ab[3], bb[3]) - max(ab[1], bb[1]) > 0.5):
                     out.append(Violation("R-border", (ae, be),
-                                         f"B4 {ae} intersects sibling {be} in {parent or 'canvas'}; "
+                                         f"B4 {_name(spec, ae)} intersects sibling {_name(spec, be)} in "
+                                         f"{_display(spec, parent) if parent else 'canvas'}; "
                                          "their declared containers must remain separate",
                                          code="B4"))
     return out
@@ -1078,7 +1117,7 @@ def check(spec, geom, draft: bytes, drawn: Optional[Drawn] = None) -> List[Viola
         return list(_last[3])
     d = drawn if drawn is not None else Drawn.parse(draft)
     out = (flow_rules(spec, d) + rt_rules(spec, d) + twin_rules(spec, geom) + label_rules(spec, d)
-           + border_rules(d) + containment_rules(spec, d) + fit_rules(spec, d))
+           + border_rules(spec, d) + containment_rules(spec, d) + fit_rules(spec, d))
     out.sort(key=lambda v: (v.tier, v.rule, v.code, v.owners, v.message))
     _last[:] = [spec, geom, draft, out]
     return list(out)

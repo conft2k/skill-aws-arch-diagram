@@ -107,7 +107,7 @@ class ConnectorInHeader(unittest.TestCase):
     def test_message_names_the_gap_and_the_move(self):
         line = LINE.format(x1=126, y1=80, x2=126, y2=180)
         iss, = self.hits(line)
-        self.assertIn("group:sn's header band between its badge and title", iss.msg)
+        self.assertIn("the header band of box 'App subnet' (group:sn) between its badge and title", iss.msg)
         self.assertRegex(iss.msg, r"move this run right [\d.]+px")
         adv = CL.Advisor(svg(self.HEADER, line), engine=True)
         hint = adv.hint(next(i for i in adv.issues if i.kind == "LINE IN HEADER"))

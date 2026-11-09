@@ -83,6 +83,10 @@ def spec(edges=(), nodes=(), groups=(), steps=0, mode="document"):
     return s
 
 
+# TWR's try names the boxes where the author edits them (spec locator, id, title)
+AZI_ORDER = r"put groups\[\d+\] azi2 \(.*\)'s rows in groups\[\d+\] azi1 \(.*\)'s order: b2, b1"
+
+
 def codes(viol, code):
     return [v for v in viol if v.code == code]
 
@@ -310,7 +314,7 @@ class LineOverNodeEngine(unittest.TestCase):
         src = ROOT / "tests/corpus/qa/t1-privatelink.layout.yaml"
         with tempfile.TemporaryDirectory() as tmp:
             text, _ = self.draw(src, Path(tmp) / "a.svg", "--mode", "slide")
-            rule = next(l for l in text.splitlines() if l.startswith("rule: R-flow F6 edge:12 ")
+            rule = next(l for l in text.splitlines() if l.startswith("rule: R-flow F6 edges[11] (S3 gateway EP (Consumer B VPC) → S3) ")
                         and "its own end S3's icon" in l)
             m = re.search(r"try: edges\[11\] bend_y: ([0-9.]+) ", rule)
             self.assertIsNotNone(m, rule)
@@ -319,7 +323,7 @@ class LineOverNodeEngine(unittest.TestCase):
             self.assertIn("bend_y: row.main-90", spec_text)
             fixed.write_text(spec_text.replace("bend_y: row.main-90", f"bend_y: {m.group(1)}"))
             text, draft = self.draw(fixed, Path(tmp) / "b.svg", "--mode", "slide")
-        self.assertFalse([l for l in text.splitlines() if l.startswith("rule: R-flow F6 edge:12 (")
+        self.assertFalse([l for l in text.splitlines() if l.startswith("rule: R-flow F6 edges[11] (")
                           and "S3's icon" in l])
         d = rules.Drawn.parse(draft)
         horiz = [s for s in d.edge_segs(12) if abs(s["p"][1] - s["q"][1]) < 0.5]
@@ -360,9 +364,9 @@ class LineOverNodeMoves(unittest.TestCase):
         for mode in (("--mode", "slide"), ("--mode", "slide", "--no-title")):
             text, draft = self.draw(self.SSM, *mode)
             self.assertNotIn("rule: R-flow F6 ", text)
-            self.assertIn("rule: R-flow F5 edge:2", text)          # the label clash stays
+            self.assertIn("rule: R-flow F5 edges[1] (EC2 (Availability Zone 2) → SSM endpoints (Availability Zone 2))", text)          # the label clash stays
             line = next(l for l in text.splitlines() if l.startswith("selection:"))
-            self.assertIn("trunk stem along every member: edge:3", line)
+            self.assertIn("trunk stem along every member: edges[2] (SSM endpoints (Availability Zone 1) ↔ Session Manager)", line)
             self.assertIn("gap col:endpoint → col:service", line)
             self.assertIn("removed R-flow F6 ×1", line)
             d = rules.Drawn.parse(draft)
@@ -390,7 +394,7 @@ class LineOverNodeMoves(unittest.TestCase):
             return got
         with mock.patch.object(layout, "channel_widenings", spy):
             text, _ = self.draw(ROOT / "tests/corpus/qa/t1-privatelink.layout.yaml", "--mode", "slide")
-        self.assertIn("rule: R-flow F6 edge:12 ", text)
+        self.assertIn("rule: R-flow F6 edges[11] (S3 gateway EP (Consumer B VPC) → S3) ", text)
         self.assertTrue(calls)
         self.assertEqual([c for c in calls if c], [])
 
@@ -401,7 +405,7 @@ class LineOverNodeMoves(unittest.TestCase):
         with mock.patch.object(layout, "channel_widenings", lambda *a: []), \
                 mock.patch.object(layout, "step_moves", lambda *a: []):
             text, _ = self.draw(self.SSM, "--mode", "slide")
-        self.assertIn("rule: R-flow F6 edge:4 ", text)      # kept: the trunk is drawn as written
+        self.assertIn("rule: R-flow F6 edges[2] (SSM endpoints (Availability Zone 2) ↔ Session Manager) ", text)      # kept: the trunk is drawn as written
         self.assertIn("warning: author trunk edges[2] (trunk: true) keeps R-flow F6; "
                       "try: drop `trunk: true` from edges[2]", text)
 
@@ -427,7 +431,8 @@ class LineOverNodeShapeMove(unittest.TestCase):
             text, draft = self.draw(self.QA / "t3-dns-trunk.layout.yaml", *mode)
             self.assertNotIn("rule: R-flow F6 ", text)
             line = next(l for l in text.splitlines() if l.startswith("selection:"))
-            self.assertIn("step-around shape tried: edge:2, edge:3", line)
+            self.assertIn("step-around shape tried: edges[1] (Outbound ENI (Availability Zone 1) → VGW), "
+                          "edges[1] (Outbound ENI (Availability Zone 2) → VGW)", line)
             self.assertIn("R-flow F6 ×2", line)
             d = rules.Drawn.parse(draft)
             self.assertFalse(self.hits(d, 2, "inbound.1"))
@@ -453,8 +458,8 @@ class LineOverNodeShapeMove(unittest.TestCase):
         # t3-nat-route-table slide: nat.1's step clears NAT RT 1; nat.2 has no clean lane in
         # its AZ (header above, the box border below) and keeps its crossing
         text, draft = self.draw(self.QA / "t3-nat-route-table.layout.yaml", "--mode", "slide")
-        self.assertNotIn("rule: R-flow F6 edge:0 ", text)
-        self.assertIn("rule: R-flow F6 edge:1 ", text)
+        self.assertNotIn("rule: R-flow F6 edges[0] (NAT (Availability Zone 1) → IGW) ", text)
+        self.assertIn("rule: R-flow F6 edges[0] (NAT (Availability Zone 2) → IGW) ", text)
         self.assertFalse(self.hits(rules.Drawn.parse(draft), 0, "rt.1"))
 
     def test_no_f6_never_steps(self):
@@ -467,7 +472,7 @@ class LineOverNodeShapeMove(unittest.TestCase):
         # written; the same move on a probe without that placement removes both F6, so it
         # is reported as a try: value naming what the change would add
         text, _ = self.draw(self.QA / "t1-privatelink.layout.yaml", "--mode", "slide")
-        self.assertIn("rule: R-flow F6 edge:12 ", text)
+        self.assertIn("rule: R-flow F6 edges[11] (S3 gateway EP (Consumer B VPC) → S3) ", text)
         self.assertNotIn("step-around", text)
         self.assertIn("warning: hand placement edges[11] (shape, bend_y, from_side, to_side) keeps R-flow F6; "
                       "try: drop `shape` / `bend_y` / `from_side` / `to_side` from edges[11]", text)
@@ -694,7 +699,7 @@ class BorderRules(unittest.TestCase):
         self.assertEqual(rules.containment_rules(sp, d), [])
 
     def run_border(self, *parts):
-        return rules.border_rules(rules.Drawn.parse(svg(*parts)))
+        return rules.border_rules(spec(), rules.Drawn.parse(svg(*parts)))
 
     def test_b1_hug_is_check_layouts_line_hugs_border(self):
         # a vertical line 12 / 11.99 right of a box's left border (x = 100), alongside it 200px
@@ -917,7 +922,8 @@ class TwinAzs(unittest.TestCase):
         got = [v for v in rules.twin_rules(sp, b.geom) if v.code == "TWR"]
         self.assertEqual(len(got), 1)
         self.assertEqual((got[0].owners, got[0].tier), (("group:az1", "group:az2"), rules.TIER_HARD))
-        self.assertIn("try: in `rows:` put az2's rows in az1's order: r21, r20", got[0].message)
+        self.assertRegex(got[0].message, r"try: in `rows:` put groups\[\d+\] az2 \(.*\)'s rows in groups\[\d+\] az1 \(.*\)'s "
+                                         r"order: r21, r20")
         # the engine draws the spec's order: AZ 2's Appliance subnet stays above its Public one
         self.assertLess(b.geom.groups["app2"].rect.y0, b.geom.groups["pub2"].rect.y0)
 
@@ -939,8 +945,8 @@ class TwinAzs(unittest.TestCase):
         self.assertEqual(rules.layout_solve.twin_row_orders(sp), [("az1", "az2", ["r0", "r1"], ["r1", "r0"])])
         got = [v for v in rules.twin_rules(sp, b.geom) if v.code == "TWR"]
         self.assertEqual(len(got), 1)
-        self.assertIn("try: move what az2 has on each row to the row that matches az1's order: r1 to r0, r0 to r1",
-                      got[0].message)
+        self.assertRegex(got[0].message, r"try: move what groups\[\d+\] az2 \(.*\) has on each row to the row that "
+                                         r"matches groups\[\d+\] az1 \(.*\)'s order: r1 to r0, r0 to r1")
 
     def test_twin_title_drops_only_the_number(self):
         self.assertEqual(rules.layout_solve.twin_title("az", "AZ 1"), rules.layout_solve.twin_title("az", "AZ 7"))
@@ -990,14 +996,14 @@ class TwinAzReview(unittest.TestCase):
         labels = ("Availability Zone A (Seoul)", "Availability Zone C (Seoul)")
         sp, got = self.twr(mirrored(labels=labels))
         self.assertEqual([(v.owners, v.tier) for v in got], [(("group:azi1", "group:azi2"), rules.TIER_HARD)])
-        self.assertIn("put azi2's rows in azi1's order: b2, b1", got[0].message)
+        self.assertRegex(got[0].message, AZI_ORDER)
         sp, _ = self.twr(mirrored(same_order=True, labels=labels))
         self.assertIn(["azi1", "azi2"], self.classes(sp))
 
     def test_overlays_inside_move_with_the_rows(self):
         sp, got = self.twr(mirrored(sg=True))
         self.assertEqual([v.owners for v in got], [("group:azi1", "group:azi2")])
-        self.assertIn("put azi2's rows in azi1's order: b2, b1", got[0].message)
+        self.assertRegex(got[0].message, AZI_ORDER)
         d = mirrored(sg=True)
         d["rows"] = ["a1", "a2", "b2", "b1"]        # the hinted order makes them twins
         sp, got = self.twr(d)
@@ -1017,7 +1023,7 @@ class TwinAzReview(unittest.TestCase):
             with self.subTest(labels=labels):
                 _, got = self.twr(mirrored(labels=labels))
                 self.assertEqual([v.owners for v in got], [("group:azi1", "group:azi2")])
-                self.assertIn("put azi2's rows in azi1's order: b2, b1", got[0].message)
+                self.assertRegex(got[0].message, AZI_ORDER)
                 sp, _ = self.twr(mirrored(same_order=True, labels=labels))
                 self.assertIn(["azi1", "azi2"], self.classes(sp))
 

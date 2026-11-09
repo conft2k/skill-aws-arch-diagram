@@ -1159,12 +1159,12 @@ def _end_center(geom: Geometry, eid: str) -> Optional[Tuple[float, float]]:
 def spec_item(spec: Spec, owner: str) -> str:
     kind, ref, part = M.split_eid(owner)
     if kind == "node" and ref in spec.nodes:
-        return f"{spec.nodes[ref].src} {ref}"
+        return M.node_ref(spec, ref)
     if kind == "group" and ref in spec.groups:
-        return f"{spec.groups[ref].src} {ref}"
+        return M.group_ref(spec, ref)
     if kind == "edge" and ref.isdigit() and int(ref) < len(spec.edges):
         e = spec.edges[int(ref)]
-        return f"{e.src} {e.a} {e.op} {e.b}" + (f" ({part})" if part else "")
+        return f"{e.src} {e.a} {e.op} {e.b} ({M.line_name(spec, e.n)})" + (f" ({part})" if part else "")
     if kind == "raw":
         return f"raw[{ref}]"
     return owner
@@ -1202,13 +1202,13 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
                             "own arrow")
         elif kind == "node" and ref in stacked:
             # a flow-column node takes no dy: the stack sets its y
-            tips.append(f"{spec.nodes[ref].src} {ref}: dx (its y: flow / align on column {stacked[ref]})")
+            tips.append(f"{M.node_ref(spec, ref)}: dx (its y: flow / align on column {stacked[ref]})")
         elif kind == "node" and ref in spec.nodes:
-            tips.append(f"{spec.nodes[ref].src} {ref}: dx / dy")
+            tips.append(f"{M.node_ref(spec, ref)}: dx / dy")
         elif kind == "group" and ref in spec.groups and p.iss.kind in ("TEXT AT BORDER", "HEADER CLEARANCE",
                                                                        "LINE HUGS BORDER", "LINE IN HEADER",
                                                                        "B1", "B2"):
-            tips.append(f"{spec.groups[ref].src} {ref}: pad / min_w / min_h")
+            tips.append(f"{M.group_ref(spec, ref)}: pad / min_w / min_h")
     w = where_to_widen(p, spec, geom)
     st = stack_bracket(spec, geom, p.owners, w[1]) if w and w[0] == "y" else None
     if st:
@@ -1265,7 +1265,7 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
             if v.code == "F6" and "; try: " in v.message:
                 # the value that moves the crossing piece (or the node) clear comes first
                 tip = "; ".join(t for t in (v.message.split("; try: ", 1)[1], tip) if t)
-        lead = f"warning: unresolved {v.rule} {v.code} ({', '.join(v.owners)})"
+        lead = f"warning: unresolved {v.rule} {v.code} ({M.owners_name(spec, v.owners)})"
         lines.append(lead + (f"; spec hint (not a guarantee): {tip}" if tip else
                              "; no spec hint: the existing spec-fix hints do not apply to these owners"))
     return lines
@@ -1288,8 +1288,71 @@ def detour_tip(spec: Spec, geom: Geometry, p: Problem) -> str:
     k = {"left": 0, "top": 1, "right": 2, "bottom": 3}[side]
     edge = (r.x0, r.y0, r.x1, r.y1)[k]
     have = min((abs(edge - (b.x0, b.y0, b.x1, b.y1)[k]) for b in inner), default=0.0)
-    return (f"{spec.groups[gid].src}: pad_{side}: {M.fmt_num(math.ceil(have + over + CL.HUG_CLEAR))} "
+    return (f"{M.group_ref(spec, gid)}: pad_{side}: {M.fmt_num(math.ceil(have + over + CL.HUG_CLEAR))} "
             f"(room {side} of what it holds for the line, {M.fmt_num(have)} now)")
+
+
+SIDE_WORDS = {"L": "left", "R": "right", "T": "top", "B": "bottom"}
+
+
+def var_name(spec: Spec, v: str) -> str:
+    """A solve variable as the summary names it: tracks by their spec id ("row:az2"), a
+    node by its label, a box side by the box's title ("Availability Zone 1 bottom")."""
+    kind, _, ref = v.partition(":")
+    if kind == "node" and ref in spec.nodes:
+        return M.node_name(spec, ref)
+    if kind == "group":
+        gid, _, side = ref.rpartition(".")
+        if gid in spec.groups and side in SIDE_WORDS:
+            return f"{M.group_name(spec, gid)} {SIDE_WORDS[side]}"
+        if ref in spec.groups:
+            return M.group_name(spec, ref)
+    return v
+
+
+OWNER_TOKEN = re.compile(r"\b(?:node|group|edge):[\w.\-]+(?::[a-z]+)?")
+
+
+def named_tokens(spec: Spec, text: str) -> str:
+    """Owner ids and box-side variables a reason quotes ("sibling gap 16 group:cloud |
+    node:kms", "feedback: line over icon, node:ep.2") by their display names."""
+    def name(m):
+        tok = m.group()
+        kind, ref, _ = M.split_eid(tok)
+        if kind == "edge" and ref.isdigit() and int(ref) < len(spec.edges):
+            return M.owner_name(spec, tok)
+        if kind in ("node", "group") and tok.count(":") == 1:
+            got = var_name(spec, tok)
+            return tok if got == tok else got
+        return tok
+    return OWNER_TOKEN.sub(name, text)
+
+
+def named_warning(spec: Spec, w: str) -> str:
+    """An engine warning with the display names of the spec item it starts with, so the
+    author can find it in the picture as well as in the spec: "edges[0] orders.2 -> db.1
+    (Order 2 → Aurora writer): …", "nodes[2] s3 s3 (Log bucket): …". The engine reads its
+    own warnings (shape misses, re-solve) in the plain form, so names go in only here."""
+    w = named_tokens(spec, w)
+    head, sep, rest = w.partition(": ")
+    if not sep:
+        return w
+    toks = head.split(" ")
+    loc = toks[0]
+    if loc.startswith("edges[") and len(toks) == 4:
+        e = next((x for x in spec.edges if x.src == loc and (x.a, x.op, x.b) == tuple(toks[1:])), None)
+        if e is not None:
+            return f"{head} ({M.line_name(spec, e.n)}){sep}{rest}"
+    elif (loc.startswith("nodes[") or loc.startswith("groups[")) and len(toks) >= 2:
+        pool = spec.nodes if loc.startswith("nodes[") else spec.groups
+        ids = [t.rstrip(",") for t in toks[2:]] or [toks[1]]
+        if all(i in pool and pool[i].src == f"{loc} {toks[1]}" for i in ids):
+            names = [M.item_name(spec, i) for i in ids]
+            if names != ids:
+                # a single item gives its id once ("nodes[2] q (Q)"), as layout_model.node_ref
+                at = f"{loc} {toks[1]}" if ids == toks[1:2] == toks[2:] else head
+                return f"{at} ({', '.join(dict.fromkeys(names))}){sep}{rest}"
+    return w
 
 
 def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None,
@@ -1330,7 +1393,7 @@ def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None,
         if n.icon_query and n.template is None or (n.icon_query and n.instance == 1):
             lines.append(f"  alias {n.icon_query!r} → {n.icon} ({n.src})")
     for w in spec.warnings + g.warnings + b.warnings:
-        lines.append(f"warning: {w}")
+        lines.append(f"warning: {named_warning(spec, w)}")
     if rule_guard is not None:
         violations = rule_guard.check(spec, g, data)
         if violations is not None:
@@ -1824,25 +1887,27 @@ def redraw_routes(b: Build, decisions, source: str) -> Build:
                      decisions=decisions, diag_pairs=b.diag_pairs)
 
 
-def selection_changes(before, after):
+def selection_changes(before, after, spec=None):
+    """What selection changed, edges by spec line and ends (layout_model.edge_name)."""
+    name = (lambda n: M.edge_name(spec, n)) if spec is not None else (lambda n: f"edge:{n}")
     changes = []
     old_skip = dict(before.skip)
     for n, k in after.skip:
         if k != old_skip.get(n, 0):
-            changes.append(f"skip edges[{n}]={k}")
+            changes.append(f"skip {name(n)}={k}")
     if after.diag != before.diag:
         pairs = [" / ".join(sorted(p)) for p in sorted(after.diag or (), key=lambda p: tuple(sorted(p)))]
         changes.append("diagonal pairs on x: " + ", ".join(pairs))
     old_overlay = dict(before.overlay)
     for gid, place in after.overlay:
         if place != old_overlay.get(gid):
-            changes.append(f"overlay {gid} header {place}")
+            changes.append(f"overlay {M.group_name(spec, gid) if spec is not None else gid} header {place}")
     if after.place != before.place:
         changes.append(f"note place={after.place}")
     if after.stems != before.stems:
-        changes.append("trunk stem along every member: " + ", ".join(f"edge:{n}" for n in after.stems))
+        changes.append("trunk stem along every member: " + ", ".join(name(n) for n in after.stems))
     if after.steps != before.steps:
-        changes.append("step-around shape tried: " + ", ".join(f"edge:{n}" for n in after.steps))
+        changes.append("step-around shape tried: " + ", ".join(name(n) for n in after.steps))
     return "; ".join(changes)
 
 
@@ -2124,7 +2189,7 @@ def line_over_node_moves(best, source: str, scratch: Path, rule_guard: RuleGuard
                 and sc.tier_0_count < then[0].tier_0_count):
             added = sorted(tier0_identities(after) - then[2], key=str)
             cost = ("no new tier-0 violation" if not added else
-                    "new " + ", ".join(f"{r} {c} ({', '.join(sorted(o))})" for r, c, o in added))
+                    "new " + ", ".join(f"{r} {c} ({M.owners_name(b.spec, sorted(o))})" for r, c, o in added))
             lines.append(f"warning: hand placement {e.src} ({', '.join(fields)}) keeps R-flow F6; try: drop "
                          f"{' / '.join(f'`{f}`' for f in fields)} from {e.src} so selection can route it "
                          f"around the node (tried: F6 −{removed}, tier-0 {then[0].tier_0_count} → "
@@ -2390,9 +2455,10 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
         after = rule_guard.check(best[0].spec, best[0].geom, best[1])
         removed = Counter((v.rule, v.code) for v in first) - Counter((v.rule, v.code) for v in after)
         detail = ", ".join(f"{r} {c} ×{n}" for (r, c), n in sorted(removed.items())) or "none"
-        changes = selection_changes(base_decisions, best[0].decisions)
+        changes = selection_changes(base_decisions, best[0].decisions, best[0].spec)
         if widened is not None:
-            changes = "; ".join(filter(None, (changes, f"gap {widened.a} → {widened.b} ≥ "
+            changes = "; ".join(filter(None, (changes, f"gap {var_name(best[0].spec, widened.a)} → "
+                                                       f"{var_name(best[0].spec, widened.b)} ≥ "
                                                        f"{M.fmt_num(widened.d)} (F6 channel)")))
         changes = changes or "default decisions; verdict-selected rounds"
         final_score = rule_guard.verdict(best[0], best[1], best[3])
@@ -2505,17 +2571,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(line)
     if rnd:
         print(f"check: {rnd} feedback round{'s' if rnd != 1 else ''} ("
-              + ", ".join(f"{r.why[len('feedback: '):]}: {r.a} → {r.b} ≥ {M.fmt_num(r.d)}" for r in used)
-              + (f"; next routing candidate for {', '.join(f'edges[{k}]×{v}' for k, v in skipped.items())}"
+              + ", ".join(f"{r.why[len('feedback: '):]}: {var_name(spec, r.a)} → {var_name(spec, r.b)} "
+                          f"≥ {M.fmt_num(r.d)}" for r in used)
+              + (f"; next routing candidate for {', '.join(f'{M.edge_name(spec, k)} ×{v}' for k, v in skipped.items())}"
                  if skipped else "")
-              + (f"; avoid header bands for {', '.join(f'edges[{k}]' for k in sorted(b.avoid_headers))}"
+              + (f"; avoid header bands for {', '.join(M.edge_name(spec, k) for k in sorted(b.avoid_headers))}"
                  if b.avoid_headers else "") + ")")
     if fixed:
         print(f"check: {fixed} fixed-answer repair{'s' if fixed != 1 else ''} applied (check_layout --fix)")
     if a.explain:
         print("explain:")
         for line in b.geom.explain:
-            print(f"  {line}")
+            print(f"  {named_tokens(spec, line)}")
     if a.no_check:
         print("check skipped (--no-check)")
         return 0
@@ -2536,7 +2603,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             pre = ("x col",) if "too wide" in sp else ("y row", "y flow")
             for line in b.geom.explain:
                 if line.startswith(pre):
-                    print(f"  {line}")
+                    print(f"  {named_tokens(spec, line)}")
     verdict = rule_lines(spec, b.geom, data, rule_guard)
     for line in verdict:
         print(line)

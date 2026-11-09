@@ -1067,6 +1067,132 @@ def split_eid(eid: str) -> Tuple[str, str, str]:
     return (parts[0], parts[1] if len(parts) > 1 else "", parts[2] if len(parts) > 2 else "")
 
 
+# ---------------------------------------------------------------------------------------
+# Display names: how messages name a spec item to the author (the label the drawing shows,
+# not the draft's owner id). Machine-read fields (owners, corpus tags) keep the ids.
+
+ARROWS = {"->": "→", "..>": "→", "<->": "↔", "<..>": "↔", "--": "–", "..": "–"}
+
+
+def _one_line(s: Optional[str]) -> str:
+    return " ".join((s or "").split())
+
+
+def _where_in(spec: "Spec", chain: Sequence[str]) -> List[str]:
+    """The titles of the boxes around an item, innermost first (untitled boxes left out)."""
+    return [t for t in (_one_line(spec.groups[g].label) for g in chain if g in spec.groups) if t]
+
+
+def _told_apart(me: str, chains: Dict[str, List[str]]) -> Optional[str]:
+    """The fewest titles of the boxes around `me` (outermost first) that no other item of the
+    same label sits in all of: "Inspection VPC, Availability Zone 2"; None when the boxes do
+    not tell it apart (two items in one box)."""
+    mine, rivals, picked = chains[me], [i for i in chains if i != me], []
+    for t in mine:
+        if any(t not in chains[r] for r in rivals):
+            picked.append(t)
+            rivals = [r for r in rivals if t in chains[r]]
+            if not rivals:
+                return ", ".join(reversed(picked))
+    return None
+
+
+def node_name(spec: "Spec", nid: str) -> str:
+    """A node as the drawing names it: its label, plus which copy when another node shows the
+    same label — the titles of the boxes that tell them apart ("NAT RT (Availability Zone 2)"),
+    else its id; its id when it has no label."""
+    n = spec.nodes.get(nid)
+    if n is None:
+        return nid
+    label = _one_line(n.label)
+    if not label:
+        return nid
+    same = [o.id for o in spec.nodes.values() if _one_line(o.label) == label]
+    if len(same) > 1:
+        chains = {i: _where_in(spec, spec.node_chain(i)) for i in same}
+        return f"{label} ({_told_apart(nid, chains) or nid})"
+    return label
+
+
+def group_name(spec: "Spec", gid: str) -> str:
+    """A group as the drawing titles it, plus which copy when another box has the same title
+    ("Data (Availability Zone 2)", as node_name); its id when it has no title."""
+    g = spec.groups.get(gid)
+    if g is None:
+        return gid
+    label = _one_line(g.label)
+    if not label:
+        return gid
+    same = [o.id for o in spec.groups.values() if _one_line(o.label) == label]
+    if len(same) > 1:
+        chains = {i: _where_in(spec, spec.ancestors(spec.groups[i].parent)) for i in same}
+        return f"{label} ({_told_apart(gid, chains) or gid})"
+    return label
+
+
+def item_name(spec: "Spec", ref: str) -> str:
+    """A node or group id by its display name (node_name / group_name), else the id."""
+    return node_name(spec, ref) if ref in spec.nodes else group_name(spec, ref)
+
+
+def line_name(spec: "Spec", n: int) -> str:
+    """An edge instance by its ends' display names ("Order 2 → Aurora writer")."""
+    if not 0 <= n < len(spec.edges):
+        return f"line {n}"
+    e = spec.edges[n]
+    return f"{item_name(spec, e.a)} {ARROWS.get(e.op, '→')} {item_name(spec, e.b)}"
+
+
+def edge_name(spec: "Spec", n: int) -> str:
+    """An edge instance by the spec line the author edits and the line the drawing shows:
+    "edges[0] (Order 2 → Aurora writer)"."""
+    if not 0 <= n < len(spec.edges):
+        return f"line {n}"
+    e = spec.edges[n]
+    return f"{e.src or f'edges[{e.line}]'} ({line_name(spec, n)})"
+
+
+def owner_name(spec: "Spec", eid: str) -> str:
+    """A draft owner id ("edge:3", "edge:3:label", "node:nat.1", "group:az.2", "canvas",
+    "note") by its display name."""
+    kind, ref, part = split_eid(eid)
+    if kind == "edge" and ref.isdigit():
+        return edge_name(spec, int(ref)) + (f"'s {part}" if part else "")
+    if kind == "node":
+        return node_name(spec, ref)
+    if kind == "group":
+        return group_name(spec, ref)
+    if kind == "raw" and ref.isdigit():
+        return f"raw[{ref}]"
+    return eid
+
+
+def node_ref(spec: "Spec", nid: str) -> str:
+    """Where the author edits a node, with the name the drawing shows: its spec locator and
+    instance id, then its display name ("nodes[2] db db.2 (Aurora reader 2)")."""
+    n = spec.nodes.get(nid)
+    if n is None:
+        return nid
+    name = node_name(spec, nid)
+    at = n.src if n.src.endswith(f" {nid}") else f"{n.src} {nid}"     # a single node: once
+    return at + (f" ({name})" if name != nid else "")
+
+
+def group_ref(spec: "Spec", gid: str) -> str:
+    """As node_ref, for a group ("groups[5] datasn datasn.2 (Data (Availability Zone 2))",
+    "groups[0] cloud (AWS Cloud)")."""
+    g = spec.groups.get(gid)
+    if g is None:
+        return gid
+    name = group_name(spec, gid)
+    at = g.src if g.src.endswith(f" {gid}") else f"{g.src} {gid}"
+    return at + (f" ({name})" if name != gid else "")
+
+
+def owners_name(spec: "Spec", owners: Sequence[str]) -> str:
+    return ", ".join(owner_name(spec, o) for o in owners)
+
+
 def g_id(owner: str, z: int) -> str:
     """The <g id> for an owner's run of elements in layer z (section 5)."""
     kind = owner.split(":", 1)[0]

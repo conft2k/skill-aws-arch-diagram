@@ -29,7 +29,7 @@ def draw(source, tmp_path, capsys, *args):
     # line-cross 01: F6 leads with its own try value (the piece or the node moved clear)
     # (t3-ssm-trunk slide's F6 is gone since line-cross 02's channel move, t3-dns-trunk slide's
     # and nat-route-table's rt.1 since line-cross 03's shape move; rt.2 keeps its own)
-    ("qa/t3-nat-route-table", "slide", "R-flow", "F6", "rt.2: dy: "),
+    ("qa/t3-nat-route-table", "slide", "R-flow", "F6", "rt.2 (NAT RT (Availability Zone 2)): dy: "),
 ])
 def test_each_remaining_enabled_violation_has_an_owner_hint(
         tmp_path, capsys, case, mode, rule, code, hint):

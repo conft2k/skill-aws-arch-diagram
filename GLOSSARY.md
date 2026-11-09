@@ -72,6 +72,10 @@ _Avoid_: output, render, preview
 The spec item a drawn element is grouped under in a draft. It can be an edge, an edge's label, badge or mask, a node, a group, the note, or a raw block. Background and definitions have no owner.
 _Avoid_: owning element
 
+**Display name**:
+How engine and checker messages name an owner to the author: an edge by its spec entry and its ends' labels (`edges[0] (Order 2 → Aurora writer)`), a node by its label, a group by its title, plus the titles of the boxes that tell apart items whose label repeats (`NAT RT (Availability Zone 2)`). Owner ids (`edge:1`, `node:nat.2`) stay in machine-read fields only.
+_Avoid_: owner id (in messages), internal id
+
 **Edge instance**:
 One line pair that a spec edge expands to. An edge with wildcards or `per:` targets yields one instance per pair.
 _Avoid_: sub-edge

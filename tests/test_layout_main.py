@@ -655,7 +655,7 @@ class ShapeMissResolve(unittest.TestCase):
         rc, text, builds = self.run_main(99)
         self.assertEqual(len(builds), layout.MAX_ROUNDS + 1)
         self.assertEqual(rc, 0, text)
-        self.assertIn("warning: edges[1] alb -> asg: drew UHVH instead of H", text)
+        self.assertIn("warning: edges[1] alb -> asg (ALB → ASG · target group): drew UHVH instead of H", text)
         self.assertNotIn("check: ", text)
 
     def test_no_miss_no_round(self):
@@ -775,12 +775,12 @@ class DetourRoom(unittest.TestCase):
         self.assertEqual([p.iss.kind for p in probs], ["LINE OFF CANVAS"], [p.iss.msg for p in probs])
         self.assertIn("past the bottom border of 'AWS Cloud'", probs[0].iss.msg)
         self.assertEqual(probs[0].owners, ["edge:2", "group:cloud"])
-        self.assertIn("groups[0] cloud: pad_bottom: ", layout.spec_fix(spec, b.geom, probs[0]))
+        self.assertIn("groups[0] cloud (AWS Cloud): pad_bottom: ", layout.spec_fix(spec, b.geom, probs[0]))
 
     def test_cloud_grows_under_the_route(self):
         rc, text, root = self.run_main(row_spec())
         self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
-        self.assertIn("check: 1 feedback round (line off canvas (cloud bottom): node:na → group:cloud.B ≥ ", text)
+        self.assertIn("check: 1 feedback round (line off canvas (cloud bottom): NA → AWS Cloud bottom ≥ ", text)
         self.assertNotIn("drew another shape:", text)              # the room is the answer, not wider gaps
         cloud = next(e for e in root.iter(NS + "rect") if e.get("stroke"))
         line = next(e for e in root.iter(NS + "polyline"))
@@ -793,7 +793,7 @@ class DetourRoom(unittest.TestCase):
         """No box: the route round the top runs past the canvas edge; everything moves down."""
         rc, text, root = self.run_main(row_spec(groups=False))
         self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
-        self.assertIn("line off canvas (canvas top): origin → node:na ≥ ", text)
+        self.assertIn("line off canvas (canvas top): origin → NA ≥ ", text)
         line = next(e for e in root.iter(NS + "polyline"))
         self.assertGreaterEqual(min(float(v.split(",")[1]) for v in line.get("points").split()), 12)
 
@@ -804,7 +804,7 @@ class DetourRoom(unittest.TestCase):
             n["in"] = "vpc"
         rc, text, _ = self.run_main(d)
         self.assertEqual((rc, text.strip().splitlines()[-1]), (0, "Layout OK"), text)
-        self.assertIn("line leaves box (vpc bottom): node:na → group:vpc.B ≥ ", text)
+        self.assertIn("line leaves box (vpc bottom): NA → VPC bottom ≥ ", text)
 
 
 def flow_column_spec():
@@ -1055,8 +1055,8 @@ class FlowColumnFixes(unittest.TestCase):
         ico = {"box": (ec2.icon.x0, ec2.icon.y0, ec2.icon.x1, ec2.icon.y1), "el": None}
         iss = CL.Issue("TEXT NEAR ICON", "TEXT NEAR ICON ...", [], {"t": txt, "i": ico})
         tip = layout.spec_fix(spec, g, layout.Problem(iss, ["node:cw", "node:ec2.1"], [txt, ico]))
-        self.assertIn("nodes[6] cw cw: dx (its y: flow / align on column svc)", tip)
-        self.assertIn("nodes[4] ec2 ec2.1: dx / dy", tip)
+        self.assertIn("nodes[6] cw (CloudWatch): dx (its y: flow / align on column svc)", tip)
+        self.assertIn("nodes[4] ec2 ec2.1 (EC2 (Availability Zone 1)): dx / dy", tip)
         self.assertNotIn("cw cw: dx / dy", tip)
 
     @staticmethod
@@ -1391,7 +1391,7 @@ class XyMoved(unittest.TestCase):
                 src.write_text(json.dumps(d), encoding="utf-8")
                 rc, text, kinds = main_file(src, mode, *more)
                 self.assertEqual((rc, kinds), (0, []), text)
-                self.assertIn("f1 f1: its moved xy landed on node o", text)
+                self.assertIn("f1 (F1): its moved xy landed on node o", text)
 
     def test_the_value_to_write_loads_and_lands_where_the_solve_put_it(self):
         # Codex review ③: `cloud.x0+0` / `-0` moved 40 → `cloud.x0+40` (not `cloud.x0+0+40`);
@@ -1460,7 +1460,7 @@ class XyMoved(unittest.TestCase):
                 src.write_text(json.dumps(d), encoding="utf-8")
                 rc, text, kinds = main_file(src, mode, *more)
                 self.assertEqual(kinds, [], text)
-                self.assertIn("t t: its moved xy landed on node o", text)
+                self.assertIn("t (T): its moved xy landed on node o", text)
 
     def test_a_moved_border_node_keeps_off_its_vpcs_children(self):
         d = layout_spec._read(CORPUS / "xy/xy-border.layout.yaml")[0]
@@ -1470,7 +1470,7 @@ class XyMoved(unittest.TestCase):
             src.write_text(json.dumps(d), encoding="utf-8")
             rc, text, kinds = main_file(src, "document")
         self.assertEqual(kinds, [], text)
-        self.assertIn("igw igw: xy x vpc.x1 moved", text)
+        self.assertIn("igw (IGW): xy x vpc.x1 moved", text)
 
     def test_a_diagonal_trial_that_would_move_an_xy_stays_on_y(self):
         d = {"name": "diag3", "mode": "document", "cols": ["a", "b"], "rows": ["r", "s"],

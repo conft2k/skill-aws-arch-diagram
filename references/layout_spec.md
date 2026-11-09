@@ -501,22 +501,31 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   row order, an R-fit text size), so the `rule:` lines stay — fix those in the spec as
   their `try:` / hint says. The line itself needs no action.
 - `check: …` lines: what the engine already widened or repaired on its own — e.g. `line
-  leaves box (vpc bottom): node:a → group:vpc.B ≥ 94` when a route went round the outside of
+  leaves box (vpc bottom): App → VPC bottom ≥ 94` when a route went round the outside of
   the box both ends are in (or `line off canvas (canvas top)` past the canvas edge): it
   grew the room on that side so the route runs inside. A round never trades a slide that
   fits for one under 10pt.
 - **Problems**: `check_layout.py`'s message, then up to three lines — `fix:` the draft
   coordinate correction (spec path: ignore it; it applies only once you edit the draft),
-  `spec:` the spec items behind the problem (`edges[3] alb -> asg (label)`), `try:` the
+  `spec:` the spec items behind the problem (`edges[3] alb -> asg (ALB → Web ASG) (label)`), `try:` the
   spec change to make (`label_at: …`, `shape / bend_x / …`, `dx / dy` (a flow-column
   node: `dx` and the column's `flow` / `align`), `pad / min_w`,
   `cols: {id: app, min_gap_before: 140}`; for `LINE LEAVES BOX` / `LINE OFF CANVAS` the
-  room that side of the box needs, `groups[0] cloud: pad_bottom: 41`). `SLIDE TOO SMALL` lists the constraint chain of
+  room that side of the box needs, `groups[0] cloud (AWS Cloud): pad_bottom: 41`). `SLIDE TOO SMALL` lists the constraint chain of
   the overflowing axis.
 - **Rules**: `rule: R-flow F3 …` and the other `rule:` lines judge the written draft.
   Each remaining enabled-rule violation also has a `warning: unresolved R-flow F3
-  (edge:3, edge:5); spec hint (not a guarantee): …` in the summary. It names the owners
-  and reuses their existing spec-fix hints; if none applies, the warning says why.
+  (edges[2] (ALB → App 1), edges[4] (App 1 → Aurora writer)); spec hint (not a guarantee): …`
+  in the summary. It names the owners and reuses their existing spec-fix hints; if none
+  applies, the warning says why.
+  Messages name what they point at as the drawing shows it, so you can find it in the
+  picture and in the spec: a line by its spec entry and its ends' labels (`edges[2] (ALB →
+  App 1)`; the instances of one `.*` entry share its `edges[k]`), a node by its label and a
+  box by its title, with the boxes that tell copies apart when a label repeats (`NAT RT
+  (Availability Zone 2)`, `TGW ENI (Inspection VPC, Availability Zone 1)`), and where a hint
+  says what to edit, the spec entry and id first (`nodes[2] db db.2 (Aurora reader 2): dy:
+  32`). Owner ids such as `edge:3` or `node:nat.2` are draft element ids (`<g id>`), for
+  tools only.
   Try the suggested spec change and draw again to check it.
   They are report-only: they change neither the draft nor the exit status. The last line
   starts with `Layout OK` (exit 0) or `N problems` (exit 1), followed, when needed, by
