@@ -1230,6 +1230,12 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
             a, b, cur = br
             tips.append(f"{'cols' if w[0] == 'x' else 'rows'}: {{id: {b.split(':', 1)[1]}, "
                         f"min_gap_before: {M.fmt_num(cur + WIDEN)}}}")
+    if (st or w) and spec.text_scale == "auto" and spec.font_factor != 1 and any(
+            "min_gap_before" in t or "flow:" in t for t in tips):
+        # the gap is measured at the text scale the engine chose for this drawing; a wider
+        # gap can make it choose another (and the needed gap moves): pin the scale with it
+        tips.append(f"text_scale: {spec.font_factor:.3g} with it (the gap above is at this drawing's "
+                    "text scale; with text_scale on auto a wider gap can change the scale and the gap it needs)")
     seen, out = set(), []
     for t in tips:
         if t not in seen:
@@ -1238,7 +1244,8 @@ def spec_fix(spec: Spec, geom: Geometry, p: Problem) -> str:
     return "; ".join(out)
 
 
-def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequence[Problem]) -> List[str]:
+def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequence[Problem],
+                       draft: Optional[bytes] = None) -> List[str]:
     """Reuse spec-fix guidance for each enabled violation in the written draft.
 
     A rule can remain without a matching check problem (false junctions and label
@@ -1249,6 +1256,7 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
                   "F6": ("LINE OVER ICON", "LINE OVER TEXT"),
                   "B1": ("LINE HUGS BORDER",), "B2": ("LINE IN HEADER",)}
     lines = []
+    drawn = None
     for v in violations:
         if v.rule not in SELECTION_RULES and v.rule != "R-fit":
             continue
@@ -1274,6 +1282,13 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
             if v.code == "F6" and "; try: " in v.message:
                 # the value that moves the crossing piece (or the node) clear comes first
                 tip = "; ".join(t for t in (v.message.split("; try: ", 1)[1], tip) if t)
+            elif (v.rule, v.code) in (("R-flow", "F3"), ("R-flow", "F4"), ("R-flow", "F5"), ("R-label", "L1")) \
+                    and draft is not None:
+                # the nearest clear value for one piece, label or badge (rules.flow_try)
+                import rules
+                if drawn is None:
+                    drawn = rules.Drawn.parse(draft)
+                tip = "; ".join(t for t in (rules.flow_try(spec, drawn, v), tip) if t)
         lead = f"warning: unresolved {v.rule} {v.code} ({M.owners_name(spec, v.owners)})"
         lines.append(lead + (f"; spec hint (not a guarantee): {tip}" if tip else
                              "; no spec hint: the existing spec-fix hints do not apply to these owners"))
@@ -1406,7 +1421,8 @@ def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None,
                         f"{K.DOCUMENT_COLUMN_PX}px column (target {target})"))
     if t is not None and actual < target:
         lines.append(f"warning: smallest text {actual:.1f}{unit} below target {target}{unit}"
-                     + (f" and floor {floor}{unit}; split the diagram or write a mode: slide spec"
+                     + (f" and floor {floor}{unit}; split the diagram"
+                        + (" or write a mode: slide spec" if spec.mode != "slide" else "")
                         if actual < floor else ""))
     if spec.font_factor != 1:
         lines.append(f"text scale: {spec.font_factor:.3g}× (uniform fonts, re-laid out)")
@@ -1428,12 +1444,14 @@ def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None,
     if rule_guard is not None:
         violations = rule_guard.check(spec, g, data)
         if violations is not None:
-            lines.extend(unfixable_warnings(spec, g, violations, rule_guard.problems(data)))
+            lines.extend(unfixable_warnings(spec, g, violations, rule_guard.problems(data), data))
     return lines
 
 
-def slide_problem(spec: Spec, svg: bytes) -> Optional[str]:
-    """SLIDE TOO SMALL when the smallest text the draft `svg` draws comes out under 10pt."""
+def slide_problem(spec: Spec, svg: bytes, nb=None) -> Optional[str]:
+    """SLIDE TOO SMALL when the smallest text the draft `svg` draws comes out under 10pt;
+    with the note block `nb`, a note that adds to the overflowing axis is named first (a
+    pane beside the drawing widens it, note lines under it heighten it)."""
     if spec.mode != "slide":
         return None
     (pt, _, target, _), t, (W, H) = drawn_text(spec, svg)
@@ -1442,11 +1460,18 @@ def slide_problem(spec: Spec, svg: bytes) -> Optional[str]:
     px = t[0]
     lim_w, lim_h = K.slide_max(spec.title, px)
     over_w, over_h = W - lim_w, H - lim_h
-    which = (f"{M.fmt_num(over_w)}px too wide" if over_w >= over_h * lim_w / lim_h
-             else f"{M.fmt_num(over_h)}px too tall")
+    wide = over_w >= over_h * lim_w / lim_h
+    which = f"{M.fmt_num(over_w)}px too wide" if wide else f"{M.fmt_num(over_h)}px too tall"
+    note = ""
+    if nb is not None and nb.place == "pane" and wide:
+        note = (f"the note pane beside the drawing takes {M.fmt_num(nb.w)}px of the width: "
+                "`note: {place: lines}` puts it in plain lines under the drawing, or shorten the steps; ")
+    elif nb is not None and nb.place in ("lines", "panel") and not wide:
+        note = (f"the note under the drawing takes {M.fmt_num(nb.h)}px of the height: shorten the steps "
+                f"(fewer, shorter rows){'' if nb.place == 'lines' else ', or `note: {place: lines}`'}; ")
     return (f"SLIDE TOO SMALL smallest text ({M.fmt_num(px)}px, {t[1]!r}) comes out at {pt:.1f}pt "
             f"(< {K.SLIDE_MIN_PT}) at {M.fmt_num(W)} × {M.fmt_num(H)}: {which} for "
-            f"{lim_w} × {lim_h} — shorten the widest column's labels (see --explain), "
+            f"{lim_w} × {lim_h} — {note}shorten the widest column's labels (see --explain), "
             "move the regional services row into a column, or split the slide")
 
 
@@ -2598,7 +2623,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     spec = b.spec
     out.write_bytes(data)
     probs, hints = ([], []) if a.no_check else problems_of(data, hints=True)[0::2]
-    sp = slide_problem(spec, data)
+    sp = slide_problem(spec, data, b.nb)
     n = len(probs) + (1 if sp else 0)
     for line in summary(spec, b, out, data, None if a.no_check else rule_guard):
         print(line)

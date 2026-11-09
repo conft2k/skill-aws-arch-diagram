@@ -76,6 +76,7 @@ candidate drafts with critical canvas clipping first, for selection and later st
 concepts new here are defined here.
 """
 import math
+import re
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -585,12 +586,73 @@ def _node_ref(spec, nid: str) -> str:
     return M.node_ref(spec, nid)
 
 
+def _axis_of(seg: dict) -> Optional[str]:
+    """The axis a piece's position is on: x for a vertical piece, y for a horizontal one."""
+    return "x" if _vert(seg) else "y" if _horiz(seg) else None
+
+
+def _piece_name(run: List[dict], k: int) -> str:
+    a = _axis_of(run[k])
+    return f"the {'vertical' if a == 'x' else 'horizontal'} piece at {a}={_f(run[k]['p'][0 if a == 'x' else 1])}"
+
+
+def _at_icon(d: Drawn, e, run: List[dict], k: int):
+    """(field, node id, icon box, end point) when piece k of edge e's drawn run ends on a
+    node (its footprint, as F6's attach pieces), not on the trunk it joins; else None."""
+    mine = {id(x) for x in run}
+    trunk = [x for x in own_pieces(d, e.n) if id(x) not in mine]
+    n = len(run)
+    for kk, pt, ref, kind, field in ((0, run[0]["p"], e.a, e.a_kind, "from_offset"),
+                                     (n - 1, run[-1]["q"], e.b, e.b_kind, "to_offset")):
+        icon, ft = d.node_icon.get(ref), d.foot.get(ref)
+        if (kk == k and kind == "node" and icon is not None and ft is not None
+                and _pt_box(pt, ft) <= CL.END_REACH and not any(CL.on_seg(pt, x) for x in trunk)):
+            return field, ref, icon["box"], pt
+    return None
+
+
+def _rel(spec, d: Drawn, e, v: float, axis: str, near: Optional[Pt] = None) -> str:
+    """v (a drawn x / y) as an expression on the nearer of edge e's end nodes' icon centre
+    (`<node>.cx±n`), so it moves with that node when the spec is solved again (feedback
+    rounds and text scale change the coordinates); the plain number without a node end."""
+    ends = [x for x, kind in ((e.a, e.a_kind), (e.b, e.b_kind)) if kind == "node" and x in d.node_icon]
+    if not ends:
+        return _f(round(v))
+    k = 0 if axis == "x" else 1
+    ref = min(ends, key=lambda x: (math.dist(_centre(d.node_icon[x]["box"]), near) if near is not None
+                                   else abs(_centre(d.node_icon[x]["box"])[k] - v)))
+    off = round(v - _centre(d.node_icon[ref]["box"])[k])
+    return f"{ref}.c{axis}" + (f"{'+' if off > 0 else '-'}{abs(off)}" if off else "")
+
+
+def _piece_field(spec, d: Drawn, e, run: List[dict], k: int, v: float, other=None) -> Optional[str]:
+    """The spec field, with its value, that puts piece k of edge e's drawn run at v on its
+    axis: `points` for a pinned line; bend_x / bend_y for a middle piece (and a trunk
+    follower's piece that ends on the trunk: the shared bend); from_offset / to_offset for
+    an end piece on a node's side while v stays on that side, else None."""
+    a = _axis_of(run[k])
+    n = len(run)
+    alt = f"; or {_f(other)}" if other is not None else ""
+    if e.points:
+        return f"{M.edge_name(spec, e.n)} points: move {_piece_name(run, k)} to {a}={_f(v)}{alt}"
+    if 0 < k < n - 1:
+        return f"{M.edge_name(spec, e.n)} bend_{a}: {_f(v)} (moves {_piece_name(run, k)}{alt})"
+    end = _at_icon(d, e, run, k)
+    if end is None:             # ends on the trunk it joins: the trunk's shared bend
+        return (f"{M.edge_name(spec, e.n)} bend_{a}: {_f(v)} (moves {_piece_name(run, k)}"
+                f"{', the trunk' + chr(39) + 's shared bend' if e.trunk else ''}{alt})")
+    field, ref, box, _ = end
+    c = _centre(box)[0 if a == "x" else 1]
+    half = (box[2] - box[0] if a == "x" else box[3] - box[1]) / 2
+    if abs(v - c) < half:
+        return f"{M.edge_name(spec, e.n)} {field}: {_f(v - c)} (moves {_piece_name(run, k)} to {a}={_f(v)})"
+    return None
+
+
 def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
     """A spec change, with its value, that takes piece i of a drawn line off node nid's
-    footprint (OVER_CLEAR beyond its nearer side), in the field that places that piece:
-    `points` for a pinned line; bend_x / bend_y for the middle piece of an HVH / VHV (and a
-    trunk follower's piece that ends on the trunk: the shared bend); from_offset / to_offset
-    for an end piece on a node's side while the value stays on that side. A piece that runs
+    footprint (OVER_CLEAR beyond its nearer side), in the field that places that piece
+    (_piece_field). A piece that runs
     across its own end's icon where it attaches cannot leave the icon: the piece before it is
     moved instead, past the footprint on the side the line attaches to (privatelink edge:12,
     a VHV into S3's bottom: its bend_y below S3). An end piece that cannot move far enough on
@@ -599,44 +661,17 @@ def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
     s = run[i]
     foot = d.foot.get(nid, d.node_icon[nid]["box"])
     n = len(run)
-
-    def axis_of(seg):
-        return "x" if _vert(seg) else "y" if _horiz(seg) else None
-
-    def piece(k):
-        a = axis_of(run[k])
-        return f"the {'vertical' if a == 'x' else 'horizontal'} piece at {a}={_f(run[k]['p'][0 if a == 'x' else 1])}"
-
-    mine = {id(x) for x in run}
-    trunk = [x for x in own_pieces(d, e.n) if id(x) not in mine]
+    axis_of, piece = _axis_of, (lambda k: _piece_name(run, k))
 
     def at_icon(k):
-        """(field, node id, icon box, end point) when piece k ends on a node (its footprint,
-        as the rule's attach pieces), not on the trunk it joins."""
-        for kk, pt, ref, kind, field in ((0, run[0]["p"], e.a, e.a_kind, "from_offset"),
-                                         (n - 1, run[-1]["q"], e.b, e.b_kind, "to_offset")):
-            icon, ft = d.node_icon.get(ref), d.foot.get(ref)
-            if (kk == k and kind == "node" and icon is not None and ft is not None
-                    and _pt_box(pt, ft) <= CL.END_REACH and not any(CL.on_seg(pt, x) for x in trunk)):
-                return field, ref, icon["box"], pt
-        return None
+        return _at_icon(d, e, run, k)
 
     def field_for(k, v, other=None):
         a = axis_of(run[k])
-        alt = f"; or {_f(other)}" if other is not None else ""
-        if e.points:
-            return f"{M.edge_name(spec, e.n)} points: move {piece(k)} to {a}={_f(v)}{alt}"
-        if 0 < k < n - 1:
-            return f"{M.edge_name(spec, e.n)} bend_{a}: {_f(v)} (moves {piece(k)}{alt})"
-        end = at_icon(k)
-        if end is None:             # ends on the trunk it joins: the trunk's shared bend
-            shared = ", the trunk's shared bend" if e.trunk else ""
-            return f"{M.edge_name(spec, e.n)} bend_{a}: {_f(v)} (moves {piece(k)}{shared}{alt})"
-        field, ref, box, _ = end
-        c = _centre(box)[0 if a == "x" else 1]
-        half = (box[2] - box[0] if a == "x" else box[3] - box[1]) / 2
-        if abs(v - c) < half:
-            return f"{M.edge_name(spec, e.n)} {field}: {_f(v - c)} (moves {piece(k)} to {a}={_f(v)})"
+        got = _piece_field(spec, d, e, run, k, v, other)
+        if got is not None:
+            return got
+        field, ref, box, _ = at_icon(k)
         tip = (f"{M.edge_name(spec, e.n)} shape / from_side / to_side ({piece(k)} leaves {_display(spec, ref)} on "
                f"{_display(spec, nid)}'s {'column' if a == 'x' else 'row'})")
         node = spec.nodes.get(nid)
@@ -735,6 +770,303 @@ def _over_nodes(spec, d: Drawn) -> List[Violation]:
                 f"try: {_over_try(spec, d, e, run, i, nid)}", 1.0, code="F6",
                 at=(tuple(s["p"]), tuple(s["q"]), tuple(d.foot.get(nid, d.node_icon[nid]["box"])))))
     return out
+
+
+# =======================================================================================
+# try values for F3 / F4 / F5 (the summary's unresolved warnings: layout.unfixable_warnings;
+# selection never asks for them, so they cost nothing per candidate)
+
+TRY_MARGIN = K.TEXT_GAP     # a suggested spot clears each threshold by this much more
+TRY_REACH = 160             # px a piece, label or badge is searched from where it is drawn
+TRY_STEP = 2
+
+
+def _pts_of(run: List[dict]) -> List[Pt]:
+    return [run[0]["p"]] + [s["q"] for s in run]
+
+
+def _rerun(run: List[dict], pts: Sequence[Pt]) -> List[dict]:
+    return [dict(s, p=pts[i], q=pts[i + 1]) for i, s in enumerate(run)]
+
+
+def _shifted(run: List[dict], k: int, v: float) -> Optional[List[dict]]:
+    """Edge run with piece k moved to v on its axis (the pieces beside it stretch), or None
+    when a piece beside it would turn back or an arrowhead's piece get shorter than MIN_ARROW."""
+    a = 0 if _axis_of(run[k]) == "x" else 1
+    pts = [list(p) for p in _pts_of(run)]
+    pts[k][a] = v
+    pts[k + 1][a] = v
+    pts = [tuple(p) for p in pts]
+    new = _rerun(run, pts)
+    for old, s in zip(run, new):
+        o = (old["q"][0] - old["p"][0], old["q"][1] - old["p"][1])
+        w = (s["q"][0] - s["p"][0], s["q"][1] - s["p"][1])
+        if o[0] * w[0] + o[1] * w[1] <= 0 and (abs(o[0]) + abs(o[1])) > 0.5:
+            return None
+    for j in (0, len(new) - 1):
+        if j in (k - 1, k + 1) and CL._head_at(run, 0 if j == 0 else 1) and \
+                math.hypot(new[j]["q"][0] - new[j]["p"][0], new[j]["q"][1] - new[j]["p"][1]) < CL.MIN_ARROW:
+            return None
+    return new
+
+
+def _junction_hit(a_run: List[dict], b_run: List[dict], feet, reach: float):
+    """F3's predicate for one pair of runs: (crossing, why) or None."""
+    pa, pb = _pts_of(a_run), _pts_of(b_run)
+    bends = pa[1:-1] + pb[1:-1]
+    ends = [i["box"] for pt in (pa[0], pa[-1], pb[0], pb[-1]) if (i := CL.end_icon(pt, feet)) is not None]
+    for s in a_run:
+        for o in b_run:
+            c = ortho_cross(s, o)
+            if c is None:
+                continue
+            bend = next((v for v in bends if math.dist(v, c) <= reach), None)
+            if bend is not None:
+                return c, f"a bend at ({_f(bend[0])},{_f(bend[1])})"
+            if any(_pt_box(c, bx) <= reach for bx in ends):
+                return c, "a node it ends at"
+    return None
+
+
+def _run_clear(spec, d: Drawn, e, pid: int, new: List[dict], changed: Sequence[int]) -> bool:
+    """Is edge e's run `new` (replacing path pid; pieces `changed` moved) clear of what the
+    tier-0 R-flow / R-border rules judge: no junction with another flow (F3, TRY_MARGIN wider),
+    no piece over a node's icon or any text but its own label (F6 / LINE OVER TEXT), none on
+    or in line with another flow (F1 / F2), along a border (B1) or through a header band (B2)?"""
+    own = {x for x, kind in ((e.a, e.a_kind), (e.b, e.b_kind)) if kind == "node"}
+    mine = f"edge:{e.n}"
+    pts = _pts_of(new)
+    for k in changed:
+        s = new[k]
+        p, q = s["p"], s["q"]
+        for nid, icon in d.node_icon.items():
+            ib = CL.shrink(icon["box"], 2.0)
+            if CL.seg_hits_box(p, q, ib):
+                attach = nid in own and k in (0, len(new) - 1) and any(
+                    _pt_box(pt, d.foot.get(nid, icon["box"])) <= CL.END_REACH for pt in (pts[0], pts[-1]))
+                if not (attach and _inside_len(p, q, ib) <= ATTACH_DEPTH + 1e-6):
+                    return False
+        for t in d.texts:
+            if d.owner.get(id(t["el"]), "").startswith(mine + ":"):
+                continue
+            if CL.seg_hits_box(p, q, CL.shrink(t["box"])):
+                return False
+    for qid, run in d.paths.items():
+        if qid != pid and CL.two_flows(new, run) and \
+                _junction_hit(new, run, d.feet, JUNCTION_REACH + TRY_MARGIN):
+            return False
+    paths = dict(d.paths)
+    paths[pid] = new
+    if any(pid in (id(s["el"]), id(o["el"])) for s, o, _ in CL.lines_on_lines(paths)):
+        return False
+    if any(pid in (id(s["el"]), id(o["el"])) for s, o, _ in CL.lines_in_line(paths)):
+        return False
+    borders = [s for s in d.segs if s["kind"] == "border"]
+    if CL.line_hugs(borders + [new[k] for k in changed], d.masks):
+        return False
+    bands = CL.header_bands(d.rects, d.icons, d.texts, d.owner)
+    return not CL.lines_in_headers([new[k] for k in changed], d.masks, bands, d.owner)
+
+
+def _move_try(spec, d: Drawn, pids: Sequence[int], why: str) -> str:
+    """The nearest clear move of one piece of the given drawn lines, as the spec field that
+    makes it (_piece_field), or "" when none within TRY_REACH clears every tier-0 test."""
+    best = None
+    for pid in pids:
+        n = d.path_edge.get(pid)
+        if n is None or n >= len(spec.edges):
+            continue
+        e = spec.edges[n]
+        run = d.paths[pid]
+        # one spec line drawn as several instances (or a trunk) moves them all: not simulated
+        if e.trunk or getattr(e, "fork", None) or sum(
+                1 for x in spec.edges if x.src == e.src and d.edge_paths.get(x.n)) > 1:
+            continue
+        for k, s in enumerate(run):
+            a = _axis_of(s)
+            if a is None or (not e.points and len(run) > 3 and 0 < k < len(run) - 1):
+                continue        # several bends: no one spec field places this piece
+            if not e.points and len(run) == 1:
+                continue        # a straight line: both ends would move
+            at = s["p"][0 if a == "x" else 1]
+            for step in range(1, TRY_REACH // TRY_STEP + 1):
+                if best is not None and step * TRY_STEP >= best[0]:
+                    break
+                hit = False
+                for v in (at - step * TRY_STEP, at + step * TRY_STEP):
+                    v = round(v)
+                    new = _shifted(run, k, v)
+                    if new is None:
+                        continue
+                    field = _piece_field(spec, d, e, run, k, v)
+                    if field is None:
+                        continue
+                    changed = [j for j in (k - 1, k, k + 1) if 0 <= j < len(run)]
+                    if _run_clear(spec, d, e, pid, new, changed):
+                        best = (abs(v - at), field)
+                        hit = True
+                        break
+                if hit:
+                    break
+    return f"{best[1]}, the nearest {why}" if best else ""
+
+
+def _f3_try(spec, d: Drawn, v: Violation) -> str:
+    ea, eb = v.owners[0], v.owners[1]
+    pairs = [(a, b) for a in d.paths for b in d.paths
+             if d.eid(a) == ea and d.eid(b) == eb and CL.two_flows(d.paths[a], d.paths[b])
+             and _junction_hit(d.paths[a], d.paths[b], d.feet, JUNCTION_REACH)]
+    if not pairs:
+        return ""
+    a, b = pairs[0]
+    return _move_try(spec, d, (a, b), f"spot where {ea} and {eb} cross clear of every bend and end "
+                                      f"(> {JUNCTION_REACH + TRY_MARGIN}px)")
+
+
+def _text_free(d: Drawn, box: BoxT, mine: str, gap: float) -> bool:
+    """box clears every text but `mine`'s, every icon (ICON_CLEAR), every connector (gap) and
+    stays on the canvas."""
+    cx, cy, cw, ch = d.canvas
+    if cw and not (box[0] >= cx and box[1] >= cy and box[2] <= cx + cw and box[3] <= cy + ch):
+        return False
+    for t in d.texts:
+        if d.owner.get(id(t["el"]), "").startswith(mine) or not t["s"].strip():
+            continue
+        if _box_box(box, t["box"]) < CL.ICON_CLEAR:
+            return False
+    for i in d.icons:
+        if d.owner.get(id(i["el"]), "").startswith(mine):
+            continue
+        if _box_box(box, i["box"]) < CL.ICON_CLEAR:
+            return False
+    return all(_box_seg(box, s) >= gap for s in d.segs if s["kind"] == "connector")
+
+
+def _f5_try(spec, d: Drawn, v: Violation, rule_side: bool = False) -> str:
+    """label_at {x, y, anchor} / step_at [x, y]: the nearest spot above a horizontal piece or
+    right of a vertical one (a badge: above / left, as the engine puts them) of the edge's own
+    line where F5 holds with TRY_MARGIN to spare and the box clears other text, icons and
+    lines."""
+    ref = v.owners[0].split(":")
+    if len(ref) < 2 or not ref[1].isdigit() or int(ref[1]) >= len(spec.edges):
+        return ""
+    n = int(ref[1])
+    e = spec.edges[n]
+    what = "badge" if "'s badge " in v.message and not rule_side else "label"
+    drawn_on = (lambda x: d.labels.get(x.n) or d.on_line.get(x.n)) if what == "label" else \
+        (lambda x: d.badges.get(x.n))
+    if sum(1 for x in spec.edges if x.src == e.src and drawn_on(x)) > 1:
+        return ""      # a point is one place for every instance of the line: they would overlap
+    if what == "label":
+        texts = sorted(d.labels.get(n) or d.on_line.get(n) or [], key=lambda t: t["box"][1])
+        if not texts:
+            return ""
+        box = _label_box(texts)
+    else:
+        if not d.badges.get(n):
+            return ""
+        box = d.badges[n][0][0]
+    own, other = net_and_other(d, n)
+    w, h = box[2] - box[0], box[3] - box[1]
+    cx0, cy0 = _centre(box)
+    best = None
+    # the rule side first (a label above a horizontal / right of a vertical piece, a badge
+    # where the engine puts it); only when no spot there clears, the other side
+    for other_side in ((False,) if rule_side else (False, True)):
+        for s in d.edge_segs(n):
+            horiz, vert = _horiz(s), _vert(s)
+            if not (horiz or vert):
+                continue
+            lo, hi = sorted((s["p"][0], s["q"][0])) if horiz else sorted((s["p"][1], s["q"][1]))
+            sign = 1 if other_side else -1
+            t = lo
+            while t <= hi + 1e-6:
+                if what == "label":
+                    c = ((t, s["p"][1] + sign * (K.TEXT_GAP + h / 2)) if horiz
+                         else (s["p"][0] - sign * (K.TEXT_GAP + 2 + w / 2), t))
+                else:
+                    c = ((t, s["p"][1] + sign * K.BADGE_DY) if horiz
+                         else (s["p"][0] + sign * K.VBADGE_DX, t))
+                t += TRY_STEP * 2
+                dist = math.hypot(c[0] - cx0, c[1] - cy0)
+                if best is not None and dist >= best[0]:
+                    continue
+                b = (c[0] - w / 2, c[1] - h / 2, c[0] + w / 2, c[1] + h / 2)
+                d_own = min(_box_seg(b, g) for g in own)
+                d_other = min((_box_seg(b, g) for g in other), default=math.inf)
+                if d_own > CL.LABEL_REACH - TRY_MARGIN or d_other <= d_own + CL.TEXT_GAP + TRY_MARGIN:
+                    continue
+                if not _text_free(d, b, f"edge:{n}:", 2.0):
+                    continue
+                best = (dist, c, b)
+        if best is not None:
+            break
+    if best is None:
+        return ""
+    _, c, b = best
+    dx, dy = c[0] - cx0, c[1] - cy0
+    if what == "badge":
+        return (f"{e.src} step_at: [{_rel(spec, d, e, c[0], 'x', c)}, {_rel(spec, d, e, c[1], 'y', c)}] "
+                f"(the badge's centre, at ({_f(round(c[0]))},{_f(round(c[1]))}) now: beside its own line and "
+                f"clear of the others)")
+    t0 = texts[0]
+    anchor = t0["el"].get("text-anchor", "start")
+    ax = {"middle": (t0["box"][0] + t0["box"][2]) / 2, "end": t0["box"][2]}.get(anchor, t0["box"][0])
+    base = t0["box"][1] + K.GLYPH_ASCENT * t0["fs"]
+    x, y = ax + dx, base + dy
+    return (f"{e.src} label_at: {{x: {_rel(spec, d, e, x, 'x', c)}, y: {_rel(spec, d, e, y, 'y', c)}, "
+            f"anchor: {anchor}}} (its first line's baseline, at ({_f(round(x))},{_f(round(y))}) now: beside its "
+            f"own line and clear of the others)")
+
+
+def _f4_try(spec, d: Drawn, v: Violation) -> str:
+    """F4 into a node whose arrowhead lands on (or within ICON_CLEAR of) another node: that
+    other node's dx / dy that takes its footprint ICON_CLEAR + TRY_MARGIN off the tip."""
+    m = [o for o in v.owners if o.startswith("node:")]
+    at = re.search(r"at \((-?[\d.]+),(-?[\d.]+)\)", v.message)
+    if at is None:
+        return ""
+    tip = (float(at.group(1)), float(at.group(2)))
+    target = m[0][5:] if m else None
+    wrong = m[1][5:] if len(m) > 1 else None
+    if wrong is None:
+        hit = CL.end_icon(tip, d.feet)
+        wrong = d.icon_node.get(id(hit)) if hit is not None else None
+    if wrong is None or wrong == target or wrong not in d.foot:
+        return ""
+    node = spec.nodes.get(wrong)
+    if node is None or node.xy is not None:
+        return ""
+    if any(isinstance(c, M.Expr) and c.ref == wrong for x in spec.nodes.values() for c in (x.xy or ())):
+        return ""       # a node pinned to it (xy: [q.cx, …]) moves with it
+    foot = d.foot[wrong]
+    clear = CL.ICON_CLEAR + TRY_MARGIN
+    stacked = {x for ids in spec.flow_stacks().values() for x in ids}
+    moves = {"x": min((tip[0] + clear - foot[0], tip[0] - clear - foot[2]), key=abs)}
+    if wrong not in stacked:
+        moves["y"] = min((tip[1] + clear - foot[1], tip[1] - clear - foot[3]), key=abs)
+    # both axes, the smaller move first: the solver can take a dx (dy) back when the track
+    # beside it is free to close up (xy-off document), so the other axis is the fallback
+    vals = [f"d{a}: {_f(round((node.dx if a == 'x' else node.dy) + sh))}"
+            for a, sh in sorted(moves.items(), key=lambda t: abs(t[1]))]
+    return (f"{node.src} {wrong}: {' or '.join(vals)} (moves {_display(spec, wrong)} {clear}px off the "
+            f"arrowhead into {_display(spec, target) if target else 'its target'})")
+
+
+def flow_try(spec, d: Drawn, v: Violation) -> str:
+    """A concrete spec change with its value for an F3 / F4 / F5 / L1 violation of draft d, or ""."""
+    try:
+        if v.code == "F3" and len(v.owners) == 2:
+            return _f3_try(spec, d, v)
+        if v.code == "F5":
+            return _f5_try(spec, d, v)
+        if v.code == "F4":
+            return _f4_try(spec, d, v)
+        if v.code == "L1":          # the label on its rule side (above / right), F5 kept too
+            return _f5_try(spec, d, v, rule_side=True)
+    except (KeyError, ValueError, IndexError, AttributeError):
+        return ""
+    return ""
 
 
 # =======================================================================================

@@ -111,3 +111,126 @@ def test_no_check_and_checker_failure_do_not_invent_spec_hints(tmp_path, capsys,
     _, _, text = draw(source, tmp_path, capsys)
     assert "warning: unresolved" not in text
     assert text.count("rule: checker error") == 1
+
+
+# stage 5 (actionable hints): F3 / F4 / F5 lead with a value; applied to the spec and drawn
+# again, that violation is gone (the hint names a real field that moves the thing)
+
+def applied(source, tmp_path, item, key, value):
+    import yaml
+    spec = yaml.safe_load(source.read_text())
+    kind, idx = re.match(r"(\w+)\[(\d+)\]", item).groups()
+    spec[kind][int(idx)][key] = yaml.safe_load(value)
+    out = tmp_path / "applied.layout.yaml"
+    out.write_text(yaml.safe_dump(spec, allow_unicode=True))
+    return out
+
+
+def hint_value(line, item, key):
+    m = re.search(re.escape(item) + r"(?: \S+ \S+:)? [^;]*?\b" + re.escape(key) + r": (\{[^}]*\}|[^\s;,()]+)", line)
+    assert m, line
+    return m.group(1)
+
+
+@pytest.mark.parametrize(("case", "mode", "code", "owner", "item", "key"), [
+    ("ports/u3", "document", "F3", "edge:3", "edges[3]", "from_offset"),
+    ("ports/g1", "slide", "F3", "edge:0", "edges[0]", "bend_y"),
+    ("qa/t2-false-junction", "slide", "F5", "edge:1", "edges[1]", "label_at"),
+    ("qa/t4-order-14steps", "slide", "F5", "edge:14", "edges[14]", "label_at"),
+    ("lanes/a", "slide", "F4", "edge:9", "nodes[8]", "dy"),
+    # the smaller move (dx) is taken back by the solver here; the other axis is offered too
+    ("xy/xy-off", "document", "F4", "edge:0", "nodes[2]", "dy"),
+])
+def test_flow_hint_value_clears_the_violation_when_applied(tmp_path, capsys, case, mode, code, owner, item, key):
+    source = ROOT / f"tests/corpus/{case}.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", mode)
+    rule = f"rule: R-flow {code} {owner}"
+    assert any(line.startswith(rule) for line in text.splitlines())
+    warning = next(line for line in text.splitlines()
+                   if line.startswith(f"warning: unresolved R-flow {code} ({owner}"))
+    hint = warning.split("spec hint (not a guarantee): ", 1)[1]
+    assert hint.startswith(item), hint          # the value leads, before the generic fields
+    value = hint_value(hint, item, key)
+    _, _, again = draw(applied(source, tmp_path, item, key, value), tmp_path, capsys, "--mode", mode)
+    assert not any(line.startswith(rule) for line in again.splitlines()), again
+
+
+def test_label_hint_is_relative_to_an_end_node(tmp_path, capsys):
+    source = ROOT / "tests/corpus/qa/t2-false-junction.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", "slide")
+    warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F5 "))
+    assert re.search(r"label_at: \{x: \w+\.cx[+-]\d+, y: \w+\.cy[+-]\d+, anchor: \w+\}", warning), warning
+
+
+def test_label_point_is_not_suggested_for_a_line_drawn_several_times(tmp_path, capsys):
+    # t3-ssm-trunk's edges[1] is `ec2.* ..> ep.*`: one point would stack both labels
+    source = ROOT / "tests/corpus/qa/t3-ssm-trunk.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", "document")
+    warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F5 "))
+    assert "label_at: {" not in warning
+
+
+def test_label_rule_hint_gives_a_spot_above_the_line(tmp_path, capsys, monkeypatch):
+    source = tmp_path / "l1.json"
+    source.write_text(json.dumps({
+        "name": "l1", "text_scale": "off", "cols": ["a", "b"], "rows": ["r"],
+        "nodes": [{"id": n, "icon": "service/AWS-Lambda", "label": n, "at": [n, "r"]} for n in ("a", "b")],
+        "edges": [{"e": "a -> b", "label": "HTTPS :443", "label_at": "below"}],
+    }))
+    real = rules.check
+    monkeypatch.setattr(rules, "check", lambda *a, **kw: real(*a, **kw) + [
+        rules.Violation("R-label", ("edge:0",), "L1 edge:0's label 'HTTPS :443' is below its line", code="L1")])
+    _, draft, text = draw(source, tmp_path, capsys)
+    warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-label L1 "))
+    m = re.search(r"label_at: \{x: (\S+), y: (\S+), anchor: (\w+)\}.*at \((-?[\d.]+),(-?[\d.]+)\) now", warning)
+    assert m, warning
+    line_y = float(re.search(rb'<g id="edge:0">\s*<line [^>]*y1="([\d.]+)"', draft).group(1))
+    assert float(m.group(5)) < line_y        # the baseline it names sits above the line
+
+
+def test_author_bend_collision_names_what_it_hits_and_the_nearest_clear_value(tmp_path, capsys):
+    source = ROOT / "tests/corpus/qa/t1-privatelink.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", "slide")
+    warning = next(line for line in text.splitlines()
+                   if line.startswith("warning: edges[11] s3b ..> s3: ") and "best of the candidates" in line)
+    assert "LINE OVER ICON of s3a" in warning and "LINE OVER TEXT 'S3' of s3" in warning
+    value = re.search(r"try bend_y: (\S+) \(= [\d.]+; row\.main-90 = 180 now\), the nearest clear value",
+                      warning).group(1)
+    _, _, again = draw(applied(source, tmp_path, "edges[11]", "bend_y", value), tmp_path, capsys,
+                       "--mode", "slide")
+    assert "edges[11] s3b ..> s3: " not in again
+    assert "rule: R-flow F6 edge:12" not in again and "rule: R-flow F1 " not in again
+
+
+def test_author_points_collision_suggests_the_nearest_clear_piece_value(tmp_path, capsys):
+    import yaml
+    spec = {"name": "pts", "mode": "document", "text_scale": "off",
+            "cols": ["c1", {"id": "c2", "min_gap_before": 120}, {"id": "c3", "min_gap_before": 120}],
+            "rows": ["r0", "r1"], "groups": [{"id": "cloud", "type": "cloud"}],
+            "nodes": [{"id": "m", "icon": "service/AWS-Lambda", "label": "M", "in": "cloud", "at": ["c2", "r0"]},
+                      {"id": "a", "icon": "service/AWS-Lambda", "label": "A", "in": "cloud", "at": ["c1", "r1"]},
+                      {"id": "b", "icon": "service/AWS-Lambda", "label": "B", "in": "cloud", "at": ["c3", "r1"]}],
+            "edges": [{"e": "a -> b", "points": [["a.cx", "a.y0"], ["a.cx", "m.cy"], ["b.cx", "m.cy"],
+                                                 ["b.cx", "b.y0"]]}]}
+    source = tmp_path / "pts.layout.yaml"
+    source.write_text(yaml.safe_dump(spec))
+    _, _, text = draw(source, tmp_path, capsys)
+    warning = next(line for line in text.splitlines() if line.startswith("warning: edges[0] a -> b: points: "))
+    assert "LINE OVER ICON of m" in warning and "of a" not in warning    # its own ends' touch is not a hit
+    y = re.search(r"move the horizontal piece at y=[\d.]+ \(points 2–3\) to y=([\d.]+), the nearest clear value",
+                  warning).group(1)
+    spec["edges"][0]["points"] = [["a.cx", "a.y0"], ["a.cx", float(y)], ["b.cx", float(y)], ["b.cx", "b.y0"]]
+    source.write_text(yaml.safe_dump(spec))
+    _, _, again = draw(source, tmp_path, capsys)
+    assert again.splitlines()[-1] == "Layout OK", again
+
+
+def test_slide_too_small_names_the_note_and_drops_circular_slide_advice(tmp_path, capsys):
+    source = ROOT / "tests/corpus/slide-fit/nfw-doc.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", "slide")
+    small = next(line for line in text.splitlines() if line.startswith("SLIDE TOO SMALL "))
+    assert "too tall" in small and "— the note under the drawing takes 122px of the height: shorten the steps" in small
+    floor = next(line for line in text.splitlines() if line.startswith("warning: smallest text "))
+    assert floor.endswith("; split the diagram")       # the run is a slide already
+    # a document spec drawn with --mode slide still learns it can become a slide spec
+    assert "write a slide spec (see docs/examples/specs/slides/)" in text.splitlines()[-1]

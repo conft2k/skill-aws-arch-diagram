@@ -1279,6 +1279,107 @@ class _Edge:
         return False
 
 
+CLEAR_REACH = 240     # px an author's bend / points piece is searched for its nearest clear value
+CLEAR_SPARE = 2       # px the values either side of a suggested one must be clean too
+
+
+def _beside_lines(pts: Sequence[Pt], others: Sequence[Tuple[Pt, Pt]]) -> bool:
+    """Does a piece of pts run along one of the other flows' pieces closer than a lane
+    (LANE_PITCH), overlapping it (read as one line: LINE ON LINE)?"""
+    for p, q in zip(pts, pts[1:]):
+        for a, b in others:
+            if abs(p[1] - q[1]) < 0.5 and abs(a[1] - b[1]) < 0.5:
+                d, lo, hi = abs(p[1] - a[1]), max(min(p[0], q[0]), min(a[0], b[0])), min(max(p[0], q[0]), max(a[0], b[0]))
+            elif abs(p[0] - q[0]) < 0.5 and abs(a[0] - b[0]) < 0.5:
+                d, lo, hi = abs(p[0] - a[0]), max(min(p[1], q[1]), min(a[1], b[1])), min(max(p[1], q[1]), max(a[1], b[1]))
+            else:
+                continue
+            if d < LANE_PITCH and hi - lo > 0.5:
+                return True
+    return False
+
+
+def _own_end_touch(ctx: _Ctx, x: "_Edge", k: int, n: int, prob: str) -> bool:
+    """An end piece's LINE OVER ICON on its own end node's icon: a `points` end written on
+    the icon border (a.y0) touches the router's 1px margin; check_layout's attach test
+    judges it, not this search."""
+    m = re.match(r"LINE OVER ICON \((-?[\d.]+),(-?[\d.]+)\)$", prob)
+    if not m or k not in (0, n - 1):
+        return False
+    ref = x.e.a if k == 0 else x.e.b
+    node = ctx.geom.nodes.get(ref)
+    return node is not None and abs(node.icon.x0 - float(m.group(1))) < 1 and abs(node.icon.y0 - float(m.group(2))) < 1
+
+
+def _clean(ctx: _Ctx, x: "_Edge", pts: Sequence[Pt], others, own_ends: bool = False) -> bool:
+    """No _line_problems (own_ends: but an end piece touching its own end's icon) and no
+    piece along another flow's line."""
+    if _beside_lines(pts, others):
+        return False
+    if not own_ends:
+        return not _line_problems(ctx, pts, x.hs, x.he, x.e.n in ctx.avoid_headers)
+    segs = list(zip(pts, pts[1:]))
+    for k, (p, q) in enumerate(segs):
+        if any(not _own_end_touch(ctx, x, k, len(segs), pr)
+               for pr in _segment_problems(ctx, p, q, x.e.n in ctx.avoid_headers)):
+            return False
+    return not [pr for pr in _line_problems(ctx, pts, x.hs, x.he) if not pr.startswith("LINE ")]
+
+
+def _nearest_clear(ctx: _Ctx, x: "_Edge", at: float, make, others, own_ends: bool = False) -> Optional[float]:
+    """The value nearest `at` (1px steps, within CLEAR_REACH) whose polyline make(v) is
+    _clean, and so are the values CLEAR_SPARE either side (a value at the very edge of a
+    margin reads as touching it, and a re-solve may shift it a little); None when none is."""
+    seen: Dict[float, bool] = {}
+
+    def ok(v):
+        if v not in seen:
+            pts = make(v)
+            seen[v] = pts is not None and _clean(ctx, x, pts, others, own_ends)
+        return seen[v]
+
+    span = (-CLEAR_SPARE, CLEAR_SPARE)
+    for k in range(1, CLEAR_REACH + 1):
+        for v in (at - k, at + k):
+            if ok(v) and all(ok(v + o) for o in span):
+                return v
+    return None
+
+
+def _with_offset(hint: M.Expr, delta: float) -> str:
+    """The author's bend expression moved by delta, with the value it has now."""
+    if hint.kind == "num":
+        return M.fmt_num(hint.offset + delta)
+    return _expr_text(replace(hint, offset=hint.offset + delta))
+
+
+def _points_try(ctx: _Ctx, x: "_Edge", pts: Sequence[Pt], others) -> str:
+    """For a `points` line with problems: the one piece move (the nearest clear value of the
+    first piece that has a problem) that clears the whole line, as a points edit; ""."""
+    pts = list(pts)
+    n = len(pts) - 1
+    for k, (p, q) in enumerate(zip(pts, pts[1:])):
+        if all(_own_end_touch(ctx, x, k, n, pr) for pr in _segment_problems(ctx, p, q, x.e.n in ctx.avoid_headers)) \
+                and not _beside_lines([p, q], others):
+            continue
+        vert, horiz = abs(p[0] - q[0]) < 0.5, abs(p[1] - q[1]) < 0.5
+        if not (vert or horiz) or k in (0, len(pts) - 2):
+            continue        # an end piece moves its end off the node: not a one-value change
+        i = 0 if vert else 1
+
+        def make(v, k=k, i=i):
+            new = [list(t) for t in pts]
+            new[k][i] = new[k + 1][i] = v
+            return [tuple(t) for t in new]
+
+        v = _nearest_clear(ctx, x, p[i], make, others, own_ends=True)
+        if v is not None:
+            a = "x" if vert else "y"
+            return (f"points: move the {'vertical' if vert else 'horizontal'} piece at {a}={M.fmt_num(p[i])} "
+                    f"(points {k + 1}–{k + 2}) to {a}={M.fmt_num(v)}, the nearest clear value")
+    return ""
+
+
 def _path(shape: str, pa: Pt, pb: Pt, bend: Optional[float]) -> List[Pt]:
     if shape.startswith("U"):            # a detour out of one side of both ends
         shape = shape[1:]
@@ -2790,6 +2891,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
             room = f"give {box} pad_{side}" if box else f"move the ends off the canvas {side} edge"
             fix = (f"{room} (room {side} of both ends for the leg"
                    f"{' and its label' if e.label or e.verb else ''}), or drop {leg} / shape")
+        elif hint is not None and mine and (near := bend_try(x, want, mine[0].bend)):
+            fix = f"{near} (or drop {leg}: the router finds that bend)"
         elif hint is not None:
             x2 = _Edge(ctx, replace(e, **{leg: None}), x.t)
             clean = [c for c in _candidates(ctx, x2, ports) if c[0] == want and c[3] is not None
@@ -2801,6 +2904,29 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
             fix = (f"widen the gap between the ends (min_gap_before / pad) so a {want} has a clean bend, "
                    f"or drop the hint and let the rule pick")
         return f"{_where(e)}: drew {r.shape} instead of {want}, refusing the requested {asked} — {why}; try {fix}"
+
+    def others_of(x: _Edge) -> List[Tuple[Pt, Pt]]:
+        return [seg for n, r in routes.items() if n != x.e.n and _flow(xs[n].e) != _flow(x.e)
+                for seg in zip(r.pts, r.pts[1:])]
+
+    def bend_try(x: _Edge, shape: str, at: Optional[float]) -> str:
+        """`<leg>: <value>` nearest the author's own bend (expression) at which the line in
+        `shape` is clean, or ""."""
+        e = x.e
+        leg = "bend_x" if shape in (HVH, H) else "bend_y" if shape in (VHV, V) else None
+        hint = getattr(e, leg) if leg else None
+        if not isinstance(hint, M.Expr) or at is None or x.t.trunk:
+            return ""
+        cand = next((c for c in _candidates(ctx, x, ports) if c[0] == shape and c[3] is not None
+                     and abs(c[3] - at) < 0.25), None)
+        if cand is None:
+            return ""
+        _, pa, pb, _ = cand
+        v = _nearest_clear(ctx, x, at, lambda v: _drawn(x, shape, pa, pb, v, None)[0], others_of(x))
+        if v is None:
+            return ""
+        return (f"{leg}: {_with_offset(hint, v - at)} (= {M.fmt_num(v)}; {_expr_text(hint)} = {M.fmt_num(at)} "
+                f"now), the nearest clear value")
 
     # a trunk follower drawn only up to its junction must end on the lead's drawn line: when
     # the lead took another shape (or bend) than the one the follower stopped short for, the
@@ -2821,7 +2947,20 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
     for n, r in sorted(routes.items()):
         x = xs[n]
         if r.probs and x.t.shape != P:      # `points` is the spec's own route: check_layout judges it
-            warns.append(f"{_where(x.e)}: {', '.join(sorted(set(r.probs)))} (best of the candidates)")
+            tip = bend_try(x, r.shape, r.bend) if r.shape == x.t.shape else ""
+            warns.append(f"{_where(x.e)}: {', '.join(sorted(set(_name_prob(ctx, p) for p in r.probs)))} "
+                         "(best of the candidates)"
+                         + (f"; try {tip}" if tip else ""))
+        elif r.probs and x.e.points:
+            # the author's own polyline: name what it hits and the nearest clear piece value
+            tip = _points_try(ctx, x, r.pts, others_of(x))
+            if tip:
+                segs = list(zip(r.pts, r.pts[1:]))
+                hit = [pr for k, (p, q) in enumerate(segs)
+                       for pr in _segment_problems(ctx, p, q, x.e.n in ctx.avoid_headers)
+                       if not _own_end_touch(ctx, x, k, len(segs), pr)]
+                named = "; ".join(dict.fromkeys(_name_prob(ctx, p) for p in hit))
+                warns.append(f"{_where(x.e)}: points: {named}; try {tip}")
         if r.shape != x.t.shape and x.t.shape != P and not r.joined and r.shape not in STEPS:
             if x.t.note == "override":
                 warns.append(refused(x, r))

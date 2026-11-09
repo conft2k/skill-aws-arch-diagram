@@ -490,8 +490,16 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   which tracks coincide, then separate them with `min_gap_before`; when Y was your own
   `shape` / `from_side` / `to_side`, the line goes on with `refusing the requested …`, what
   blocked it (`bend_y tgwa.y0-60 = 148: LINE OVER TEXT '10.1.0.0/16' of svcs`) and what to
-  try — a clean `bend_y: 181`, widening the gap between the ends, or for a same-side
-  out-and-back `give <box> pad_right`; a refused request runs no re-solve of its own).
+  try — the nearest clean `bend_y: tgwa.y0-27 (= 181; …)`, widening the gap between the
+  ends, or for a same-side out-and-back `give <box> pad_right`; a refused request runs no
+  re-solve of its own). Your own `bend_x` / `bend_y` drawn although it hits something says
+  what (`LINE OVER ICON of s3a, LINE OVER TEXT 'S3' of s3 (best of the candidates)`) and
+  `try bend_y: row.main+76 (= 346; row.main-90 = 180 now), the nearest clear value`; a
+  `points` line whose inner piece hits something gets `points: …; try points: move the
+  horizontal piece at y=80 (points 2–3) to y=53`. `SLIDE TOO SMALL` names the note first
+  when it is what adds to the overflowing side (`note: {place: lines}` for a pane, shorter
+  steps for note lines), and a gap hint (`min_gap_before`) on an auto-scaled drawing adds
+  the `text_scale` it was measured at.
 - `selection: default kept; evaluated N/M candidates`: when the rule checker flags the
   draft, the engine tries alternative drawings (other shapes or moves for the flagged
   edges) within a budget of M and keeps one only if it scores better. N is the number of
@@ -530,6 +538,13 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   text of an engine warning or `--explain` line (what moved a node, what keeps a gap) may
   still name nodes and boxes by their spec ids (`landed on box cloud`, `flow pitch 100 acm ↓
   cw`): search the spec for them.
+  F3, F4, F5, F6 and L1 lead with a value to write, the nearest one that clears the
+  rule on this draft: F3 the `bend_x` / `bend_y` / `from_offset` / `to_offset` /
+  `points` piece move that takes the crossing off the bend or end (`edges[3] from_offset:
+  16`), F4 the `dx` / `dy` of the node the arrowhead lands on, F5 / L1 a `label_at:
+  {x: <end>.cx±n, y: <end>.cy±n, anchor: …}` or `step_at: [<end>.cx±n, <end>.cy±n]`
+  on one of the edge's end nodes (none for a `.*` line drawn several times: one point
+  would stack its labels).
   Try the suggested spec change and draw again to check it.
   They are report-only: they change neither the draft nor the exit status. The last line
   starts with `Layout OK` (exit 0) or `N problems` (exit 1), followed, when needed, by

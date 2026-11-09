@@ -253,7 +253,7 @@ The engine measures the smallest text at the reader's size: target 10pt on a fit
 By default it enlarges every font together and lays out again, at most twice, keeping
 the earlier result if text shrinks or check/other rule counts grow. Use `text_scale: off`
 to retain the original layout, or a number such as `text_scale: 1.4` for a fixed multiplier.
-Below the 8pt/9px floor, split the diagram or write a `mode: slide` spec.
+Below the 8pt/9px floor, split the diagram (a document spec can also become a `mode: slide` spec).
 
 **Document R-fit.** In a document the drawing is shrunk to a 760px column, so unscaled 12px text
 reaches 11px only on a canvas ≤ ~830px wide; a typical slide-size draft (1000–1100px)
