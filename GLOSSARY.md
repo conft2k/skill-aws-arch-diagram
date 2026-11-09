@@ -110,6 +110,14 @@ _Avoid_: heuristic
 One instance of a rule that a draft breaks. It names the owners involved and carries a tier and a cost. Its identity is its rule, code and owner set; coordinates and owner order do not change that identity.
 _Avoid_: failure, finding
 
+**Line over node**:
+An R-flow violation (F6, tier 0): a connector piece passes over a node's icon body or its name block (the name and its sub caption lines), so the flow reads as passing through that node or its name is hidden. It names the edge and the crossed node. Group titles and CIDR lines, edge labels and step badges are not counted here; R-border, F5 and R-label own them.
+_Avoid_: crossing (two lines crossing each other), line through icon
+
+**Attach piece**:
+The piece of a line that ends on one of its own end nodes. It is the only part of the line exempt from line over node at that node, and only while it runs at most 4px into the icon (the icon box shrunk by 2px, as LINE OVER ICON measures). A line over its own end's name, or across its own end's icon anywhere else, is a line over node.
+_Avoid_: end segment, stub
+
 **Tier**:
 The rank of a rule when drawings are compared. Tier 0 means a reader misreads the diagram; tier 2 means fit and size. Tier 0 counts before tier 2.
 _Avoid_: severity, priority

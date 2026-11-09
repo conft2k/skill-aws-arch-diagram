@@ -20,7 +20,12 @@ The rules (tests/corpus/MANIFEST.yaml names them; the design is rules-design.md 
            within LABEL_REACH of its net (check_layout.joined: a trunk, a bus and its drops),
            and no other line is within TEXT_GAP of as close; a label or badge the spec places
            (label_at / step_at a point) is exempt (user decision). F3 measures to the end
-           nodes' icon boxes.
+           nodes' icon boxes. F6 a connector runs over a node's icon body or its name block
+           (label and sub lines) — LINE OVER ICON / LINE OVER TEXT's boxes, owned by (edge,
+           node), one per pair, with a `try:` value; the edge's own end nodes are exempt only
+           for the attach piece (the one ending on that node) while it runs at most
+           ATTACH_DEPTH into the icon. Group titles / CIDR lines (B2), edge labels and badges
+           (F5, R-label) are not counted (user decision 2026-11-09, line-cross spec).
   R-rt     a route table with `for:` (Node.assoc) sits beside what it is associated with.
            With a hub (the TGW) and associated lines A, the others at the hub N: RT1 (|A| ≥
            2) its centre is inside the bracket A's lines draw (bracket()), or, when every line
@@ -103,6 +108,14 @@ STRAIGHT = 0.5
 # (rules-design §6, after rt2.png): was 1 (64 / 60); rt/single 88 and rt/hub 97 pass, the
 # rt/nd-single document's 135 stays a violation.
 RT2_REACH_ICONS = 2
+# F6: the piece that reaches its own end's icon may run this far inside the (2px-shrunk)
+# icon box, where it attaches. On main 601099d every attach piece in the corpus runs 0px in
+# but privatelink edge:12 (44px, through its own S3), so 4 (LINE_CLEAR) lets a hand-placed
+# end sit a few px in and still catches a line drawn to the icon's middle
+# (docs/dev/line-cross/results/01-report-line-over-node.md).
+ATTACH_DEPTH = K.LINE_CLEAR
+# F6 try: a moved piece keeps this far from the crossed node's footprint (ICON_CLEAR).
+OVER_CLEAR = CL.ICON_CLEAR
 
 Pt = Tuple[float, float]
 BoxT = Tuple[float, float, float, float]
@@ -354,6 +367,7 @@ def flow_rules(spec, d: Drawn) -> List[Violation]:
     out += _junctions(d)
     out += _tips(spec, d)
     out += _attribution(spec, d)
+    out += _over_nodes(spec, d)
     return out
 
 
@@ -514,6 +528,134 @@ def _attribution(spec, d: Drawn) -> List[Violation]:
                 out.append(Violation("R-flow", (eid, o), f"F5 {eid}'s {what} {s!r} is {_f(d_other)}px from {o}'s line, "
                                      f"{_f(d_own)}px from its own line: it reads as {o}'s",
                                      d_own + CL.TEXT_GAP - d_other + 1, code="F5"))
+    return out
+
+
+def _inside_len(p: Pt, q: Pt, b: BoxT) -> float:
+    """How much of segment p–q lies inside box b (Liang–Barsky clip)."""
+    t0, t1 = 0.0, 1.0
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    for den, num in ((-dx, p[0] - b[0]), (dx, b[2] - p[0]), (-dy, p[1] - b[1]), (dy, b[3] - p[1])):
+        if abs(den) < 1e-12:
+            if num < 0:
+                return 0.0
+            continue
+        t = num / den
+        if den < 0:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+        if t0 > t1:
+            return 0.0
+    return (t1 - t0) * math.hypot(dx, dy)
+
+
+def _display(spec, ref: str) -> str:
+    """A node's or group's name as the drawing shows it (its label / title), else its id."""
+    n = spec.nodes.get(ref)
+    if n is not None and n.label:
+        return " ".join(n.label.split())
+    g = spec.groups.get(ref)
+    if g is not None and g.label:
+        return " ".join(g.label.split())
+    return ref
+
+
+def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
+    """A spec change that moves piece i of a drawn line clear of node nid's footprint: the
+    value that puts it OVER_CLEAR beyond the footprint's nearer side, in the field that holds
+    that piece (points for a pinned line; from_offset / to_offset for an end piece on a
+    node's side, while the value stays on that side; else bend_x / bend_y). An end piece that
+    cannot move far enough on its node's side gets the node move instead (dx / dy, not dy in
+    a flow column) and the routing fields."""
+    s = run[i]
+    foot = d.foot.get(nid, d.node_icon[nid]["box"])
+    if _vert(s):
+        axis, at, lo, hi = "x", s["p"][0], foot[0] - OVER_CLEAR, foot[2] + OVER_CLEAR
+    elif _horiz(s):
+        axis, at, lo, hi = "y", s["p"][1], foot[1] - OVER_CLEAR, foot[3] + OVER_CLEAR
+    else:
+        return f"{e.src} points / shape that keep the line off {nid}"
+    to, other = (lo, hi) if abs(at - lo) <= abs(at - hi) else (hi, lo)
+    piece = f"the {'vertical' if axis == 'x' else 'horizontal'} piece at {axis}={_f(at)}"
+    if e.points:
+        return f"{e.src} points: move {piece} to {axis}={_f(to)} (or {_f(other)})"
+    ends = ((0, s["p"], e.a, e.a_kind, "from_offset"), (len(run) - 1, s["q"], e.b, e.b_kind, "to_offset"))
+    for k, pt, ref, kind, field in ends:
+        icon = d.node_icon.get(ref)
+        if k != i or kind != "node" or icon is None or _pt_box(pt, icon["box"]) > CL.END_REACH:
+            continue
+        c = _centre(icon["box"])[0 if axis == "x" else 1]
+        half = (icon["box"][2] - icon["box"][0] if axis == "x" else icon["box"][3] - icon["box"][1]) / 2
+        if abs(to - c) < half:
+            return f"{e.src} {field}: {_f(to - c)} (moves {piece} to {axis}={_f(to)})"
+        tip = f"{e.src} shape / from_side / to_side ({piece} leaves {ref} on {nid}'s {'column' if axis == 'x' else 'row'})"
+        n = spec.nodes.get(nid)
+        stacked = {x for ids in spec.flow_stacks().values() for x in ids}
+        if n is not None and n.xy is None and not (axis == "y" and nid in stacked):
+            # move the node so its footprint clears the piece: the smaller shift
+            lo_shift, hi_shift = at - OVER_CLEAR - foot[2 if axis == "x" else 3], at + OVER_CLEAR - foot[0 if axis == "x" else 1]
+            shift = lo_shift if abs(lo_shift) <= abs(hi_shift) else hi_shift
+            now = n.dx if axis == "x" else n.dy
+            tip += f", or {n.src} {nid}: d{axis}: {_f(now + shift)}"
+        return tip
+    return f"{e.src} bend_{axis}: {_f(to)} (moves {piece}; or {_f(other)})"
+
+
+def _over_nodes(spec, d: Drawn) -> List[Violation]:
+    """F6: a connector runs over a node's icon body or its name block (label and sub lines,
+    node_stacks), with check_layout's LINE OVER ICON / LINE OVER TEXT boxes (icon shrunk by 2,
+    text by 1; a piece under a later mask is hidden). Its own end nodes are exempt only for
+    the piece that reaches the icon where the line attaches, and only while that piece runs
+    at most ATTACH_DEPTH inside the icon; over an own end's name, or across its icon beyond
+    that, it is reported. Group titles / CIDR lines (R-border B2), edge labels and badges
+    (F5, R-label) are not counted here. One violation per (edge, node); user decision
+    2026-11-09 (docs/dev/line-cross/spec.md)."""
+    out = []
+    for e in spec.edges:
+        pids = d.edge_paths.get(e.n)
+        if not pids:
+            continue
+        own = {x for x, kind in ((e.a, e.a_kind), (e.b, e.b_kind)) if kind == "node"}
+        hits: Dict[str, Tuple[str, dict, int, List[dict]]] = {}
+        for pid in pids:
+            run = d.paths[pid]
+            pts = d.points(pid)
+            # attach pieces: (own node, piece index) where the line ends on that node
+            attach = {(x, k) for x in own if x in d.foot
+                      for k, pt in ((0, pts[0]), (len(run) - 1, pts[-1]))
+                      if _pt_box(pt, d.foot[x]) <= CL.END_REACH}
+            for nid, icon in d.node_icon.items():
+                if nid in hits:
+                    continue
+                ib = CL.shrink(icon["box"], 2.0)
+                names = d.stacks.get(id(icon["el"]), ())
+                for i, s in enumerate(run):
+                    p, q = s["p"], s["q"]
+                    if CL.seg_hits_box(p, q, ib) and not CL.masked(icon["box"], s["o"], d.masks):
+                        if not ((nid, i) in attach and _inside_len(p, q, ib) <= ATTACH_DEPTH + 1e-6):
+                            hits[nid] = ("icon", s, i, run)
+                            break
+                    t = next((t for t in names if CL.seg_hits_box(p, q, CL.shrink(t["box"]))
+                              and not CL.masked(t["box"], s["o"], d.masks)), None)
+                    if t is not None:
+                        hits[nid] = (f"name {t['s']!r}", s, i, run)
+                        break
+        for nid in sorted(hits):
+            what, s, i, run = hits[nid]
+            eid, name = f"edge:{e.n}", _display(spec, nid)
+            if nid not in own:
+                why = (f"runs over {name}'s {what} {CL.fmt(s)}: the flow reads as passing through {name}"
+                       + (", and the name is hidden" if what != "icon" else ""))
+            elif what == "icon":
+                why = (f"runs across its own end {name}'s icon {CL.fmt(s)} beyond where it attaches: "
+                       "the line is drawn through its target")
+            else:
+                why = f"runs over its own end {name}'s {what} {CL.fmt(s)}: the name is hidden"
+            out.append(Violation(
+                "R-flow", (eid, f"node:{nid}"),
+                f"F6 {eid} ({_display(spec, e.a)} → {_display(spec, e.b)}) {why}; "
+                f"try: {_over_try(spec, d, e, run, i, nid)}", 1.0, code="F6"))
     return out
 
 

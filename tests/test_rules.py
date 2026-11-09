@@ -181,6 +181,115 @@ class FlowRules(unittest.TestCase):
         self.assertEqual(codes(self.run_flow(sp, *parts), "F3"), [])
 
 
+def named(nid, x, y, name, *sub, icon=ICON):
+    """A node with its name and sub caption lines as layout.py draws them (14px, then 12px
+    lines 16px apart)."""
+    lines = [f'<text x="{x + 24}" y="{y + 66}" font-size="14" text-anchor="middle" fill="#232F3E">{name}</text>']
+    lines += [f'<text x="{x + 24}" y="{y + 82 + 16 * k}" font-size="12" text-anchor="middle" '
+              f'fill="#545B64">{t}</text>' for k, t in enumerate(sub)]
+    return f'<g id="node:{nid}"><image href="bundle:{icon}" x="{x}" y="{y}" width="48" height="48"/>{"".join(lines)}</g>'
+
+
+class LineOverNode(unittest.TestCase):
+    """F6 (line-cross spec, user decisions 2026-11-09): a line over a node's icon body or its
+    name block is tier 0, owned by (edge, node); its own end nodes are exempt only for the
+    piece that reaches the icon where it attaches."""
+
+    def f6(self, sp, *parts):
+        return codes(rules.flow_rules(sp, rules.Drawn.parse(svg(*parts))), "F6")
+
+    def setUp(self):
+        self.sp = spec(edges=[("a", "b")], nodes="abc")
+        for nid, name in (("a", "Client"), ("b", "Database"), ("c", "Cache")):
+            self.sp.nodes[nid].label = name
+        self.sp.edges[0].src = "edges[0]"
+
+    def test_line_over_another_nodes_icon(self):
+        parts = [named("a", 50, 100, "Client"), named("c", 250, 100, "Cache"), named("b", 450, 100, "Database")]
+        bad = self.f6(self.sp, *parts, edge(0, [(102, 124), (446, 124)]))
+        self.assertEqual([v.owners for v in bad], [("edge:0", "node:c")])
+        v = bad[0]
+        self.assertEqual((v.rule, v.tier), ("R-flow", rules.TIER_HARD))
+        # display names, not ids, and a spec change to try
+        self.assertIn("(Client → Database)", v.message)
+        self.assertIn("passing through Cache", v.message)
+        self.assertIn("try: edges[0]", v.message)
+        # out of a's footprint bottom (under its name) and into b's
+        good = self.f6(self.sp, *parts, edge(0, [(76, 172), (76, 230), (474, 230), (474, 174)]))
+        self.assertEqual(good, [])
+
+    def test_line_over_another_nodes_name_and_sub_lines(self):
+        parts = [named("a", 50, 300, "Client"), named("b", 450, 300, "Database"),
+                 named("c", 250, 100, "Cache", "(private subnet)", "second caption line")]
+        # under the icon: through the name line, then through the last sub caption line only
+        for y in (166, 198):
+            bad = self.f6(self.sp, *parts, edge(0, [(102, 324), (180, 324), (180, y), (380, y), (380, 324),
+                                                    (446, 324)]))
+            self.assertEqual([v.owners for v in bad], [("edge:0", "node:c")], y)
+            self.assertIn("the name is hidden", bad[0].message)
+        clear = self.f6(self.sp, *parts, edge(0, [(102, 324), (180, 324), (180, 230), (380, 230), (380, 324),
+                                                  (446, 324)]))
+        self.assertEqual(clear, [])
+
+    def test_touching_its_own_end_icon_where_it_attaches_passes(self):
+        parts = [named("a", 50, 100, "Client"), named("b", 450, 100, "Database")]
+        # the arrowhead stops at the icon's side (4px short), and a headless end on the side
+        self.assertEqual(self.f6(self.sp, *parts, edge(0, [(102, 124), (446, 124)])), [])
+        self.assertEqual(self.f6(self.sp, *parts, edge(0, [(98, 124), (450, 124)], end=False)), [])
+        # an end piece that runs ATTACH_DEPTH into the (2px-shrunk) icon still attaches
+        tip = 452 + rules.ATTACH_DEPTH
+        self.assertEqual(self.f6(self.sp, *parts, edge(0, [(102, 124), (tip, 124)], end=False)), [])
+        # into the icon's middle: drawn through its target
+        deep = self.f6(self.sp, *parts, edge(0, [(102, 124), (474, 124)], end=False))
+        self.assertEqual([v.owners for v in deep], [("edge:0", "node:b")])
+        self.assertIn("its own end Database's icon", deep[0].message)
+
+    def test_across_its_own_end_icon_beyond_the_attach_point(self):
+        # privatelink edge:12: the line passes down through its target's icon, then turns back in
+        parts = [named("a", 50, 300, "Client"), named("b", 450, 100, "Database")]
+        bad = self.f6(self.sp, *parts, edge(0, [(102, 324), (474, 324), (474, 60), (530, 60), (530, 124),
+                                                (502, 124)]))
+        self.assertEqual([v.owners for v in bad], [("edge:0", "node:b")])
+        self.assertIn("beyond where it attaches", bad[0].message)
+
+    def test_over_its_own_end_nodes_name(self):
+        # ssm-trunk edge:4: a trunk member joins the stem across its target's name lines
+        parts = [named("a", 50, 300, "Client"), named("b", 450, 100, "Database", "IAM authorized sessions")]
+        bad = self.f6(self.sp, *parts, edge(0, [(102, 324), (430, 324), (430, 124), (446, 124)]))
+        self.assertEqual([v.owners for v in bad], [("edge:0", "node:b")])
+        self.assertIn("its own end Database's name", bad[0].message)
+        self.assertIn("bend_x: ", bad[0].message)
+        clear = self.f6(self.sp, *parts, edge(0, [(102, 324), (380, 324), (380, 124), (446, 124)]))
+        self.assertEqual(clear, [])
+
+    def test_group_titles_edge_labels_and_badges_are_other_rules(self):
+        sp = spec(edges=[("a", "b"), ("a", "c")], nodes="abc", steps=1)
+        parts = [named("a", 50, 300, "Client"), named("b", 450, 300, "Database"), named("c", 600, 500, "Cache"),
+                 '<g id="group:v"><rect x="200" y="50" width="200" height="200" fill="none" stroke="#8C4FFF"/>'
+                 '<text x="210" y="70" font-size="14" font-weight="700" fill="#232F3E">VPC</text>'
+                 '<text x="210" y="86" font-size="12" fill="#545B64">10.0.0.0/16</text></g>',
+                 label(1, 400, 518, s="TCP 6379"), badge(1, 300, 470, 1),
+                 # edge 0 runs over the VPC title, its CIDR line, edge 1's badge and its label,
+                 # then comes up into b from under its name
+                 edge(0, [(102, 324), (215, 324), (215, 40), (300, 40), (300, 515), (474, 515), (474, 376)]),
+                 edge(1, [(102, 324), (130, 324), (130, 524), (596, 524)])]
+        self.assertEqual(self.f6(sp, *parts), [])
+
+    def test_hand_placed_lines_get_a_try_value(self):
+        parts = [named("a", 50, 100, "Client"), named("c", 250, 300, "Cache"), named("b", 450, 100, "Database")]
+        run = [(102, 124), (274, 124), (274, 450), (474, 450), (474, 174)]
+        self.sp.edges[0].points = [(M.Expr("num", offset=x), M.Expr("num", offset=y)) for x, y in run]
+        bad = self.f6(self.sp, *parts, edge(0, run))
+        self.assertEqual([v.owners for v in bad], [("edge:0", "node:c")])
+        self.assertIn("try: edges[0] points: move the vertical piece at x=274 to x=", bad[0].message)
+        self.sp.edges[0].points = None
+        self.sp.edges[0].bend_x = M.Expr("num", offset=274)
+        bad = self.f6(self.sp, *parts, edge(0, run))
+        self.assertIn("try: edges[0] bend_x: 242 ", bad[0].message)
+        # pinned edges are never rerouted by selection
+        self.assertFalse(layout.layout_route.skippable(self.sp.edges[0]))
+
+
 class LabelRules(unittest.TestCase):
     def run_label(self, sp, *parts):
         return rules.label_rules(sp, rules.Drawn.parse(svg(*parts)))

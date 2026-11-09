@@ -1213,8 +1213,9 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
     attribution, for example). In that case only its owners' existing hints apply;
     do not invent geometry or claim a suggested placement was verified.
     """
-    check_kind = {"F1": "LINE ON LINE", "F2": "LINE ON LINE", "F4": "LOOSE END",
-                  "B1": "LINE HUGS BORDER", "B2": "LINE IN HEADER"}
+    check_kind = {"F1": ("LINE ON LINE",), "F2": ("LINE ON LINE",), "F4": ("LOOSE END",),
+                  "F6": ("LINE OVER ICON", "LINE OVER TEXT"),
+                  "B1": ("LINE HUGS BORDER",), "B2": ("LINE IN HEADER",)}
     lines = []
     for v in violations:
         if v.rule not in SELECTION_RULES and v.rule != "R-fit":
@@ -1225,7 +1226,7 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
         elif v.rule == "R-twin" and v.code == "TWR":
             tip = v.message.split("try: ", 1)[1]      # the row order to write: no draft geometry
         else:
-            problem = next((p for p in problems if p.iss.kind == check_kind.get(v.code)
+            problem = next((p for p in problems if p.iss.kind in check_kind.get(v.code, ())
                             and set(owners) <= set(p.owners)), None)
             if problem is None:
                 # F5 names the edge, but spec_fix needs its label/badge owner.
@@ -1238,6 +1239,9 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
                         owners[0] = f"edge:{edge_of(owners[0])[0]}:label"
                 problem = Problem(CL.Issue(v.code, v.message, [], {}), owners, [])
             tip = spec_fix(spec, geom, problem)
+            if v.code == "F6" and "; try: " in v.message:
+                # the value that moves the crossing piece (or the node) clear comes first
+                tip = "; ".join(t for t in (v.message.split("; try: ", 1)[1], tip) if t)
         lead = f"warning: unresolved {v.rule} {v.code} ({', '.join(v.owners)})"
         lines.append(lead + (f"; spec hint (not a guarantee): {tip}" if tip else
                              "; no spec hint: the existing spec-fix hints do not apply to these owners"))
