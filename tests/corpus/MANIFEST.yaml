@@ -1059,30 +1059,37 @@ cases:
   # rules.py 미검출: authoring guidance has no draft rule; original QA specs retain the relevant flows.
   # 3 AZ 큰 그림에서 AZ 3 → DB 선이 AZ 2 서버를 지나갑니다(T4 large_3az). 축소본 three_az_writer_9nodes에서는 Endpoint/Aurora reader를 관통합니다.
   # line-cross 01: F6 reports each crossing (edge, crossed node); the B2/F5 diagnostics are separate defects.
+  # line-cross 03: the shape move steps every orders.* line out of its server's bottom into the writer's left side on
+  # the document (F6 5 → 0, no rule violation left, PNG checked); on both slides orders.3 has no clean lane below
+  # its AZ row, so the move adds a tier-0 violation and is not taken there.
   - path: qa/t4-three-az-writer.layout.yaml
     rules: [R-flow]
     what: "9-node reduction: writer traffic crosses Endpoint/Aurora reader icons"
-    bad: {R-flow: node:db.2}   # F6: the orders.* -> db.1 trunk runs over Aurora reader 2 (and Endpoint 2/3, Aurora reader 3); no clean routing alternative (best of the candidates), so selection keeps it; try: move db.2 / edges[0] bend_x
+    bad: {R-flow: {slide: node:db.2, slide-no-title: node:db.2}}   # F6: the orders.* -> db.1 lines run over Aurora reader 2 (and Endpoint 2/3, Aurora reader 3) along their AZ rows; the step-around candidates for orders.3 are all unclean and the one for orders.2 adds F5/L1, so selection keeps it; try: move db.2 / edges[0] bend_x
   - path: qa/lc-three-az-writer-clear.layout.yaml
     rules: [R-flow]
     good: [R-flow]
     what: "good pair of t4-three-az-writer: each order server writes to the Aurora instance in its own AZ; no line over an endpoint or database"
   # NAT trunk가 Route-Table 아이콘을 관통합니다(T3 nat-route-table).
   # line-cross 01: F6 reports the slide LINE OVER ICON as (edge, route table).
+  # line-cross 03: the shape move steps nat.1 out of its bottom, under NAT RT 1's name, into the IGW (F6 (0, rt.1)
+  # removed on both slides, PNG checked); nat.2 has no clean lane in AZ 2 and keeps its crossing.
   - path: qa/t3-nat-route-table.layout.yaml
     rules: [R-flow]
     what: "5-node NAT trunk crosses route-table icons on slides"
-    bad: {R-flow: {slide: node:rt.1, slide-no-title: node:rt.1}}   # F6: nat.* -> igw trunk over NAT RT on each AZ's row; a trunk has no routing alternative (ticket 02); try: rt.1 dy / shape
+    bad: {R-flow: {slide: node:rt.2, slide-no-title: node:rt.2}}   # F6: nat.2 -> igw runs over NAT RT 2 on AZ 2's row; its step-around candidates are unclean (subnet header above, box border below); try: rt.2 dy / shape
   - path: qa/lc-nat-route-table-clear.layout.yaml
     rules: [R-flow]
     good: [R-flow]
     what: "good pair of t3-nat-route-table: the route table sits left of the NAT gateway, off the NAT -> IGW trunk"
   # DNS outbound가 inbound 아이콘을 관통합니다(T3 dns-trunk).
   # line-cross 01: F6 reports the icon crossings; F1 separately detects the shared segments.
+  # line-cross 03: the shape move steps both outbound.* members off their AZ rows and merges them on one leg into the
+  # VGW (F6 2 → 0 and F1 2 → 0 on both slides, PNG checked): R-flow is now kept in every mode.
   - path: qa/t3-dns-trunk.layout.yaml
     rules: [R-flow]
     what: "5-node outbound DNS trunk crosses inbound ENIs on slides (F6; F1 separately detects shared ingress segments)"
-    bad: {R-flow: {slide: node:inbound.1, slide-no-title: node:inbound.1}}   # F6: the outbound trunk runs over Inbound ENI on each AZ's row; trunk: no routing alternative (ticket 02)
+    good: [R-flow]
   - path: qa/lc-dns-trunk-clear.layout.yaml
     rules: [R-flow]
     good: [R-flow]

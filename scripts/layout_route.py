@@ -1,7 +1,7 @@
 """Edge routing for the layout engine (W3): shapes, the space routes need, lines, labels, badges.
 
     plan(spec) -> [Requirement]                  space the routes need (Spec only)
-    draw(spec, geom, skip=None, avoid_headers=None) -> ([Element], [str])
+    draw(spec, geom, skip=None, avoid_headers=None, stems=(), steps=()) -> ([Element], [str])
     shapes(spec) -> {edge n: shape}              the rule-based shape choice plan() and draw() share
     same_side_problems(spec) -> [(where, msg)]   from_side = to_side lines no shape can draw (W1 rejects)
 
@@ -28,6 +28,12 @@ Shape choice (DESIGN 4.5) is a pure function of the Spec, recomputed by plan() a
      left and its right (a fan of spokes), so the two sides mirror (a hub with one free
      horizontal side would otherwise get a VH on one side and a HVH on the other).
   6. otherwise VHV.
+  Step-around (line-cross 03): an edge named in draw(steps=) (selection's shape move for a
+  line over a node on its own row or column; never an author placement) also gets VHVH /
+  HVHV candidates: out of the source's top / bottom (left / right), a lane in the first
+  free stretch beyond that port inside the innermost box holding both ends, a leg between
+  the ends and into the target's facing side. Its best clean one is drawn; a trunk follower
+  of a stepped lead runs its own lane into the lead's leg. No "drew X instead" warning.
 plan() also keeps a vertical leg at a node right of the headers of the boxes it enters
 or leaves through their top, a HVH label's run before the bend, and an overlay a line
 leaves sideways 16 inside its subnets (layout_model decision n).
@@ -122,6 +128,12 @@ def skippable(edge: Edge) -> bool:
 
 H, V, HVH, VHV, HV, VH, P = "H", "V", "HVH", "VHV", "HV", "VH", "P"
 SHAPES = (H, V, HVH, VHV, HV, VH)
+# step-around shapes (line-cross ticket 03): only for the edges selection names in
+# draw(steps=); never a spec `shape:`. VHVH leaves its source through a top / bottom side,
+# runs a horizontal lane off the source's row, a vertical leg in the gutter and into the
+# target's facing left / right side (HVHV the other way round); bend = (lane, leg).
+VHVH, HVHV = "VHVH", "HVHV"
+STEPS = (VHVH, HVHV)
 ALTERNATIVES = {H: (HVH, VHV), V: (VHV, HVH), HVH: (VHV, HV, VH), VHV: (HVH, VH, HV),
                 HV: (VH, HVH, VHV), VH: (HV, VHV, HVH), P: ()}
 HORIZ = ("left", "right")
@@ -983,6 +995,7 @@ class _Ctx:
         self.segment_checks = {}  # static obstacles; shared legs recur across route candidates
         self.obstacle_bands = {}  # many bends share a horizontal row or vertical column
         self.stem_span = {}       # draw(stems=): trunk leads searched along the whole trunk
+        self.steps = frozenset()  # draw(steps=): edges that also try the step-around shapes
         cloud = spec.cloud_id()
         self.cloud = geom.groups[cloud].rect if cloud in geom.groups else None
         # {(node id, side): [(edge n, end, port offset, spec line, trunk)]}: the ports the
@@ -1287,6 +1300,10 @@ def _path(shape: str, pa: Pt, pb: Pt, bend: Optional[float]) -> List[Pt]:
         return [pa, (pb[0], pa[1]), pb]
     if shape == VH:
         return [pa, (pa[0], pb[1]), pb]
+    if shape == VHVH:
+        return [pa, (pa[0], bend[0]), (bend[1], bend[0]), (bend[1], pb[1]), pb]
+    if shape == HVHV:
+        return [pa, (bend[0], pa[1]), (bend[0], bend[1]), (pb[0], bend[1]), pb]
     raise ValueError(shape)
 
 
@@ -1453,8 +1470,85 @@ def _candidates(ctx: _Ctx, x: _Edge, ports: Dict[Tuple[int, str], float]):
                 continue
             for b in (bends or [None]):
                 out.append((shape, pa, pb, b))
+    if x.e.n in ctx.steps:
+        out += _steps(ctx, x, ports)
     out += _detours(ctx, x, ports)
     return out
+
+
+STEP_TRIES = 4        # lane and leg values tried per side (nearest first)
+
+
+def _steps(ctx: _Ctx, x: _Edge, ports: Dict[Tuple[int, str], float]):
+    """Step-around candidates (line-cross ticket 03) for a line whose straight piece runs
+    along its source's row (column) over another node: a VHVH out of the source's bottom or
+    top side, a horizontal lane in the first free stretch beyond that side's port (clear of
+    icons and labels along the whole run between the ends), a vertical leg in the free
+    stretch between the ends (the target's arrow_target first, as a HVH bend) and into the
+    target's facing left / right side; HVHV the same turned by 90°. Shortest first. An
+    author placement never gets here (draw(steps=) names engine-routed edges only)."""
+    A, B = x.A, x.B
+    min_a = K.MIN_ARROW if x.hs else MIN_SEG
+    min_b = K.MIN_ARROW if x.he else MIN_SEG
+    headers = x.e.n in ctx.avoid_headers
+    out = []
+    for shape, i, dx in ((VHVH, 1, B.cx - A.cx), (HVHV, 0, B.cy - A.cy)):
+        if abs(dx) < 0.5:
+            continue
+        d = 1 if dx > 0 else -1
+        sb = (_hside if shape == VHVH else _vside)(-d)
+        firsts = VERT if shape == VHVH else HORIZ
+        for sa in firsts:
+            pa = _port(A, sa, B.cx if shape == VHVH else B.cy, _end_off(ctx, x, "a", sa, ports))
+            pb = _port(B, sb, A.cy if shape == VHVH else A.cx, _end_off(ctx, x, "b", sb, ports))
+            sgn = 1 if sa in ("bottom", "right") else -1
+            # the lane: beyond the source's port, running from the source to the target
+            near = pa[i] + sgn * min_a
+            far = near + sgn * 15 * NUDGE
+            # inside the innermost box holding both ends (or the canvas), as an out-and-back
+            common = _nonshared(ctx.spec, x.e)[2]
+            if common:
+                r = ctx.geom.groups[common[0]].rect
+                wall = (r.y1 if sgn > 0 else r.y0) if i == 1 else (r.x1 if sgn > 0 else r.x0)
+            else:
+                wall = ((ctx.geom.canvas_h if i == 1 else ctx.geom.canvas_w) if sgn > 0 else 0.0)
+            wall -= sgn * K.HUG_CLEAR
+            far = min(far, wall) if sgn > 0 else max(far, wall)
+            if (far - near) * sgn < 0:
+                continue
+            lo, hi = sorted((near, far))
+            lanes: List[float] = []
+            for clear in (ctx.m.trunk_clear, K.HUG_CLEAR):
+                for f0, f1 in sorted(_free(ctx, i == 0, lo, hi, pa[1 - i], pb[1 - i], clear, headers),
+                                     key=lambda iv: abs((iv[0] if sgn > 0 else iv[1]) - near)):
+                    start = math.ceil(f0 * 2) / 2 if sgn > 0 else math.floor(f1 * 2) / 2
+                    for k in range(2):
+                        v = start + sgn * k * NUDGE
+                        if f0 - 1e-6 <= v <= f1 + 1e-6 and all(abs(v - u) > 0.25 for u in lanes):
+                            lanes.append(v)
+                if lanes:
+                    break
+            for lane in lanes[:STEP_TRIES]:
+                # the leg: between the ends, the target's last piece at least min_b long
+                a0, b0 = pa[1 - i], pb[1 - i]
+                llo, lhi = (a0 + NUDGE, b0 - min_b) if d > 0 else (b0 + min_b, a0 - NUDGE)
+                want = b0 - d * ctx.m.arrow_target
+                legs: List[float] = []
+                for clear in (ctx.m.trunk_clear, K.HUG_CLEAR):
+                    free = _free(ctx, i == 1, llo, lhi, lane, pb[i], clear, headers)
+                    for f0, f1 in sorted(free, key=lambda iv: -abs((iv[0] + iv[1]) / 2 - a0)):
+                        for v in ([want] if f0 <= want <= f1 else []) + [(f0 + f1) / 2]:
+                            v = round(v * 2) / 2
+                            if f0 - 1e-6 <= v <= f1 + 1e-6 and all(abs(v - u) > 0.25 for u in legs):
+                                legs.append(v)
+                    if legs:
+                        break
+                for leg in legs[:STEP_TRIES]:
+                    out.append((shape, pa, pb, (lane, leg)))
+    def length(c):
+        pts = _path(*c)
+        return sum(_len(p, q) for p, q in zip(pts, pts[1:]))
+    return sorted(out, key=length)
 
 
 def _side_use(xs: Dict[int, "_Edge"], ports: Dict[Tuple[int, str], float]):
@@ -2474,10 +2568,11 @@ def _bend_groups(xs: Dict[int, _Edge]) -> List[List[int]]:
 
 def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
          avoid_headers=None, alternatives=None, alternative_edges=None,
-         stems=()) -> Tuple[List[Element], List[str]]:
+         stems=(), steps=()) -> Tuple[List[Element], List[str]]:
     skip = dict(skip or {})
     ctx = _Ctx(spec, geom)
     ctx.avoid_headers = set(avoid_headers or ())
+    ctx.steps = frozenset(steps)
     topo = _topology(spec)
     warns: List[str] = []
     xs: Dict[int, _Edge] = {}
@@ -2562,10 +2657,27 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         if lead is not None and lead.shape == t.shape:      # a trunk follower takes the lead's bend
             pa, pb = x.ends(t.shape, ports.get((x.e.n, "a"), 0.0), ports.get((x.e.n, "b"), 0.0))
             return build(x, (t.shape, pa, pb, lead.bend))
+        if lead is not None and lead.shape in STEPS and x.e.n in ctx.steps:
+            # a step-around lead: the follower runs its own lane into the lead's leg
+            seen, joins = set(), []
+            for c in _steps(ctx, x, ports):
+                if c[0] != lead.shape:
+                    continue
+                cand = (c[0], c[1], c[2], (c[3][0], lead.bend[1]))
+                if cand not in seen:
+                    seen.add(cand)
+                    r = build(x, cand)
+                    if r.quality < 3:
+                        joins.append(r)
+            if joins:
+                return min(joins, key=lambda r: r.quality)
         ranked, clean = ranked_routes(x)
         if not ranked:
             pa, pb = x.ends(H, 0, 0)
             return _Route(x.e.n, H, [pa, pb], x.hs, x.he, ["no candidate"])
+        stepped = [r for r in clean if r.shape in STEPS] if x.e.n in ctx.steps else []
+        if stepped:         # selection asked for the step-around shape: its best clean one
+            return stepped[0]
         return clean[min(k, len(clean) - 1)] if clean else ranked[0][2]
 
     def rejoin(x: _Edge, lead: _Route) -> _Route:
@@ -2710,7 +2822,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         x = xs[n]
         if r.probs and x.t.shape != P:      # `points` is the spec's own route: check_layout judges it
             warns.append(f"{_where(x.e)}: {', '.join(sorted(set(r.probs)))} (best of the candidates)")
-        if r.shape != x.t.shape and x.t.shape != P and not r.joined:
+        if r.shape != x.t.shape and x.t.shape != P and not r.joined and r.shape not in STEPS:
             if x.t.note == "override":
                 warns.append(refused(x, r))
             else:

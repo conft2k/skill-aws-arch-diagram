@@ -122,6 +122,10 @@ _Avoid_: end segment, stub
 Selection's answer to a line over node that its routing alternatives leave: the track gap the crossing piece runs through, beside the crossed node, is widened so the router finds a clear stretch, and a trunk's shared bend is searched along every member's run. Like every candidate it replaces the drawing only on a strictly better verdict, and only when it removes a line over node without adding any tier-0 violation.
 _Avoid_: spreading, push apart
 
+**Shape move**:
+Selection's answer to a line over node on the crossed node's own row or column, where there is no gap to widen: the line also tries the step-around shapes, which leave its source through the other pair of sides, run a lane off the row (or column) and turn into the target's facing side. A trunk's members step together and merge on one leg. It is adopted on the same test as the channel move. A line the author placed is drawn as written; a probe without its placement is reported as a `try:` value.
+_Avoid_: reroute, detour (a detour is the router's U-shape out of one side of both ends)
+
 **Tier**:
 The rank of a rule when drawings are compared. Tier 0 means a reader misreads the diagram; tier 2 means fit and size. Tier 0 counts before tier 2.
 _Avoid_: severity, priority

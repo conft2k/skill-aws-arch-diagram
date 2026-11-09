@@ -395,13 +395,83 @@ class LineOverNodeMoves(unittest.TestCase):
         self.assertEqual([c for c in calls if c], [])
 
     def test_author_trunk_is_reported_not_unbundled(self):
-        # with the channel move unavailable, drawing ssm's trunk as two lines removes the F6:
-        # the trunk is the author's `trunk: true`, so it is reported as a try:, not drawn
-        with mock.patch.object(layout, "channel_widenings", lambda *a: []):
+        # with the channel and shape moves unavailable (either removes this F6), drawing
+        # ssm's trunk as two lines removes the F6: the trunk is the author's `trunk: true`,
+        # so it is reported as a try:, not drawn
+        with mock.patch.object(layout, "channel_widenings", lambda *a: []), \
+                mock.patch.object(layout, "step_moves", lambda *a: []):
             text, _ = self.draw(self.SSM, "--mode", "slide")
         self.assertIn("rule: R-flow F6 edge:4 ", text)      # kept: the trunk is drawn as written
         self.assertIn("warning: author trunk edges[2] (trunk: true) keeps R-flow F6; "
                       "try: drop `trunk: true` from edges[2]", text)
+
+
+class LineOverNodeShapeMove(unittest.TestCase):
+    """Line-cross ticket 03: selection's shape move (step-around VHVH / HVHV candidates) for
+    an F6 whose straight piece runs along the crossed node's own row or column, judged
+    through the engine (layout.main) and the drawn geometry."""
+
+    QA = ROOT / "tests/corpus/qa"
+
+    draw = LineOverNodeMoves.draw
+
+    def hits(self, d, n, nid):
+        box = d.node_icon[nid]["box"]
+        return any(CL.seg_hits_box(s["p"], s["q"], box) for s in d.edge_segs(n))
+
+    def test_trunk_steps_around_the_node_on_its_row(self):
+        # t3-dns-trunk slide: outbound.* ..> vgw ran along each AZ row through Inbound ENI;
+        # both members step out of Outbound ENI's top / bottom, run a lane off the row and
+        # merge on one leg into VGW's right side
+        for mode in (("--mode", "slide"), ("--mode", "slide", "--no-title")):
+            text, draft = self.draw(self.QA / "t3-dns-trunk.layout.yaml", *mode)
+            self.assertNotIn("rule: R-flow F6 ", text)
+            line = next(l for l in text.splitlines() if l.startswith("selection:"))
+            self.assertIn("step-around shape tried: edge:2, edge:3", line)
+            self.assertIn("R-flow F6 ×2", line)
+            d = rules.Drawn.parse(draft)
+            self.assertFalse(self.hits(d, 2, "inbound.1"))
+            self.assertFalse(self.hits(d, 3, "inbound.2"))
+            lead = [p for s in d.edge_segs(2) for p in (s["p"], s["q"])]
+            end = d.edge_segs(3)[-1]["q"]
+            # the follower ends on the lead's vertical leg (one trunk, one arrowhead)
+            self.assertTrue(any(abs(s["p"][0] - s["q"][0]) < 0.5 and abs(s["p"][0] - end[0]) < 0.5
+                                and min(s["p"][1], s["q"][1]) - 0.5 <= end[1] <= max(s["p"][1], s["q"][1]) + 0.5
+                                for s in d.edge_segs(2)), (lead, end))
+
+    def test_separate_instances_step_around(self):
+        # t4-three-az-writer document: orders.2 / orders.3 -> db.1 ran along their AZ rows
+        # through Endpoint and the reader; every instance now steps into the writer's side
+        text, draft = self.draw(self.QA / "t4-three-az-writer.layout.yaml", "--mode", "document")
+        self.assertNotIn("rule: R-flow F6 ", text)
+        self.assertNotRegex(text, r"rule: R-(flow|border) ")
+        d = rules.Drawn.parse(draft)
+        for n, nid in ((1, "ep.2"), (1, "db.2"), (2, "ep.3"), (2, "db.3"), (2, "db.2")):
+            self.assertFalse(self.hits(d, n, nid), (n, nid))
+
+    def test_partial_removal_is_kept_when_it_adds_nothing(self):
+        # t3-nat-route-table slide: nat.1's step clears NAT RT 1; nat.2 has no clean lane in
+        # its AZ (header above, the box border below) and keeps its crossing
+        text, draft = self.draw(self.QA / "t3-nat-route-table.layout.yaml", "--mode", "slide")
+        self.assertNotIn("rule: R-flow F6 edge:0 ", text)
+        self.assertIn("rule: R-flow F6 edge:1 ", text)
+        self.assertFalse(self.hits(rules.Drawn.parse(draft), 0, "rt.1"))
+
+    def test_no_f6_never_steps(self):
+        # a run whose winner has no F6 never tries the shape move (t3-dns-trunk document)
+        text, _ = self.draw(self.QA / "t3-dns-trunk.layout.yaml", "--mode", "document")
+        self.assertNotIn("step-around", text)
+
+    def test_hand_placement_keeps_its_route_and_gets_a_try(self):
+        # privatelink edge:12 is the author's VHV (shape, bend_y, sides): it is drawn as
+        # written; the same move on a probe without that placement removes both F6, so it
+        # is reported as a try: value naming what the change would add
+        text, _ = self.draw(self.QA / "t1-privatelink.layout.yaml", "--mode", "slide")
+        self.assertIn("rule: R-flow F6 edge:12 ", text)
+        self.assertNotIn("step-around", text)
+        self.assertIn("warning: hand placement edges[11] (shape, bend_y, from_side, to_side) keeps R-flow F6; "
+                      "try: drop `shape` / `bend_y` / `from_side` / `to_side` from edges[11]", text)
+        self.assertIn("tried: F6 −2", text)
 
 
 class LabelRules(unittest.TestCase):

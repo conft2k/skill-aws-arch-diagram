@@ -22,13 +22,14 @@ def draw(source, tmp_path, capsys, *args):
     ("ports/u3", "document", "R-flow", "F3", "shape / bend_x / bend_y"),
     ("sides/xy3", "document", "R-flow", "F4", "dx / dy"),
     ("qa/t2-alb-trunk-header", "slide", "R-border", "B2", "pad / min_w / min_h"),
-    ("qa/t3-dns-trunk", "slide", "R-flow", "F1", "from_offset / to_offset"),
+    # (t3-dns-trunk slide's F1 is gone since line-cross 03's shape move: order-14steps keeps one)
+    ("qa/t4-order-14steps", "slide", "R-flow", "F1", "from_offset / to_offset"),
     ("qa/t3-cache-label", "slide", "R-flow", "F5", "label_at: above|below|left|right"),
     ("qa/t4-order-14steps", "slide", "R-flow", "F5", "label_at: above|below|left|right"),
     # line-cross 01: F6 leads with its own try value (the piece or the node moved clear)
-    # (t3-ssm-trunk slide's F6 is gone since line-cross 02's channel move; dns-trunk keeps its own)
-    ("qa/t3-dns-trunk", "slide", "R-flow", "F6", "inbound.1: dy: "),
-    ("qa/t3-nat-route-table", "slide", "R-flow", "F6", "rt.1: dy: "),
+    # (t3-ssm-trunk slide's F6 is gone since line-cross 02's channel move, t3-dns-trunk slide's
+    # and nat-route-table's rt.1 since line-cross 03's shape move; rt.2 keeps its own)
+    ("qa/t3-nat-route-table", "slide", "R-flow", "F6", "rt.2: dy: "),
 ])
 def test_each_remaining_enabled_violation_has_an_owner_hint(
         tmp_path, capsys, case, mode, rule, code, hint):
