@@ -526,7 +526,10 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   says what to edit, the spec entry and id first (`nodes[2] db db.2 (Aurora reader 2): dy:
   32`). Owner ids such as `edge:3` or `node:nat.2` are draft element ids (`<g id>`), for
   tools only; only `check_layout.py` run by itself on an SVG, with no spec to name it from,
-  shows a box as its drawn title and owner id (`box 'Data' (group:datasn.2)`).
+  shows a box as its drawn title and owner id (`box 'Data' (group:datasn.2)`). The reason
+  text of an engine warning or `--explain` line (what moved a node, what keeps a gap) may
+  still name nodes and boxes by their spec ids (`landed on box cloud`, `flow pitch 100 acm ↓
+  cw`): search the spec for them.
   Try the suggested spec change and draw again to check it.
   They are report-only: they change neither the draft nor the exit status. The last line
   starts with `Layout OK` (exit 0) or `N problems` (exit 1), followed, when needed, by

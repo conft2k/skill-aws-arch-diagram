@@ -73,7 +73,7 @@ The spec item a drawn element is grouped under in a draft. It can be an edge, an
 _Avoid_: owning element
 
 **Display name**:
-How engine and checker messages name an owner to the author: an edge by its spec entry and its ends' labels (`edges[0] (Order 2 → Aurora writer)`), a node by its label, a group by its title, plus the titles of the boxes that tell apart items whose label repeats (`NAT RT (Availability Zone 2)`). In the engine's output, owner ids (`edge:1`, `node:nat.2`) stay in machine-read fields only; `check_layout.py` run on its own has no spec, so it names a box by its drawn title and its owner id (`box 'Data' (group:datasn.2)`).
+How engine and checker messages name an owner to the author: an edge by its spec entry and its ends' labels (`edges[0] (Order 2 → Aurora writer)`), a node by its label, a group by its title, plus the titles of the boxes that tell apart items whose label repeats (`NAT RT (Availability Zone 2)`). In the engine's output, owner ids (`edge:1`, `node:nat.2`) stay in machine-read fields only, though the reason text of an engine warning or `--explain` line may still quote plain spec ids (`landed on box cloud`, `flow pitch 100 acm ↓ cw`); `check_layout.py` run on its own has no spec, so it names a box by its drawn title and its owner id (`box 'Data' (group:datasn.2)`).
 _Avoid_: owner id (in messages), internal id
 
 **Edge instance**:

@@ -14,6 +14,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+import json
+
 import layout
 import layout_spec
 
@@ -32,26 +34,6 @@ def author_lines(out):
     return [line for line in out if line and not line.startswith("draft: ")]
 
 
-# spec locators the author searches for ("nodes[2] db db.2", "edges[0] orders.2 -> db.1"),
-# quoted text and `keys`, tracks ("row:az2", "x col app", "{id: db"): ids belong there
-LOCATOR = re.compile(r"(?:nodes|groups)\[\d+\](?: [\w.\-]+,?)+|edges\[\d+\] [\w.\-*]+ \S+ [\w.\-*]+")
-QUOTED = re.compile(r"(?<![\w)])'[^']*'|`[^`]*`")
-TRACK = re.compile(r"(?:\b(?:row|col|rows|cols|column|flow \S+|id)[ :.]|\bid: )[\w.\-]+")
-WORD = re.compile(r"(?<![\w.\-])[A-Za-z_][\w\-]*(?:\.\d+)?(?![\w\-])(?!\.[A-Za-z_\d])")
-
-
-def bare_ids(spec, line):
-    """Node / group ids a line shows where a display name differs from the id."""
-    for pat in (QUOTED, LOCATOR, TRACK):
-        line = pat.sub(" ", line)
-    # words of the display names themselves ("S3 raw" is a label, not the id raw)
-    names = {layout.M.item_name(spec, i) for i in list(spec.nodes) + list(spec.groups)}
-    for name in sorted(names, key=len, reverse=True):
-        line = line.replace(name, " ")
-    return [w for w in WORD.findall(line)
-            if (w in spec.nodes or w in spec.groups) and layout.M.item_name(spec, w) != w]
-
-
 CASES = [
     ("qa/t4-three-az-writer", ("--mode", "slide")),       # F5, F6, B2 and feedback rounds on template copies
     ("qa/t3-nat-route-table", ("--mode", "slide")),       # F6 over a copy whose label repeats in each AZ
@@ -65,12 +47,12 @@ CASES = [
 
 
 @pytest.mark.parametrize(("case", "args"), CASES)
-def test_guidance_names_no_owner_or_bare_ids(tmp_path, capsys, case, args):
+def test_guidance_names_no_owner_ids(tmp_path, capsys, case, args):
     lines = author_lines(draw(case, tmp_path, capsys, *args))
-    spec = layout_spec.load(ROOT / f"tests/corpus/{case}.layout.yaml", mode=args[1])
     assert any(line.startswith(("rule: ", "warning: ")) for line in lines)
+    # owner ids never reach the author; bare spec ids inside an engine reason ("landed on box
+    # cloud") may, as spec ids the author can search for (references/layout_spec.md)
     assert [line for line in lines if OWNER_ID.search(line)] == []
-    assert [(line, bare_ids(spec, line)) for line in lines if bare_ids(spec, line)] == []
 
 
 def test_edges_by_spec_line_and_ends_nodes_by_label(tmp_path, capsys):
@@ -108,3 +90,47 @@ def test_route_table_rules_name_tables_hubs_and_lines(tmp_path, capsys):
     assert rt1
     # the associated lines by spec line and ends, not by instance number ("edges 8, 9")
     assert all(re.search(r"associated lines at \S.* draw \(edges\[\d+\] \(", line) for line in rt1)
+
+
+def draw_spec(d, tmp_path, capsys, *args):
+    src = tmp_path / "names.layout.json"
+    src.write_text(json.dumps(d), encoding="utf-8")
+    layout.main([str(src), "-o", str(tmp_path / "names.svg"), *args])
+    return capsys.readouterr().out
+
+
+def test_ids_that_are_ordinary_words_keys_or_expressions_print_unchanged(tmp_path, capsys):
+    # review repro: node ids `margin`, `width`, `bend_x` that are also column names, words
+    # of the engine's reasons, keys and expression parts; a label holding one of them
+    d = {"name": "words", "text_scale": "off", "cols": ["width", "margin"], "rows": ["ra", "rb", "rc"],
+         "groups": [{"id": "cloud", "type": "cloud"}],
+         "nodes": [{"id": "margin", "icon": "service/AWS-Lambda", "label": "Billing API", "in": "cloud",
+                    "at": ["width", "ra"]},
+                   {"id": "width", "icon": "service/AWS-Lambda", "label": "Worker", "in": "cloud",
+                    "at": ["margin", "rb"]},
+                   {"id": "bend_x", "icon": "service/AWS-Lambda", "label": "Frontend", "in": "cloud",
+                    "at": ["width", "rc"]}],
+         "edges": [{"e": "margin -> width", "shape": "HVH", "bend_x": "gap(width,margin)-400",
+                    "label": "width's margin"}]}
+    out = draw_spec(d, tmp_path, capsys, "--no-check", "--explain")
+    for bad in ("gap(Worker", "canvas Billing API", "Worker's Billing API", "Frontend gap("):
+        assert bad not in out
+    assert "gap(width,margin)-400" in out
+    assert "canvas margin" in out
+
+
+def test_a_name_is_printed_once(tmp_path, capsys):
+    # review repro: the label "S3 raw" holds the id `raw`; renaming must not run twice
+    out = draw("qa/t2-false-junction", tmp_path, capsys, "--mode", "slide", "--explain")
+    assert "S3 raw" in "\n".join(out)
+    assert not any("S3 S3" in line for line in out)
+
+
+def test_a_box_title_with_an_apostrophe_is_named(tmp_path, capsys):
+    # repr() quotes "Writer's subnet" with double quotes; the engine still names the copy
+    d = layout_spec._read(ROOT / "tests/corpus/qa/t4-three-az-writer.layout.yaml")[0]
+    next(g for g in d["groups"] if g["id"] == "datasn")["label"] = "Writer's subnet"
+    out = draw_spec(d, tmp_path, capsys, "--mode", "slide").splitlines()
+    header = [line for line in out if line.startswith("LINE IN HEADER ")]
+    assert header and all("group:" not in line for line in header)
+    assert any("the header band of Writer's subnet (Availability Zone 2) " in line for line in header)

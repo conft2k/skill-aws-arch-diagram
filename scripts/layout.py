@@ -1320,25 +1320,15 @@ def var_name(spec: Spec, v: str) -> str:
 
 
 OWNER_TOKEN = re.compile(r"\b(?:node|group|edge):[\w.\-]+(?::[a-z]+)?")
-# a bare spec id in a reason ("landed on box cloud", "flow pitch 100 acm ↓ cw", "az.1"): not
-# part of an expression ("cloud.x0+40", "sn.y1-54", "az.1.B"), a key ("dx:") or a locator
-BARE_ID = re.compile(r"(?<![\w.:\-\[{$])[A-Za-z_][\w\-]*(?:\.\d+)?(?![\w:\-\[(])(?!\.[A-Za-z_\d])(?!'(?!s\b))")
 # quoted text (labels, `spec keys`) is the author's own and stays as written
 QUOTED = re.compile(r"(?<![\w)])'[^']*'|`[^`]*`")
-# ids after these name a track or a key, not a node or box
-TRACK_CONTEXT = ("row ", "col ", "rows ", "cols ", "row:", "col:", "row.", "col.", "column ", "columns ",
-                 "track ", "id: ", "per ")
-# message words a test spec may also use as an id ("a", "p", "box"): never renamed
-PLAIN_WORDS = frozenset("""a an the to of on in at by or and it is its no not as for from with off up down
-    left right top bottom box node line row col gap pad edge group x y dx dy xy px so be both then that this
-    there here keep keeps move give drop write nothing other another each one two all""".split())
 
 
 def named_tokens(spec: Spec, text: str) -> str:
-    """The ids a reason quotes by their display names: owner ids and box-side variables
-    ("sibling gap 16 group:cloud | node:kms" → "… AWS Cloud | KMS") and bare node / group
-    ids ("landed on box cloud" → "… AWS Cloud", "header of snb" → "… Web subnet (AZ b)").
-    Quoted text, expressions, keys and track ids stay as written."""
+    """The owner ids and box-side variables a reason quotes by their display names
+    ("sibling gap 16 group:cloud | node:kms" → "… AWS Cloud | KMS"), once each. Bare spec
+    ids in a reason ("landed on box cloud") stay as written: telling an id from an
+    ordinary word or an expression in free text is not reliable."""
     def name(m):
         tok = m.group()
         kind, ref, _ = M.split_eid(tok)
@@ -1349,21 +1339,11 @@ def named_tokens(spec: Spec, text: str) -> str:
             return tok if got == tok else got
         return tok
 
-    def bare(part: str) -> str:
-        def one(m):
-            tok = m.group()
-            if tok in PLAIN_WORDS or part[:m.start()].endswith(TRACK_CONTEXT):
-                return tok
-            if tok in spec.nodes or tok in spec.groups:
-                return M.item_name(spec, tok)
-            return tok
-        return BARE_ID.sub(one, part)
-
     out, at = [], 0
     for q in QUOTED.finditer(text):
-        out += [bare(OWNER_TOKEN.sub(name, text[at:q.start()])), q.group()]
+        out += [OWNER_TOKEN.sub(name, text[at:q.start()]), q.group()]
         at = q.end()
-    out.append(bare(OWNER_TOKEN.sub(name, text[at:])))
+    out.append(OWNER_TOKEN.sub(name, text[at:]))
     return "".join(out)
 
 
@@ -1374,13 +1354,14 @@ def named_check(spec: Spec, msg: str) -> str:
     def box(m):
         gid = m.group(2)
         return M.group_name(spec, gid) if gid in spec.groups else m.group()
-    return re.sub(r"box ('[^']*') \(group:([\w.\-]+)\)", box, msg)
+    # the title as repr() quotes it: '…', or "…" when it holds an apostrophe ("Writer's subnet")
+    return re.sub(r"""box ('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*") \(group:([\w.\-]+)\)""", box, msg)
 
 
 def named_warning(spec: Spec, w: str) -> str:
     """An engine warning with the display names of the spec item it starts with, so the
     author can find it in the picture as well as in the spec: "edges[0] orders.2 -> db.1
-    (Order 2 → Aurora writer): …", "nodes[2] s3 (Log bucket): …", and of the ids its
+    (Order 2 → Aurora writer): …", "nodes[2] s3 (Log bucket): …", and of the owner ids its
     reason quotes (named_tokens). The engine reads its own warnings (shape misses,
     re-solve) in the plain form, so names go in only here."""
     head, sep, rest = w.partition(": ")
