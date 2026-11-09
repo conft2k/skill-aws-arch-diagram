@@ -9,8 +9,12 @@ SVG in layout.py's shape (<g id="edge:n"> runs with data-flow, <g id="node:id">,
 <g id="group:id">) with just the spec items the predicate reads. R-twin reads the solved
 geometry, so its cases build a spec and move one twin's node.
 """
+import contextlib
 import copy
+import io
+import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -288,6 +292,48 @@ class LineOverNode(unittest.TestCase):
         self.assertIn("try: edges[0] bend_x: 242 ", bad[0].message)
         # pinned edges are never rerouted by selection
         self.assertFalse(layout.layout_route.skippable(self.sp.edges[0]))
+
+
+class LineOverNodeEngine(unittest.TestCase):
+    """F6 through the engine: the drawn draft's rule lines (rules.check) and geometry."""
+
+    def draw(self, source, out, *args):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            layout.main([str(source), "-o", str(out), *args])
+        return buf.getvalue(), out.read_bytes()
+
+    def test_privatelink_try_value_moves_the_piece_off_the_node(self):
+        # review repro: the VHV s3b ..> s3 runs up across S3's own icon into its bottom; its
+        # try value names the field that places the piece before it (bend_y, not bend_x)
+        src = ROOT / "tests/corpus/qa/t1-privatelink.layout.yaml"
+        with tempfile.TemporaryDirectory() as tmp:
+            text, _ = self.draw(src, Path(tmp) / "a.svg", "--mode", "slide")
+            rule = next(l for l in text.splitlines() if l.startswith("rule: R-flow F6 edge:12 ")
+                        and "its own end S3's icon" in l)
+            m = re.search(r"try: edges\[11\] bend_y: ([0-9.]+) ", rule)
+            self.assertIsNotNone(m, rule)
+            fixed = Path(tmp) / "pl.layout.yaml"
+            spec_text = src.read_text()
+            self.assertIn("bend_y: row.main-90", spec_text)
+            fixed.write_text(spec_text.replace("bend_y: row.main-90", f"bend_y: {m.group(1)}"))
+            text, draft = self.draw(fixed, Path(tmp) / "b.svg", "--mode", "slide")
+        self.assertFalse([l for l in text.splitlines() if l.startswith("rule: R-flow F6 edge:12 (")
+                          and "S3's icon" in l])
+        d = rules.Drawn.parse(draft)
+        horiz = [s for s in d.edge_segs(12) if abs(s["p"][1] - s["q"][1]) < 0.5]
+        self.assertEqual([round(s["p"][1], 1) for s in horiz], [float(m.group(1))])
+        s3 = d.node_icon["s3"]["box"]
+        self.assertFalse(any(CL.seg_hits_box(s["p"], s["q"], CL.shrink(s3, 2.0)) for s in d.edge_segs(12)))
+
+    def test_a_winner_with_only_f6_still_tries_text_scale(self):
+        # review repro (trunk/v-fork slide): the TGW fork over Firewall RT's name existed on
+        # main; reporting it must not cost the gentle text enlargement main made (12 → 14px)
+        with tempfile.TemporaryDirectory() as tmp:
+            text, _ = self.draw(ROOT / "tests/corpus/trunk/v-fork.layout.yaml", Path(tmp) / "v.svg",
+                                "--mode", "slide")
+        self.assertIn("rule: R-flow F6 edge:9 ", text)
+        self.assertIn("the smallest text (14px)", text)
 
 
 class LabelRules(unittest.TestCase):

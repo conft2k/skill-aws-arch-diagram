@@ -562,44 +562,96 @@ def _display(spec, ref: str) -> str:
 
 
 def _over_try(spec, d: Drawn, e, run: List[dict], i: int, nid: str) -> str:
-    """A spec change that moves piece i of a drawn line clear of node nid's footprint: the
-    value that puts it OVER_CLEAR beyond the footprint's nearer side, in the field that holds
-    that piece (points for a pinned line; from_offset / to_offset for an end piece on a
-    node's side, while the value stays on that side; else bend_x / bend_y). An end piece that
-    cannot move far enough on its node's side gets the node move instead (dx / dy, not dy in
-    a flow column) and the routing fields."""
+    """A spec change, with its value, that takes piece i of a drawn line off node nid's
+    footprint (OVER_CLEAR beyond its nearer side), in the field that places that piece:
+    `points` for a pinned line; bend_x / bend_y for the middle piece of an HVH / VHV (and a
+    trunk follower's piece that ends on the trunk: the shared bend); from_offset / to_offset
+    for an end piece on a node's side while the value stays on that side. A piece that runs
+    across its own end's icon where it attaches cannot leave the icon: the piece before it is
+    moved instead, past the footprint on the side the line attaches to (privatelink edge:12,
+    a VHV into S3's bottom: its bend_y below S3). An end piece that cannot move far enough on
+    its node's side gets the routing fields and the crossed node's move (dx / dy, no dy in a
+    flow column)."""
     s = run[i]
     foot = d.foot.get(nid, d.node_icon[nid]["box"])
-    if _vert(s):
-        axis, at, lo, hi = "x", s["p"][0], foot[0] - OVER_CLEAR, foot[2] + OVER_CLEAR
-    elif _horiz(s):
-        axis, at, lo, hi = "y", s["p"][1], foot[1] - OVER_CLEAR, foot[3] + OVER_CLEAR
-    else:
-        return f"{e.src} points / shape that keep the line off {nid}"
-    to, other = (lo, hi) if abs(at - lo) <= abs(at - hi) else (hi, lo)
-    piece = f"the {'vertical' if axis == 'x' else 'horizontal'} piece at {axis}={_f(at)}"
-    if e.points:
-        return f"{e.src} points: move {piece} to {axis}={_f(to)} (or {_f(other)})"
-    ends = ((0, s["p"], e.a, e.a_kind, "from_offset"), (len(run) - 1, s["q"], e.b, e.b_kind, "to_offset"))
-    for k, pt, ref, kind, field in ends:
-        icon = d.node_icon.get(ref)
-        if k != i or kind != "node" or icon is None or _pt_box(pt, icon["box"]) > CL.END_REACH:
-            continue
-        c = _centre(icon["box"])[0 if axis == "x" else 1]
-        half = (icon["box"][2] - icon["box"][0] if axis == "x" else icon["box"][3] - icon["box"][1]) / 2
-        if abs(to - c) < half:
-            return f"{e.src} {field}: {_f(to - c)} (moves {piece} to {axis}={_f(to)})"
-        tip = f"{e.src} shape / from_side / to_side ({piece} leaves {ref} on {nid}'s {'column' if axis == 'x' else 'row'})"
-        n = spec.nodes.get(nid)
+    n = len(run)
+
+    def axis_of(seg):
+        return "x" if _vert(seg) else "y" if _horiz(seg) else None
+
+    def piece(k):
+        a = axis_of(run[k])
+        return f"the {'vertical' if a == 'x' else 'horizontal'} piece at {a}={_f(run[k]['p'][0 if a == 'x' else 1])}"
+
+    mine = {id(x) for x in run}
+    trunk = [x for x in own_pieces(d, e.n) if id(x) not in mine]
+
+    def at_icon(k):
+        """(field, node id, icon box, end point) when piece k ends on a node (its footprint,
+        as the rule's attach pieces), not on the trunk it joins."""
+        for kk, pt, ref, kind, field in ((0, run[0]["p"], e.a, e.a_kind, "from_offset"),
+                                         (n - 1, run[-1]["q"], e.b, e.b_kind, "to_offset")):
+            icon, ft = d.node_icon.get(ref), d.foot.get(ref)
+            if (kk == k and kind == "node" and icon is not None and ft is not None
+                    and _pt_box(pt, ft) <= CL.END_REACH and not any(CL.on_seg(pt, x) for x in trunk)):
+                return field, ref, icon["box"], pt
+        return None
+
+    def field_for(k, v, other=None):
+        a = axis_of(run[k])
+        alt = f"; or {_f(other)}" if other is not None else ""
+        if e.points:
+            return f"{e.src} points: move {piece(k)} to {a}={_f(v)}{alt}"
+        if 0 < k < n - 1:
+            return f"{e.src} bend_{a}: {_f(v)} (moves {piece(k)}{alt})"
+        end = at_icon(k)
+        if end is None:             # ends on the trunk it joins: the trunk's shared bend
+            return f"{e.src} bend_{a}: {_f(v)} (moves {piece(k)}{', the trunk' + chr(39) + 's shared bend' if e.trunk else ''}{alt})"
+        field, ref, box, _ = end
+        c = _centre(box)[0 if a == "x" else 1]
+        half = (box[2] - box[0] if a == "x" else box[3] - box[1]) / 2
+        if abs(v - c) < half:
+            return f"{e.src} {field}: {_f(v - c)} (moves {piece(k)} to {a}={_f(v)})"
+        tip = (f"{e.src} shape / from_side / to_side ({piece(k)} leaves {ref} on {nid}'s "
+               f"{'column' if a == 'x' else 'row'})")
+        node = spec.nodes.get(nid)
         stacked = {x for ids in spec.flow_stacks().values() for x in ids}
-        if n is not None and n.xy is None and not (axis == "y" and nid in stacked):
-            # move the node so its footprint clears the piece: the smaller shift
-            lo_shift, hi_shift = at - OVER_CLEAR - foot[2 if axis == "x" else 3], at + OVER_CLEAR - foot[0 if axis == "x" else 1]
+        if node is not None and node.xy is None and not (a == "y" and nid in stacked):
+            at = run[k]["p"][0 if a == "x" else 1]
+            lo_shift = at - OVER_CLEAR - foot[2 if a == "x" else 3]
+            hi_shift = at + OVER_CLEAR - foot[0 if a == "x" else 1]
             shift = lo_shift if abs(lo_shift) <= abs(hi_shift) else hi_shift
-            now = n.dx if axis == "x" else n.dy
-            tip += f", or {n.src} {nid}: d{axis}: {_f(now + shift)}"
+            now = node.dx if a == "x" else node.dy
+            tip += f", or {node.src} {nid}: d{a}: {_f(now + shift)} (moves {nid} off the piece)"
         return tip
-    return f"{e.src} bend_{axis}: {_f(to)} (moves {piece}; or {_f(other)})"
+
+    a = axis_of(s)
+    if a is None:
+        return f"{e.src} points / shape that keep the line off {nid}"
+    end = at_icon(i)
+    if end is not None and end[1] == nid and n >= 2:
+        # across its own end's icon: bring the line to the side it attaches on first
+        j = i - 1 if i == n - 1 else i + 1
+        _, _, box, pt = end
+        # the side the end point sits beyond (a stem from under the name: bottom), else the nearest
+        side = ("bottom" if pt[1] >= box[3] else "top" if pt[1] <= box[1] else "left" if pt[0] <= box[0]
+                else "right" if pt[0] >= box[2] else
+                min((("left", pt[0] - box[0]), ("right", box[2] - pt[0]), ("top", pt[1] - box[1]),
+                     ("bottom", box[3] - pt[1])), key=lambda t: t[1])[0])
+        # past the footprint, and far enough from the end for an arrowhead's shaft (MIN_ARROW)
+        want = {"left": ("x", min(foot[0] - OVER_CLEAR, pt[0] - CL.MIN_ARROW)),
+                "right": ("x", max(foot[2] + OVER_CLEAR, pt[0] + CL.MIN_ARROW)),
+                "top": ("y", min(foot[1] - OVER_CLEAR, pt[1] - CL.MIN_ARROW)),
+                "bottom": ("y", max(foot[3] + OVER_CLEAR, pt[1] + CL.MIN_ARROW))}[side]
+        if axis_of(run[j]) == want[0]:
+            return (field_for(j, want[1]) + f", so {piece(i)} reaches {nid}'s {side} side "
+                    f"without crossing it")
+    if a == "x":
+        lo, hi, at = foot[0] - OVER_CLEAR, foot[2] + OVER_CLEAR, s["p"][0]
+    else:
+        lo, hi, at = foot[1] - OVER_CLEAR, foot[3] + OVER_CLEAR, s["p"][1]
+    to, other = (lo, hi) if abs(at - lo) <= abs(at - hi) else (hi, lo)
+    return field_for(i, to, other)
 
 
 def _over_nodes(spec, d: Drawn) -> List[Violation]:
