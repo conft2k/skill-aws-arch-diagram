@@ -1324,11 +1324,16 @@ examples:
     rules: [R-flow, R-label, R-twin, R-border, R-fit]
     good: [R-flow, R-label, R-twin, R-border, R-fit]
     what: "Starter template: Users → CloudFront (VPC origin) → internal ALB on the gap row with its private subnets spanned per AZ → ECS service overlay over one task per AZ; IGW on the VPC's right border with no line (attached, not on the path); 3-step note"
+  - path: ../../templates/dx-vpn-tgw-slide.layout.yaml
+    modes: [slide, slide-no-title]
+    rules: [R-flow, R-label, R-rt, R-border, R-fit]
+    good: [R-flow, R-label, R-rt, R-border, R-fit]
+    what: "Starter template, slide twin of dx-vpn-tgw: router → Direct Connect (transit VIF) → DX gateway and CGW → Internet → Site-to-Site VPN connection in the Region, into one TGW; each route table on its own column inside the bracket of its attachment lines; Prod / Dev VPCs with private subnets (TGW ENIs); text_scale 1.5"
   - path: ../../templates/dx-vpn-tgw.layout.yaml
     rules: [R-flow, R-label, R-rt, R-border, R-fit]
     good: [R-flow, R-label, R-rt, R-border, R-fit]
-    what: "Starter template: on-premises router → Direct Connect (transit VIF) → DX gateway and CGW → Internet → Site-to-Site VPN into one TGW; On-prem RT inside the bracket of the DXGW / VPN attachment lines, VPC RT inside the bracket of the Prod / Dev VPC lines; text_scale 1.5 for both media"
+    what: "Starter template (document): router → Direct Connect (transit VIF) → DX gateway and CGW → Internet → Site-to-Site VPN connection in the Region, into one TGW; On-prem RT above the VPN connection inside the DXGW / VPN bracket, VPC RT between the Prod / Dev VPCs (private subnets, TGW ENIs) inside theirs; text_scale 1.5"
   - path: ../../templates/multi-account-egress.layout.yaml
     rules: [R-flow, R-label, R-twin, R-border, R-fit]
     good: [R-flow, R-label, R-twin, R-border, R-fit]
-    what: "Starter template: Cloud > Region > Organization > accounts; Workload A / B App VPCs (twins) → shared TGW in the Network account → Egress VPC (TGW ENI → NAT) → IGW → Internet; 4-step note, hops ending in a colon; text_scale 1.8 for both media"
+    what: "Starter template: Cloud > Organization > accounts > a Region box per account; Workload A / B App VPCs (twins) → shared TGW in the Network account → Egress VPC (TGW ENI → NAT) → IGW → Internet; 4-step note, hops ending in a colon; text_scale 1.8 for both media"

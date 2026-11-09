@@ -1,12 +1,16 @@
 # Starter template: an Organization with a Network account that holds the shared Transit Gateway and an egress VPC
 # (TGW ENI → NAT gateway → IGW → Internet), and two workload accounts whose VPCs attach to that TGW.
-# Nesting: AWS Cloud > Region > Organization (a generic box) > Account > VPC > subnet.
-# The engine has no multi-account layout of its own: accounts are ordinary boxes (type: account) nested like this.
+# Nesting: AWS Cloud > Organization (a generic box) > Account > Region > VPC > subnet. Accounts and the Organization
+# are global, so they sit outside every Region; each account draws its own Region box around the regional resources
+# (VPCs, the TGW) it owns there. The engine has no multi-account layout of its own: accounts are ordinary boxes
+# (type: account) nested like this.
 # Copy it into your scratchpad and change the lines marked EDIT; every other line already draws cleanly.
 # One spec for both media: it passes R-fit as a document (≥ 11px in a 760px column) and as a slide (≥ 10pt), titled or not.
 # Six nesting levels make the canvas ~1060px wide at 12px text (8.6px in a 760px document column), so text_scale 1.8
 # (the largest auto step) sets the text; keep account, VPC and node labels as short as these (Workload A, TGW, NAT): a longer
-# one widens a column and drops the document under 11px. For more workload accounts, draw them on a second slide.
+# one widens a column and drops the document under 11px (this one: 11.3px). The EC2 subnets' 0.0.0.0/0 → TGW route is in
+# step 1, not under EC2: a sub-caption there widens both workload columns. For more workload accounts, draw them on a
+# second slide.
 name: multi-account-egress              # EDIT: the output stem (<name>.draft.svg)
 mode: document                          # document, or slide for a deck (the same spec passes both)
 text_scale: 1.8                         # one key for both modes; auto stops short of 11px on a canvas this wide
@@ -17,23 +21,25 @@ rows: [top, {id: main, min_gap_before: 150}, {id: bot, min_gap_before: 150}]
 
 groups:
   - {id: cloud,  type: cloud}
-  - {id: region, type: region, label: Region ap-northeast-2, in: cloud}   # EDIT: the Region
-  - {id: org,    type: generic, label: Organization, dash: "6,4", in: region}   # EDIT: the organization (or OU) name
+  - {id: org,    type: generic, label: Organization, dash: "6,4", in: cloud}   # EDIT: the organization (or OU) name
   - {id: acca,   type: account, label: Workload A, in: org}               # EDIT: account names (the badge already says account)
-  - {id: vpca,   type: vpc, label: App VPC A, cidr: 10.1.0.0/16, in: acca}
+  - {id: rega,   type: region, label: ap-northeast-2, in: acca}           # EDIT: the Region, the same in every account
+  - {id: vpca,   type: vpc, label: App VPC A, cidr: 10.1.0.0/16, in: rega}
   - {id: sna,    type: private, label: App subnet, in: vpca}
   - {id: accb,   type: account, label: Workload B, in: org}
-  - {id: vpcb,   type: vpc, label: App VPC B, cidr: 10.2.0.0/16, in: accb}
+  - {id: regb,   type: region, label: ap-northeast-2, in: accb}
+  - {id: vpcb,   type: vpc, label: App VPC B, cidr: 10.2.0.0/16, in: regb}
   - {id: snb,    type: private, label: App subnet, in: vpcb}               # same titles and nodes as App VPC A: the two are drawn identically
   - {id: accn,   type: account, label: Network, in: org}                  # the shared-network account
-  - {id: egress, type: vpc, label: Egress VPC, cidr: 10.100.0.0/16, in: accn}
+  - {id: regn,   type: region, label: ap-northeast-2, in: accn}
+  - {id: egress, type: vpc, label: Egress VPC, cidr: 10.100.0.0/16, in: regn}
   - {id: tsn,    type: private, label: TGW subnet, in: egress}
   - {id: pubsn,  type: public, label: Public subnet, in: egress}
 
 nodes:
-  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: sna, at: [app, top]}   # EDIT: the workload (any icon)
-  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, sub: "0.0.0.0/0 → TGW", in: snb, at: [app, bot]}
-  - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, sub: RAM으로 공유, in: accn, at: [tgw, main]}   # owned by the Network account, shared with the workload accounts
+  - {id: ec2a, icon: service/Amazon-EC2, label: EC2, in: sna, at: [app, top]}   # EDIT: the workload (any icon)
+  - {id: ec2b, icon: service/Amazon-EC2, label: EC2, in: snb, at: [app, bot]}
+  - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, sub: RAM으로 공유, in: regn, at: [tgw, main]}   # owned by the Network account, shared with the workload accounts
   - {id: eni,  icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: tsn, at: [eni, main]}
   - {id: nat,  icon: resource/Amazon-VPC_NAT-Gateway, label: NAT, in: pubsn, at: [nat, main]}
   - {id: igw,  icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: egress, at: [igw, main]}   # on the Egress VPC's right border
@@ -52,7 +58,7 @@ note:
   # ≤ 3 plain lines where hop and description are joined by one space: end each hop with a colon to keep them apart.
   # Every row widens or deepens the drawing: keep each under ~40 characters, details go in the text around the figure.
   steps:
-    - ["App VPC → TGW:", "공유된 TGW에 VPC attachment로 연결"]
+    - ["App VPC → TGW:", "App subnet RT 0.0.0.0/0 → TGW"]
     - ["TGW → Egress:", "0.0.0.0/0 → Egress VPC attachment"]
     - ["TGW ENI → NAT:", "TGW 서브넷 RT 0.0.0.0/0 → NAT"]
-    - ["NAT → IGW:", "퍼블릭 IP로 바꿔 인터넷에 나감"]
+    - ["NAT → IGW:", "IGW가 NAT의 EIP로 바꿔 인터넷에 나감"]

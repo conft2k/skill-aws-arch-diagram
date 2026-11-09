@@ -1,0 +1,50 @@
+# Starter template: the slide twin of dx-vpn-tgw.layout.yaml — on-premises → Direct Connect (transit VIF) → DX gateway,
+# and Site-to-Site VPN over the Internet as the backup, into one Transit Gateway with two route tables: On-prem RT
+# (associated with the DX gateway and VPN attachments) and VPC RT (associated with the two VPC attachments), and two
+# VPCs each drawn with its private subnet.
+# Copy it into your scratchpad and change the lines marked EDIT; every other line already draws cleanly.
+# This spec is for a slide (≥ 10pt, titled or not); as a document it comes out at 10.4px, under the 11px target, so
+# use dx-vpn-tgw.layout.yaml for the document and keep the two specs' labels alike.
+# Each route table has its own column between the TGW and the attachments it is associated with.
+# Placement, route table sub-captions ("연결:" association, "전파:" propagation) and the offsets: as in the
+# document spec. text_scale 1.5 is assumed by the ±23 offsets and the 115px column gaps; keep it.
+name: dx-vpn-tgw-slide                  # EDIT: the output stem (<name>.draft.svg)
+mode: slide                             # the document is dx-vpn-tgw.layout.yaml
+text_scale: 1.5                         # fixed: the offsets and gaps below assume it (see above)
+cols: [dc, edge, dxgw, vpn, rtop, {id: tgw, min_gap_before: 115}, {id: rtvpc, min_gap_before: 115}, {id: vpc, min_gap_before: 110}]
+# dc: on-premises; edge: outside the Cloud (Direct Connect, Internet); dxgw: in the Cloud, outside the Region;
+# vpn: the VPN connection; rtop / rtvpc: one column per route table, on the side of its attachments (columns whose
+# nodes share no row may land on one x: On-prem RT then sits above the VPN connection); vpc: both VPCs
+rows: [top, main, bot, low]             # top: the Direct Connect path and Prod VPC, main: the TGW and both route tables, bot: Dev VPC, low: the VPN path
+
+groups:
+  - {id: onprem, type: onprem, label: On-premises}   # EDIT: the data center name
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: Region, in: cloud}   # EDIT: keep it short (Seoul); a long title pushes the columns right of it
+  - {id: prodv,  type: vpc, label: Prod VPC, cidr: 10.1.0.0/16, in: region}   # EDIT: VPC names and CIDRs
+  - {id: prods,  type: private, label: Private subnet, in: prodv}
+  - {id: devv,   type: vpc, label: Dev VPC, cidr: 10.2.0.0/16, in: region}
+  - {id: devs,   type: private, label: Private subnet, in: devv}   # same titles and nodes as Prod VPC: the two are drawn identically
+
+nodes:
+  - {id: rtr,  icon: resource/Amazon-VPC_Customer-Gateway, label: Router, sub: 192.168.0.0/16, in: onprem, at: [dc, top]}   # EDIT: the on-premises CIDR
+  - {id: cgw,  icon: resource/Amazon-VPC_Customer-Gateway, label: CGW, sub: VPN 장비, in: onprem, at: [dc, low]}
+  - {id: dx,   icon: service/AWS-Direct-Connect, label: Direct Connect, sub: transit VIF, at: [edge, top]}   # outside the Cloud (the loader rejects it inside)
+  - {id: inet, icon: resource/Internet, label: Internet, at: [edge, low]}                                  # what the VPN's IPsec runs over
+  - {id: dxgw, icon: resource/AWS-Direct-Connect_Gateway, label: DX gateway, in: cloud, at: [dxgw, top]}   # global: in the Cloud, outside the Region
+  - {id: vpn,  icon: resource/Amazon-VPC_VPN-Connection, label: Site-to-Site VPN, sub: [VPN attachment, 백업 경로], in: region, at: [vpn, low]}   # regional: the AWS end of the tunnels; its sub-caption names the attachment type
+  - {id: rtop, icon: resource/Amazon-Route-53_Route-Table, label: On-prem RT, sub: ["연결: DXGW · VPN", "전파: Prod · Dev"], in: region, at: [rtop, main], for: [dxgw, vpn], via: tgw}   # inside the bracket of the DXGW and VPN attachment lines
+  - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}   # a short label: the lines pass 23px either side of its center
+  - {id: rtvpc, icon: resource/Amazon-Route-53_Route-Table, label: VPC RT, sub: ["연결: Prod · Dev", "전파: DX · VPN"], in: region, at: [rtvpc, main], for: [enip, enid], via: tgw}   # between the TGW and the VPCs, inside the bracket of their attachment lines (DX preferred over VPN)
+  - {id: enip, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: prods, at: [vpc, top]}   # the VPC attachment's ENI in the private subnet
+  - {id: enid, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: devs, at: [vpc, bot]}
+
+edges:                                  # topology: '--' = solid, no arrowheads
+  - {e: "rtr -- dx", label: BGP}
+  - {e: "dx -- dxgw"}
+  - {e: "dxgw -- tgw", verb: DXGW attachment, shape: HV}       # HV: along the top row, then down into the TGW, so On-prem RT sits inside the bracket of its two lines
+  - {e: "cgw -- inet", label: IPsec}
+  - {e: "inet -- vpn"}
+  - {e: "vpn -- tgw", shape: HV, to_offset: -23}               # the VPN connection's sub-caption names this attachment: no label to crowd On-prem RT
+  - {e: "tgw -- enip", verb: VPC attachment, shape: VH}        # VH: up (down) out of the TGW, then across to the VPC, around VPC RT
+  - {e: "tgw -- enid", shape: VH, from_offset: 23}

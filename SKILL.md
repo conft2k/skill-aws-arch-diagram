@@ -73,9 +73,9 @@ ambiguous; otherwise proceed with a sensible default and note assumptions. For a
 settle the slide titles (one line each, or none) and the list of slides.
 
 ### 2. Copy the closest starter template or example spec
-**Starter templates first.** `templates/` holds three small specs that pass every rule
-(`Layout OK`, no `rule:` line) as a document *and* as a slide, titled or not, from the
-same file; each line you are meant to change is marked `# EDIT`, and the comments say
+**Starter templates first.** `templates/` holds small specs that pass every rule
+(`Layout OK`, no `rule:` line) as a document *and* as a slide, titled or not — from the
+same file, except `dx-vpn-tgw`, which ships a document spec and its `-slide` twin; each line you are meant to change is marked `# EDIT`, and the comments say
 which keys keep it passing. When one is close to the request, copy it and change only
 the `EDIT` lines first:
 
@@ -85,8 +85,8 @@ cp ${CLAUDE_SKILL_DIR}/templates/dx-vpn-tgw.layout.yaml /path/to/scratchpad/arch
 
 | Template (`templates/`) | What it draws | Pick it for |
 |---|---|---|
-| `multi-account-egress.layout.yaml` | AWS Cloud > Region > Organization > accounts: two workload accounts' App VPCs attached to a TGW shared from the Network account, egress through its Egress VPC (TGW ENI → NAT → IGW → Internet), 4 steps | multi-account, shared TGW (AWS RAM), centralized egress per account |
-| `dx-vpn-tgw.layout.yaml` | on-premises → Direct Connect (transit VIF) → DX gateway, and Site-to-Site VPN over the Internet as the backup, into one TGW with two route tables: On-prem RT beside the DXGW / VPN attachments, VPC RT beside the VPC attachments | hybrid DX + VPN, a TGW with several route tables |
+| `multi-account-egress.layout.yaml` | AWS Cloud > Organization > accounts > a Region box in each: two workload accounts' App VPCs attached to a TGW shared from the Network account, egress through its Egress VPC (TGW ENI → NAT → IGW → Internet), 4 steps | multi-account, shared TGW (AWS RAM), centralized egress per account |
+| `dx-vpn-tgw.layout.yaml` (document) + `dx-vpn-tgw-slide.layout.yaml` (slide) | on-premises → Direct Connect (transit VIF) → DX gateway, and CGW → Internet → a Site-to-Site VPN connection in the Region as the backup, into one TGW with two route tables (sub-captions say which attachments each is associated with and which propagate) and two VPCs with private subnets | hybrid DX + VPN, a TGW with several route tables |
 | `cloudfront-vpc-origin.layout.yaml` | Users → CloudFront (VPC origin) → internal ALB in private subnets → an ECS service of one task per AZ; the IGW a VPC origin requires on the VPC border with no line, 3 steps | CloudFront in front of a private origin, ALB + ECS/Fargate |
 
 Otherwise copy the closest example spec.
@@ -262,10 +262,12 @@ pass as a slide and fail as a document. Fix a document in this order: drop a col
 shorten the labels and note rows that set the widest columns (`--explain` names them);
 then set a fixed `text_scale` (1.5–1.8): text grows faster than the canvas, since icons
 keep their size. `text_scale` is one key for both modes, so check the slide again with
-`--mode slide` (and `--no-title`); the `dx-vpn-tgw` (1.5) and `multi-account-egress`
-(1.8) templates pass both this way. When no scale passes both, keep two specs — the
-document one with `text_scale` and a slide one (`docs/examples/specs/slides/` style) —
-and tell the user. `auto` stops after two enlargements, which is not enough on a canvas
+`--mode slide` (and `--no-title`); the `multi-account-egress` template (1.8) passes both
+this way. When no scale passes both, keep two specs — the document one with `text_scale`
+and a slide one (`docs/examples/specs/slides/` style) — and tell the user; `dx-vpn-tgw`
+ships that way. Never drop a subnet box (or any container the request names) to win
+R-fit: it reads as a VPC without subnets. Keep the boxes and narrow the document layout
+(a route table between the two VPCs it serves instead of in its own column), or split it. `auto` stops after two enlargements, which is not enough on a canvas
 over ~1000px wide.
 
 ### 7. Export and verify
@@ -341,8 +343,9 @@ Go through this checklist:
       their lines draw (Spoke RT between the spoke VPCs and the TGW, Firewall RT between
       the TGW and the inspection VPC) — next to the TGW only when it is the TGW's only
       table.
-- [ ] A Site-to-Site VPN path is CGW → Internet → Site-to-Site VPN → TGW/VGW, with the
-      Internet and VPN icons outside the AWS Cloud; a Direct Connect path is customer
+- [ ] A Site-to-Site VPN path is CGW → Internet → VPN connection → TGW/VGW, with the
+      Internet icon outside the AWS Cloud and the VPN connection
+      (`resource/Amazon-VPC_VPN-Connection`) in the Region beside its TGW/VGW; a Direct Connect path is customer
       router → Direct Connect (the DX location, outside the AWS Cloud) → DX gateway
       (inside the Cloud, outside the Regions) and does not pass the Internet icon.
 - [ ] Technically sound (guide, "Technical correctness"): each hop carries the protocol
@@ -593,7 +596,7 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
   itself, or one a plain `open()` could not write (a read-only file, a new file in a
   read-only folder), is refused. The files are then written with a plain `open()`, so
   umask, mode, links and names behave as for any other write.
-- `templates/` — starter specs (multi-account egress, DX + VPN + TGW with two route tables, CloudFront VPC origin → internal ALB → ECS) that pass every rule as a document and as a slide; lines to change are marked `# EDIT`
+- `templates/` — starter specs (multi-account egress, DX + VPN + TGW with two route tables as a document spec and a `-slide` twin, CloudFront VPC origin → internal ALB → ECS) that pass every rule as a document and as a slide; lines to change are marked `# EDIT`
 - `docs/examples/` — checked NLB, ALB, GWLB, TGW, Network Firewall, centralized egress, NLB mTLS and Bedrock-over-DX reference layouts and the serverless order pipeline in lanes
   (exported SVGs with inlined icons + PNG; copy them as drafts on the draft path); `specs/`
   has the layout spec that regenerates each of them and the skeleton (copy one in step 2);

@@ -4,7 +4,7 @@
     python3 tests/test_templates.py
 
 Each template is run through layout.py's main() as a document, a titled slide and an untitled
-slide; the engine's last line must be a plain `Layout OK` (no rule violation left) and no
+slide (a `mode: slide` template, the slide twin of a document template, as a slide only); the engine's last line must be a plain `Layout OK` (no rule violation left) and no
 `rule:` line may be printed. The corpus also tags them good; this test fails the suite when one
 stops passing.
 """
@@ -26,15 +26,18 @@ MODES = {"document": ["--mode", "document"], "slide": ["--mode", "slide"],
 
 
 class Templates(unittest.TestCase):
-    def test_three_templates(self):
+    def test_the_templates(self):
         self.assertEqual([p.name for p in TEMPLATES],
-                         ["cloudfront-vpc-origin.layout.yaml", "dx-vpn-tgw.layout.yaml",
-                          "multi-account-egress.layout.yaml"])
+                         ["cloudfront-vpc-origin.layout.yaml", "dx-vpn-tgw-slide.layout.yaml",
+                          "dx-vpn-tgw.layout.yaml", "multi-account-egress.layout.yaml"])
 
     def test_every_template_is_clean_in_every_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
             for spec in TEMPLATES:
+                slide_only = "\nmode: slide" in spec.read_text(encoding="utf-8")
                 for mode, args in MODES.items():
+                    if slide_only and mode == "document":
+                        continue
                     with self.subTest(template=spec.name, mode=mode):
                         out = io.StringIO()
                         with redirect_stdout(out):

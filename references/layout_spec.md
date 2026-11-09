@@ -135,10 +135,12 @@ for another. Two nodes of one column join with a straight V.
 | `sg` | Security group | | `cloudwan` | none (phase 2: dash is a guess) |
 
 The type fixes border color, width, dash, badge and header insets (quick reference
-"Groups"); you never write them. An `account` is an ordinary box nested like any other:
-AWS Cloud > Region > Account > VPC (an Organization or OU is a `generic` box around the
-accounts, inside the Region); `templates/multi-account-egress.layout.yaml` draws two
-workload accounts and a Network account this way.
+"Groups"); you never write them. An `account` is an ordinary box nested like any other.
+Accounts and the Organization are global, so they go outside every Region: AWS Cloud >
+Organization (or OU, a `generic` box) > Account > Region > VPC, with a Region box in each
+account around the regional resources it owns there (never the accounts inside one Region
+box, which reads as regional accounts); `templates/multi-account-egress.layout.yaml` draws
+two workload accounts and a Network account this way.
 
 - `in`: parent group. Omitted = top level, outside the AWS Cloud (on-premises boxes).
 - `label`: the title; `cidr`: drawn as its own 12px line under the title.
@@ -250,7 +252,9 @@ workload accounts and a Network account this way.
   `row:` alone on a flow row (`at: [col, flowrow]` pins one node of that row to a grid column:
   alb Route 53; `at: [flowcol, row]` pins one to a grid row).
 - `in: <group>` for containment; leave it out for things outside AWS (Users, Internet,
-  Client) — the loader rejects Internet, Direct Connect and Site-to-Site VPN in the Cloud.
+  Client) — the loader rejects Internet, Direct Connect and the `service/AWS-Site-to-Site-VPN`
+  icon in the Cloud. The VPN connection itself is regional: draw it in the Region beside its
+  TGW or VGW as `resource/Amazon-VPC_VPN-Connection` (`templates/dx-vpn-tgw.layout.yaml`).
 - `on: <vpc>` puts an IGW or VGW on that VPC's border: its column left of the VPC's
   columns → left border, right of them → right border. Only left/right borders, and not
   inside a template.
@@ -381,10 +385,14 @@ workload accounts and a Network account this way.
   every container), `stem` / `branch` (trunks), or `[x, y]` expressions. `label_at`: auto
   (above a horizontal piece, right of a vertical one; with a badge on the piece the two
   sit side by side above it), `above`, `below`, `left` / `right` (vertical pieces), or
-  `{x, y, anchor: start|middle|end}`. Don't ask for `below` / `left`: labels go above a
-  horizontal line and right of a vertical one. Without room there the engine puts the
-  label on its line over a background rect in the top layer, then (last) on the other
-  side, and warns either way — widen that side (`min_gap_before`, `pad`, `min_w`).
+  `{x, y, anchor: start|middle|end}`. Leave it on auto: labels go above a horizontal line
+  (beside a step badge on the same piece) and right of a vertical one. Without room there
+  the engine puts the label on its line over a background rect in the top layer, then
+  (last) on the other side, and warns either way — widen that side (`min_gap_before`,
+  `pad`, `min_w`). Ask for `below` / `left` only when the PNG shows the auto label read as
+  another node's caption (an attachment label right under a route table's sub-caption), and
+  check every mode again; often the cleaner fix is to name the attachment in the end node's
+  sub-caption instead (`templates/dx-vpn-tgw.layout.yaml`: the VPN connection's "VPN attachment").
 - The shape is picked by rule (straight when the ends share a row or column, else HVH /
   VHV / HV / VH by which sides are free; headless spokes from one node up — or down — to
   both its left and its right are all VHV, so a hub's two sides mirror; a spoke forced to

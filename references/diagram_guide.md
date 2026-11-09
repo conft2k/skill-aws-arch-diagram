@@ -250,7 +250,9 @@ propagates from (layout_spec.md → nodes).
   table ("Spoke RT 0.0.0.0/0 → 검사 VPC"); put the attachment-type label on the piece
   that has room (the inspection line instead of a spoke); shorten a container label
   (App subnet → Subnet) — never drop the subnet box, which would read as a VPC without
-  subnets; then split the slide. Never move a table back onto the TGW's column to save
+  subnets; then split the slide. The same holds for a document that misses R-fit: the
+  subnet box wins, so narrow the layout or keep a document spec and a slide spec
+  (`templates/dx-vpn-tgw.layout.yaml` and its `-slide` twin). Never move a table back onto the TGW's column to save
   width.
 
 #### Internet gateway and VGW sit on the VPC border
@@ -320,21 +322,24 @@ the name of an AWS service or resource — "Site-to-Site VPN", "Direct Connect",
 "PrivateLink", "VPC peering" — and `find_icon.py` finds its icon, put that icon on the
 path as a node (with its label below, the same size `S` as every node) and keep only
 the protocol on the connector ("IPsec", "GENEVE :6081"). Place it where the reader
-expects it on the path: a Site-to-Site VPN is the link between on-premises and AWS, so
-its icon sits **outside the AWS Cloud box**, between the Internet icon and the Cloud
-border (see below). Don't add a duplicate when
+expects it on the path: a Site-to-Site VPN connection is a regional AWS resource, so
+it sits **in the Region** beside the TGW or VGW it attaches to, drawn as
+`resource/Amazon-VPC_VPN-Connection`; the customer gateway and the Internet it runs over
+stay outside the AWS Cloud box (see below). Don't add a duplicate when
 another node already is that service (a GWLBe is the PrivateLink endpoint). A TGW
 peering is drawn the way the AWS docs draw it: the peering connection icon
 (`resource/Amazon-VPC_Peering-Connection`) on the TGW–TGW line, labeled "TGW peering".
 Only a connection with no icon in the bundle stays a connector label.
 
 **Show what a hybrid connection runs over.** A Site-to-Site VPN is IPsec over the
-public Internet, so its path is customer gateway → `resource/Internet` →
-`service/AWS-Site-to-Site-VPN` → TGW/VGW, with the Internet and VPN icons both
-**outside the AWS Cloud box**, between the on-premises group and the Cloud border, and
-"IPsec" on the Internet → VPN segment. Leave 220–280px between the on-premises group and
-the Cloud border for those two hops (enough for both icons, their labels and the
-"IPsec" label with 8px around each), and pull the Cloud and Region borders in so they
+public Internet, so its path is customer gateway → `resource/Internet` → the VPN
+connection (`resource/Amazon-VPC_VPN-Connection`, in the Region) → TGW/VGW, with the
+Internet icon **outside the AWS Cloud box**, between the on-premises group and the Cloud
+border, and "IPsec" on the customer gateway → Internet segment
+(`templates/dx-vpn-tgw.layout.yaml`). Older examples draw `service/AWS-Site-to-Site-VPN`
+outside the Cloud instead (the loader rejects that icon inside); that reads as a VPN
+service outside AWS, so draw new diagrams with the connection in the Region. Leave room
+between the on-premises group and the Cloud border for the Internet icon and its label, and pull the Cloud and Region borders in so they
 hug their contents rather than leaving the space empty inside. A Direct
 Connect path is private and never passes the Internet icon: customer router →
 `service/AWS-Direct-Connect` — the DX location, a colocation facility that is **not in
@@ -568,8 +573,9 @@ draft path copies an example, or start from `docs/examples/specs/example.layout.
   parallel "data flow" line next to them. Make the connections explicit and the flow
   visible with what the grammar already has:
   - **Label each attachment type once** with a 12px `#545B64` connector label on one of
-    its lines — "VPC attachment" on one spoke, "VPN attachment" on the VPN line (below
-    it when a step badge sits above). A peering attachment is named by the peering
+    its lines — "VPC attachment" on one spoke, "VPN attachment" on the VPN line (above it,
+    beside a step badge when one sits on the same piece; when that spot reads as another
+    node's caption, name it in the VPN connection's sub-caption instead). A peering attachment is named by the peering
     connection icon's sub-caption ("peering attachment"): as a connector label
     check_layout.py reads it as the peering service written as text.
   - **Draw each TGW route table as a node** (`resource/Amazon-Route-53_Route-Table`,
