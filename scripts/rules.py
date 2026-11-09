@@ -76,7 +76,6 @@ candidate drafts with critical canvas clipping first, for selection and later st
 concepts new here are defined here.
 """
 import math
-import re
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -133,6 +132,10 @@ class Violation:
     # F6: (p, q, footprint box) of the piece over the crossed node and that node's footprint
     # (icon and name block), for selection's channel-widening move; not part of the identity.
     at: Tuple = field(default=(), compare=False)
+    # what the summary's spec hint reads without parsing the message (names may hold any
+    # text): F4 the arrowhead tip, F5 ("label" | "badge"), F6 / TWR the try text; not part
+    # of the identity
+    hint: Tuple = field(default=(), compare=False)
 
     def as_dict(self) -> dict:
         return {"rule": self.rule, "code": self.code, "owners": ",".join(self.owners),
@@ -451,7 +454,7 @@ def _tips(spec, d: Drawn) -> List[Violation]:
                                              f"{_display(spec, target)} "
                                              f"({'on ' + _display(spec, got) if got else 'on no node'})",
                                              _pt_box(tip, foot),
-                                             code="F4"))
+                                             code="F4", hint=(tuple(tip),)))
                         continue
                     near = [(nid, _pt_box(tip, b)) for nid, b in d.foot.items() if nid != target]
                     near = [(nid, dd) for nid, dd in near if dd <= CL.ICON_CLEAR]
@@ -462,7 +465,7 @@ def _tips(spec, d: Drawn) -> List[Violation]:
                                              f"{_display(spec, target)} is {_f(dd)}px from "
                                              f"{_display(spec, nid)} too (< {CL.ICON_CLEAR}): it points at both",
                                              CL.ICON_CLEAR - dd,
-                                             code="F4"))
+                                             code="F4", hint=(tuple(tip),)))
                 else:
                     r = d.group_rect.get(target)
                     if r is None:
@@ -472,7 +475,8 @@ def _tips(spec, d: Drawn) -> List[Violation]:
                         out.append(Violation("R-flow", (eid, f"group:{target}"),
                                              f"F4 {_name(spec, eid)}'s arrowhead at {where} is {_f(dd)}px from "
                                              f"{_display(spec, target)}'s border "
-                                             f"(> {CL.END_REACH})", dd - CL.END_REACH, code="F4"))
+                                             f"(> {CL.END_REACH})", dd - CL.END_REACH, code="F4",
+                                             hint=(tuple(tip),)))
                         continue
                     other = [(g, _border_dist(tip, b)) for g, b in d.group_rect.items() if g != target]
                     other = [(g, x) for g, x in other if x < CL.BORDER_CLEAR]
@@ -483,7 +487,7 @@ def _tips(spec, d: Drawn) -> List[Violation]:
                                              f"{_display(spec, target)} is {_f(x)}px from "
                                              f"{_display(spec, g)}'s border too (< {CL.BORDER_CLEAR})",
                                              CL.BORDER_CLEAR - x,
-                                             code="F4"))
+                                             code="F4", hint=(tuple(tip),)))
     return out
 
 
@@ -538,14 +542,14 @@ def _attribution(spec, d: Drawn) -> List[Violation]:
             if d_own > CL.LABEL_REACH:
                 out.append(Violation("R-flow", (eid,), f"F5 {_name(spec, eid)}'s {what} {s!r} is {_f(d_own)}px "
                                      f"from its line "
-                                     f"(> {CL.LABEL_REACH})", d_own - CL.LABEL_REACH, code="F5"))
+                                     f"(> {CL.LABEL_REACH})", d_own - CL.LABEL_REACH, code="F5", hint=(what,)))
             elif d_other <= d_own + CL.TEXT_GAP:
                 o = d.eid(id(near["el"]))
                 on = _name(spec, o)
                 out.append(Violation("R-flow", (eid, o), f"F5 {_name(spec, eid)}'s {what} {s!r} is "
                                      f"{_f(d_other)}px from "
                                      f"{on}'s line, {_f(d_own)}px from its own line: it reads as {on}'s",
-                                     d_own + CL.TEXT_GAP - d_other + 1, code="F5"))
+                                     d_own + CL.TEXT_GAP - d_other + 1, code="F5", hint=(what,)))
     return out
 
 
@@ -764,11 +768,12 @@ def _over_nodes(spec, d: Drawn) -> List[Violation]:
                        "the line is drawn through its target")
             else:
                 why = f"runs over its own end {name}'s {what} {CL.fmt(s)}: the name is hidden"
+            tip = _over_try(spec, d, e, run, i, nid)
             out.append(Violation(
                 "R-flow", (eid, f"node:{nid}"),
-                f"F6 {_name(spec, eid)} {why}; "
-                f"try: {_over_try(spec, d, e, run, i, nid)}", 1.0, code="F6",
-                at=(tuple(s["p"]), tuple(s["q"]), tuple(d.foot.get(nid, d.node_icon[nid]["box"])))))
+                f"F6 {_name(spec, eid)} {why}; try: {tip}", 1.0, code="F6",
+                at=(tuple(s["p"]), tuple(s["q"]), tuple(d.foot.get(nid, d.node_icon[nid]["box"]))),
+                hint=(tip,)))
     return out
 
 
@@ -962,7 +967,7 @@ def _f5_try(spec, d: Drawn, v: Violation, rule_side: bool = False) -> str:
         return ""
     n = int(ref[1])
     e = spec.edges[n]
-    what = "badge" if "'s badge " in v.message and not rule_side else "label"
+    what = "badge" if v.hint[:1] == ("badge",) and not rule_side else "label"
     drawn_on = (lambda x: d.labels.get(x.n) or d.on_line.get(x.n)) if what == "label" else \
         (lambda x: d.badges.get(x.n))
     if sum(1 for x in spec.edges if x.src == e.src and drawn_on(x)) > 1:
@@ -1060,10 +1065,9 @@ def f4_moves(spec, d: Drawn, v: Violation) -> Tuple[List[NodeMove], str]:
     footprint. Unverified: layout.unfixable_warnings draws each again and keeps the ones that
     clear the F4. With none, (no moves, why)."""
     m = [o for o in v.owners if o.startswith("node:")]
-    at = re.search(r"at \((-?[\d.]+),(-?[\d.]+)\)", v.message)
-    if at is None:
+    if not v.hint:
         return [], ""
-    tip = (float(at.group(1)), float(at.group(2)))
+    tip = v.hint[0]
     target = m[0][5:] if m else None
     wrong = m[1][5:] if len(m) > 1 else None
     if wrong is None:
@@ -1341,7 +1345,8 @@ def twin_rules(spec, geom) -> List[Violation]:
         out.append(Violation("R-twin", (f"group:{a}", f"group:{b}"),
                              f"TWR {_display(spec, a)} and {_display(spec, b)} have one structure but their rows "
                              f"are in another order, so they "
-                             f"read as two (the engine keeps the spec's row order); try: {tip}", code="TWR"))
+                             f"read as two (the engine keeps the spec's row order); try: {tip}", code="TWR",
+                             hint=(tip,)))
     return out
 
 

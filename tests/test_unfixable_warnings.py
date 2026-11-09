@@ -92,7 +92,7 @@ def test_fit_is_enabled_and_disabled_rules_do_not_get_unfixable_warnings(
 def test_badge_attribution_suggests_step_place(tmp_path, capsys, monkeypatch):
     source = simple_source(tmp_path)
     monkeypatch.setattr(rules, "check", lambda *a, **kw: [
-        rules.Violation("R-flow", ("edge:0",), "F5 edge:0's badge '1' is too far", code="F5")])
+        rules.Violation("R-flow", ("edge:0",), "F5 edge:0's badge '1' is too far", code="F5", hint=("badge",))])
     _, _, text = draw(source, tmp_path, capsys)
     warning = next(line for line in text.splitlines()
                    if line.startswith("warning: unresolved R-flow F5 "))
@@ -190,6 +190,9 @@ def test_label_rule_hint_gives_a_spot_above_the_line(tmp_path, capsys, monkeypat
 def test_author_bend_collision_names_what_it_hits_and_the_nearest_clear_value(tmp_path, capsys):
     source = ROOT / "tests/corpus/qa/t1-privatelink.layout.yaml"
     _, _, text = draw(source, tmp_path, capsys, "--mode", "slide")
+    # edge instance 12 is edges[11] s3b ..> s3: its F6 lines name it by entry and ends
+    over = f"rule: R-flow F6 {layout.M.edge_name(layout.layout_spec.load(source, mode='slide'), 12)} "
+    assert any(line.startswith(over) for line in text.splitlines())
     warning = next(line for line in text.splitlines()
                    if line.startswith("warning: edges[11] s3b ..> s3 (") and "best of the candidates" in line)
     assert ("LINE OVER ICON of S3 gateway EP (Consumer A VPC)" in warning
@@ -199,7 +202,8 @@ def test_author_bend_collision_names_what_it_hits_and_the_nearest_clear_value(tm
     _, _, again = draw(applied(source, tmp_path, "edges[11]", "bend_y", value), tmp_path, capsys,
                        "--mode", "slide")
     assert "edges[11] s3b ..> s3 (" not in again
-    assert "rule: R-flow F6 edge:12" not in again and "rule: R-flow F1 " not in again
+    assert not any(line.startswith(over) for line in again.splitlines())
+    assert "rule: R-flow F1 " not in again
 
 
 def test_author_points_collision_suggests_the_nearest_clear_piece_value(tmp_path, capsys):
@@ -284,3 +288,21 @@ def test_f4_move_that_lands_the_arrowhead_on_a_third_node_is_not_offered(tmp_pat
         _, _, again = draw(applied(source, tmp_path, item, key, value), tmp_path, capsys)
         assert not any(line.startswith("rule: R-flow F4 ") for line in again.splitlines()), \
             (item, key, value, again)
+
+
+def test_f4_hint_does_not_read_the_message_text(tmp_path, capsys):
+    # a label holding "at (x,y)" once broke the hint, which parsed the tip out of the message
+    # (Codex rebase check): the tip comes from the violation's data
+    import yaml
+    spec = yaml.safe_load((ROOT / "tests/corpus/sides/xy3.layout.yaml").read_text())
+    next(n for n in spec["nodes"] if n["id"] == "s")["label"] = "Standby at (10.0.0.1,10.0.0.2)"
+    source = tmp_path / "xy3label.layout.yaml"
+    source.write_text(yaml.safe_dump(spec))
+    _, _, text = draw(source, tmp_path, capsys)
+    warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F4 "))
+    hint = warning.split("spec hint (not a guarantee): ", 1)[1].split(" (each drawn again", 1)[0]
+    moves = re.findall(r"(nodes\[\d+\]) [^:;]*?: (dx|dy|xy): (\[[^\]]*\]|-?[\d.]+)", hint)
+    assert moves, warning
+    for item, key, value in moves:
+        _, _, again = draw(applied(source, tmp_path, item, key, value), tmp_path, capsys)
+        assert not any(line.startswith("rule: R-flow F4 ") for line in again.splitlines()), (item, value)

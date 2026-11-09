@@ -1311,14 +1311,14 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
         if v.rule == "R-fit":
             tip = "text_scale / shorten labels / rearrange tracks / split the diagram"
         elif v.rule == "R-twin" and v.code == "TWR":
-            tip = v.message.split("try: ", 1)[1]      # the row order to write: no draft geometry
+            tip = v.hint[0] if v.hint else ""      # the row order to write: no draft geometry
         else:
             problem = next((p for p in problems if p.iss.kind in check_kind.get(v.code, ())
                             and set(owners) <= set(p.owners)), None)
             if problem is None:
                 # F5 names the edge, but spec_fix needs its label/badge owner.
                 if v.rule == "R-flow" and v.code == "F5" and owners:
-                    part = "badge" if "'s badge " in v.message else "label"
+                    part = "badge" if v.hint[:1] == ("badge",) else "label"
                     if edge_of(owners[0]):
                         owners[0] = f"edge:{edge_of(owners[0])[0]}:{part}"
                 elif v.rule == "R-label" and v.code == "L1" and owners:
@@ -1326,9 +1326,9 @@ def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequenc
                         owners[0] = f"edge:{edge_of(owners[0])[0]}:label"
                 problem = Problem(CL.Issue(v.code, v.message, [], {}), owners, [])
             tip = spec_fix(spec, geom, problem)
-            if v.code == "F6" and "; try: " in v.message:
+            if v.code == "F6" and v.hint:
                 # the value that moves the crossing piece (or the node) clear comes first
-                tip = "; ".join(t for t in (v.message.split("; try: ", 1)[1], tip) if t)
+                tip = "; ".join(t for t in (v.hint[0], tip) if t)
             elif (v.rule, v.code) == ("R-flow", "F4") and draft is not None:
                 import rules
                 if drawn is None:
