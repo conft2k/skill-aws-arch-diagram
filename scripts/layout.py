@@ -1567,6 +1567,7 @@ def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = Fal
     """Render, then try at most two uniform font enlargements; keep a safe improvement."""
     rule_guard = rule_guard if rule_guard is not None else RuleGuard()
     gentle = False
+    held = None             # the tier-0 identities a gentle step may not add to (F6-only winner)
     if chosen is None:
         result = render_checked(spec, source, scratch, no_check, MAX_ROUNDS, rule_guard)
         if rule_guard.incumbent is not None and result[1] == rule_guard.incumbent[1]:
@@ -1577,9 +1578,15 @@ def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = Fal
             # A newly routed candidate has not tried text scale yet. Keep its clean
             # rules and feedback geometry while trying one canvas font unit at a time.
             violations = rule_guard.check(result[0].spec, result[0].geom, result[1])
+            hard = [v for v in violations or () if v.tier == 0]
+            # A line over a node (F6) is reported, not repaired by text size: a winner whose
+            # only tier-0 violations are F6 still tries text scale, keeping only a result
+            # whose tier-0 set does not grow (line-cross ticket 01, trunk/v-fork slide).
             gentle = (rule_guard.selection and not no_check
                       and not getattr(result[0], "_text_scale_attempted", False)
-                      and violations is not None and not any(v.tier == 0 for v in violations))
+                      and violations is not None and all(v.code == "F6" for v in hard))
+            if gentle and hard:
+                held = {(v.rule, v.code, frozenset(v.owners)) for v in hard}
             if not gentle:
                 return result
     if spec.text_scale != "auto":
@@ -1623,6 +1630,11 @@ def render_readable(spec: Spec, source: str, scratch: Path, no_check: bool = Fal
             if rule_guard.selection:
                 if not rule_guard.accepts(b, data, cb, cd):
                     break
+                if held is not None:
+                    after = rule_guard.check(cb.spec, cb.geom, cd)
+                    if after is None or not {(v.rule, v.code, frozenset(v.owners))
+                                             for v in after if v.tier == 0} <= held:
+                        break
             else:
                 if not rule_guard.admits(b, data, cb, cd):
                     break
