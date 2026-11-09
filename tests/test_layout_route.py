@@ -678,7 +678,8 @@ class Synthetic(unittest.TestCase):
         els, warns = R.draw(spec, geom)
         w = [m for m in warns if "refusing the requested shape: VHV" in m]
         self.assertEqual(len(w), 1, warns)
-        self.assertIn("bend_y 320 = 320: LINE OVER ICON of z", w[0])
+        self.assertIn("bend_y 320 = 320: LINE OVER ICON of Z", w[0])      # by its label (display name)
+        self.assertIn("try bend_y: 293 (320 now), the nearest clear value", w[0])
         self.assertRegex(w[0], r"try bend_y: \d+")
         self.assertRegex(w[0], r"^edges\[0\][^:]*: drew \S+ instead of VHV")    # layout.py's feedback still reads it
         # the bend it suggests draws the VHV clean

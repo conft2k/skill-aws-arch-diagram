@@ -910,7 +910,7 @@ def _move_try(spec, d: Drawn, pids: Sequence[int], why: str) -> str:
                     break
     if best:
         return f"{best[1]}, the nearest {why}"
-    shared = [spec.edges[d.path_edge[p]].src for p in pids if d.path_edge.get(p) is not None
+    shared = [M.entry_name(spec, spec.edges[d.path_edge[p]].line) for p in pids if d.path_edge.get(p) is not None
               and d.path_edge[p] < len(spec.edges) and (spec.edges[d.path_edge[p]].trunk or sum(
                   1 for x in spec.edges if x.src == spec.edges[d.path_edge[p]].src and d.edge_paths.get(x.n)) > 1)]
     if len(shared) == len(pids):
@@ -928,7 +928,8 @@ def _f3_try(spec, d: Drawn, v: Violation) -> str:
     if not pairs:
         return ""
     a, b = pairs[0]
-    return _move_try(spec, d, (a, b), f"spot where {ea} and {eb} cross clear of every bend and end "
+    return _move_try(spec, d, (a, b), f"spot where {M.line_name(spec, d.path_edge[a])} and "
+                                      f"{M.line_name(spec, d.path_edge[b])} cross clear of every bend and end "
                                       f"(> {JUNCTION_REACH + TRY_MARGIN}px)")
 
 
@@ -966,7 +967,7 @@ def _f5_try(spec, d: Drawn, v: Violation, rule_side: bool = False) -> str:
         (lambda x: d.badges.get(x.n))
     if sum(1 for x in spec.edges if x.src == e.src and drawn_on(x)) > 1:
         # a point is one place for every instance of the line: they would overlap
-        return (f"no value: {e.src} draws its {what} on several instances and one "
+        return (f"no value: {M.entry_name(spec, e.line)} draws its {what} on several instances and one "
                 f"{'label_at' if what == 'label' else 'step_at'} point would stack them; give this instance its "
                 "own spec line")
     if what == "label":
@@ -1019,7 +1020,7 @@ def _f5_try(spec, d: Drawn, v: Violation, rule_side: bool = False) -> str:
     _, c, b = best
     dx, dy = c[0] - cx0, c[1] - cy0
     if what == "badge":
-        return (f"{e.src} step_at: [{_rel(spec, d, e, c[0], 'x', c)}, {_rel(spec, d, e, c[1], 'y', c)}] "
+        return (f"{M.edge_name(spec, e.n)} step_at: [{_rel(spec, d, e, c[0], 'x', c)}, {_rel(spec, d, e, c[1], 'y', c)}] "
                 f"(the badge's centre, at ({_f(round(c[0]))},{_f(round(c[1]))}) now: beside its own line and "
                 f"clear of the others)")
     t0 = texts[0]
@@ -1027,7 +1028,7 @@ def _f5_try(spec, d: Drawn, v: Violation, rule_side: bool = False) -> str:
     ax = {"middle": (t0["box"][0] + t0["box"][2]) / 2, "end": t0["box"][2]}.get(anchor, t0["box"][0])
     base = t0["box"][1] + K.GLYPH_ASCENT * t0["fs"]
     x, y = ax + dx, base + dy
-    return (f"{e.src} label_at: {{x: {_rel(spec, d, e, x, 'x', c)}, y: {_rel(spec, d, e, y, 'y', c)}, "
+    return (f"{M.edge_name(spec, e.n)} label_at: {{x: {_rel(spec, d, e, x, 'x', c)}, y: {_rel(spec, d, e, y, 'y', c)}, "
             f"anchor: {anchor}}} (its first line's baseline, at ({_f(round(x))},{_f(round(y))}) now: beside its "
             f"own line and clear of the others)")
 
@@ -1084,7 +1085,7 @@ def f4_moves(spec, d: Drawn, v: Violation) -> Tuple[List[NodeMove], str]:
             now = node.dx if a == "x" else node.dy
             for sh in (tip[k] + clear - foot[k], tip[k] - clear - foot[k + 2]):
                 val = round(now + sh)
-                out.append((abs(sh), NodeMove(wrong, f"d{a}", val, f"{node.src} {wrong}: d{a}: {_f(val)}")))
+                out.append((abs(sh), NodeMove(wrong, f"d{a}", val, f"{_node_ref(spec, wrong)}: d{a}: {_f(val)}")))
     # a node pinned with xy on the other one: its own xy moved past the other's footprint
     for pin, other in ((target, wrong), (wrong, target)):
         pn = spec.nodes.get(pin) if pin else None
@@ -1098,11 +1099,11 @@ def f4_moves(spec, d: Drawn, v: Violation) -> Tuple[List[NodeMove], str]:
                 c2 = (M.Expr(c.kind, c.ref, c.attr, c.ref2, c.offset + sh) if isinstance(c, M.Expr)
                       else c + sh)
                 xy = tuple(c2 if j == k else pn.xy[j] for j in (0, 1))
-                out.append((abs(sh), NodeMove(pin, "xy", xy, f"{pn.src} {pin}: xy: [{_xy_text(spec, xy[0])}, "
+                out.append((abs(sh), NodeMove(pin, "xy", xy, f"{_node_ref(spec, pin)}: xy: [{_xy_text(spec, xy[0])}, "
                                                              f"{_xy_text(spec, xy[1])}]")))
     out.sort(key=lambda t: t[0])
     if not out:
-        return [], f"{wrong} is placed by another node's xy: move that node"
+        return [], f"{_display(spec, wrong)} is placed by another node's xy: move that node"
     return [mv for _, mv in out], ""
 
 

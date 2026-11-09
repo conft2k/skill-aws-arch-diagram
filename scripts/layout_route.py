@@ -1157,22 +1157,25 @@ def _line_problems(ctx: _Ctx, pts: Sequence[Pt], hs: bool, he: bool, headers: bo
 
 
 def _name_prob(ctx: _Ctx, p: str) -> str:
-    """A _line_problems entry with the node (or group) it hits named."""
+    """A _line_problems entry with the node (or group) it hits named as the drawing shows it."""
+    b = re.match(r"(LINE HUGS BORDER|LINE IN HEADER) (\S+)$", p)
+    if b and b.group(2) in ctx.spec.groups:
+        return f"{b.group(1)} of {M.group_name(ctx.spec, b.group(2))}"
     m = re.match(r"(LINE OVER (?:TEXT|ICON)) \((-?[\d.]+),(-?[\d.]+)\)$", p)
     if not m:
         return p
     x, y = float(m.group(2)), float(m.group(3))
     for nid, n in ctx.geom.nodes.items():
         if m.group(1).endswith("ICON") and abs(n.icon.x0 - x) < 1 and abs(n.icon.y0 - y) < 1:
-            return f"{m.group(1)} of {nid}"
+            return f"{m.group(1)} of {M.node_name(ctx.spec, nid)}"
         for t in n.lines:
             b = t.box(conservative=True)
             if m.group(1).endswith("TEXT") and abs(b.x0 - x) < 1 and abs(b.y0 - y) < 1:
-                return f"{m.group(1)} {t.text!r} of {nid}"
+                return f"{m.group(1)} {t.text!r} of {M.node_name(ctx.spec, nid)}"
     for gid, g in ctx.geom.groups.items():
         for t in (g.title, g.cidr):
             if t and abs(t.box().x0 - x) < 1 and abs(t.box().y0 - y) < 1:
-                return f"{m.group(1)} {t.text!r} ({gid}'s header)"
+                return f"{m.group(1)} {t.text!r} ({M.group_name(ctx.spec, gid)}'s header)"
     return p
 
 
@@ -2925,6 +2928,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         v = _nearest_clear(ctx, x, at, lambda v: _drawn(x, shape, pa, pb, v, None)[0], others_of(x))
         if v is None:
             return ""
+        if hint.kind == "num":
+            return f"{leg}: {M.fmt_num(v)} ({M.fmt_num(at)} now), the nearest clear value"
         return (f"{leg}: {_with_offset(hint, v - at)} (= {M.fmt_num(v)}; {_expr_text(hint)} = {M.fmt_num(at)} "
                 f"now), the nearest clear value")
 

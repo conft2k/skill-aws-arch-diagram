@@ -493,7 +493,8 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   try — the nearest clean `bend_y: tgwa.y0-27 (= 181; …)`, widening the gap between the
   ends, or for a same-side out-and-back `give <box> pad_right`; a refused request runs no
   re-solve of its own). Your own `bend_x` / `bend_y` drawn although it hits something says
-  what (`LINE OVER ICON of s3a, LINE OVER TEXT 'S3' of s3 (best of the candidates)`) and
+  what (`LINE OVER ICON of S3 gateway EP (Consumer A VPC), LINE OVER TEXT 'S3' of S3 (best
+  of the candidates)`) and
   `try bend_y: row.main+76 (= 346; row.main-90 = 180 now), the nearest clear value`; a
   `points` line whose inner piece hits something gets `points: …; try points: move the
   horizontal piece at y=80 (points 2–3) to y=53`. `SLIDE TOO SMALL` names the note first
@@ -542,13 +543,13 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   there is none:
   - F3: the nearest `bend_x` / `bend_y` / `from_offset` / `to_offset` / `points` move of
     one piece of either line that takes the crossing off the bend or end and keeps every
-    other tier-0 test on this draft (`edges[3] from_offset: 16`). No value when both lines
+    other tier-0 test on this draft (`edges[3] (A → C) from_offset: 16`). No value when both lines
     belong to a trunk or a `.*` line drawn several times (one value would move all its
     lines), or when no one-piece move within 160px clears.
   - F4: one or two node moves, each drawn again from your spec (feedback rounds and text
     scale included) and kept only when that F4 is gone: the `dx` / `dy` of the node the
-    arrowhead also points at, or the `xy` of a node pinned on it (`nodes[2] s: xy:
-    [q.cx+63, q.cy]`). No value when none of the six nearest moves clears it.
+    arrowhead also points at, or the `xy` of a node pinned on it (`nodes[2] s (Standby):
+    xy: [q.cx+63, q.cy]`). No value when none of the six nearest moves clears it.
   - F5 / L1: a `label_at: {x: <end>.cx±n, y: <end>.cy±n, anchor: …}` or `step_at:
     [<end>.cx±n, <end>.cy±n]` on one of the edge's end nodes (L1: above / right of the
     line only). No value for a line drawn on several instances (one point would stack

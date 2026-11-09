@@ -141,6 +141,8 @@ def hint_value(line, item, key):
 def test_flow_hint_value_clears_the_violation_when_applied(tmp_path, capsys, case, mode, code, owner, item, key):
     source = ROOT / f"tests/corpus/{case}.layout.yaml"
     _, _, text = draw(source, tmp_path, capsys, "--mode", mode)
+    # messages name the edge by its spec entry and ends (layout_model.edge_name)
+    owner = layout.M.edge_name(layout.layout_spec.load(source, mode=mode), int(owner.split(":")[1]))
     rule = f"rule: R-flow {code} {owner}"
     assert any(line.startswith(rule) for line in text.splitlines())
     warning = next(line for line in text.splitlines()
@@ -189,13 +191,14 @@ def test_author_bend_collision_names_what_it_hits_and_the_nearest_clear_value(tm
     source = ROOT / "tests/corpus/qa/t1-privatelink.layout.yaml"
     _, _, text = draw(source, tmp_path, capsys, "--mode", "slide")
     warning = next(line for line in text.splitlines()
-                   if line.startswith("warning: edges[11] s3b ..> s3: ") and "best of the candidates" in line)
-    assert "LINE OVER ICON of s3a" in warning and "LINE OVER TEXT 'S3' of s3" in warning
+                   if line.startswith("warning: edges[11] s3b ..> s3 (") and "best of the candidates" in line)
+    assert ("LINE OVER ICON of S3 gateway EP (Consumer A VPC)" in warning
+            and "LINE OVER TEXT 'S3' of S3 (" in warning and "LINE HUGS BORDER of Provider AZ 1" in warning)
     value = re.search(r"try bend_y: (\S+) \(= [\d.]+; row\.main-90 = 180 now\), the nearest clear value",
                       warning).group(1)
     _, _, again = draw(applied(source, tmp_path, "edges[11]", "bend_y", value), tmp_path, capsys,
                        "--mode", "slide")
-    assert "edges[11] s3b ..> s3: " not in again
+    assert "edges[11] s3b ..> s3 (" not in again
     assert "rule: R-flow F6 edge:12" not in again and "rule: R-flow F1 " not in again
 
 
@@ -212,8 +215,8 @@ def test_author_points_collision_suggests_the_nearest_clear_piece_value(tmp_path
     source = tmp_path / "pts.layout.yaml"
     source.write_text(yaml.safe_dump(spec))
     _, _, text = draw(source, tmp_path, capsys)
-    warning = next(line for line in text.splitlines() if line.startswith("warning: edges[0] a -> b: points: "))
-    assert "LINE OVER ICON of m" in warning and "of a" not in warning    # its own ends' touch is not a hit
+    warning = next(line for line in text.splitlines() if line.startswith("warning: edges[0] a -> b (A → B): points: "))
+    assert "LINE OVER ICON of M" in warning and "of A" not in warning    # its own ends' touch is not a hit
     y = re.search(r"move the horizontal piece at y=[\d.]+ \(points 2–3\) to y=([\d.]+), the nearest clear value",
                   warning).group(1)
     spec["edges"][0]["points"] = [["a.cx", "a.y0"], ["a.cx", float(y)], ["b.cx", float(y)], ["b.cx", "b.y0"]]
@@ -244,13 +247,13 @@ def test_every_offered_f4_move_clears_it_when_applied(tmp_path, capsys, case, mo
     source = ROOT / f"tests/corpus/{case}.layout.yaml"
     _, _, text = draw(source, tmp_path, capsys, "--mode", mode)
     warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F4 "))
-    owner = re.search(r"F4 \((edge:\d+)", warning).group(1)
     hint = warning.split("spec hint (not a guarantee): ", 1)[1].split(" (each drawn again", 1)[0]
-    moves = re.findall(r"(nodes\[\d+\]) \S+ \S+: (dx|dy|xy): (\[[^\]]*\]|-?[\d.]+)", hint)
+    moves = re.findall(r"(nodes\[\d+\]) [^:;]*?: (dx|dy|xy): (\[[^\]]*\]|-?[\d.]+)", hint)
     assert moves, warning
     for item, key, value in moves:
         _, _, again = draw(applied(source, tmp_path, item, key, value), tmp_path, capsys, "--mode", mode)
-        assert not any(line.startswith(f"rule: R-flow F4 {owner}") for line in again.splitlines()), \
+        # each case has one F4 (that arrowhead): none may remain
+        assert not any(line.startswith("rule: R-flow F4 ") for line in again.splitlines()), \
             (item, key, value, again)
 
 
@@ -258,7 +261,8 @@ def test_no_value_says_why(tmp_path, capsys):
     source = ROOT / "tests/corpus/trunk/merge-v3az-top.layout.yaml"
     _, _, text = draw(source, tmp_path, capsys, "--mode", "slide", "--no-title")
     warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F3 "))
-    assert ("spec hint (not a guarantee): no value: edges[2] draws several lines (a trunk or a `.*` line)"
+    assert ("spec hint (not a guarantee): no value: edges[2] (ALB → EC2 (Availability Zone 1), ALB → EC2 "
+            "(Availability Zone 2), ALB → EC2 (Availability Zone 3)) draws several lines (a trunk or a `.*` line)"
             in warning), warning
 
 
@@ -276,7 +280,7 @@ def test_f4_move_that_lands_the_arrowhead_on_a_third_node_is_not_offered(tmp_pat
     warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F4 "))
     assert "xy: [q.cx+63, q.cy]" not in warning, warning
     hint = warning.split("spec hint (not a guarantee): ", 1)[1].split(" (each drawn again", 1)[0]
-    for item, key, value in re.findall(r"(nodes\[\d+\]) \S+ \S+: (dx|dy|xy): (\[[^\]]*\]|-?[\d.]+)", hint):
+    for item, key, value in re.findall(r"(nodes\[\d+\]) [^:;]*?: (dx|dy|xy): (\[[^\]]*\]|-?[\d.]+)", hint):
         _, _, again = draw(applied(source, tmp_path, item, key, value), tmp_path, capsys)
-        assert not any(line.startswith("rule: R-flow F4 edge:0") for line in again.splitlines()), \
+        assert not any(line.startswith("rule: R-flow F4 ") for line in again.splitlines()), \
             (item, key, value, again)
