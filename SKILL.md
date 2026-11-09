@@ -597,7 +597,7 @@ All 857 icons are packed into one JSON bundle (keeps the skill's file count low)
   itself, or one a plain `open()` could not write (a read-only file, a new file in a
   read-only folder), is refused. The files are then written with a plain `open()`, so
   umask, mode, links and names behave as for any other write.
-- `templates/` — starter specs (multi-account egress, DX + VPN + TGW with two route tables as a document spec and a `-slide` twin, CloudFront VPC origin → internal ALB → ECS) that pass every rule as a document and as a slide; lines to change are marked `# EDIT`
+- `templates/` — starter specs (multi-account egress, DX + VPN + TGW with two route tables as a document spec and a `-slide` twin, CloudFront VPC origin → internal ALB → ECS) that pass every rule as a document and as a slide, except the `-slide` twin, which is slide-only; lines to change are marked `# EDIT`
 - `docs/examples/` — checked NLB, ALB, GWLB, TGW, Network Firewall, centralized egress, NLB mTLS and Bedrock-over-DX reference layouts and the serverless order pipeline in lanes
   (exported SVGs with inlined icons + PNG; copy them as drafts on the draft path); `specs/`
   has the layout spec that regenerates each of them and the skeleton (copy one in step 2);
