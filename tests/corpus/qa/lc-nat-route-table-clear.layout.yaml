@@ -1,0 +1,17 @@
+# Good pair of t3-nat-route-table (line-cross ticket 01): the route table sits left of the
+# NAT gateway, off the NAT -> IGW trunk.
+name: nat-route-table-clear
+cols: [table, nat, igw]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+  - {id: vpc, type: vpc, in: region}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: subnet, type: public, label: NAT subnet, in: az}
+nodes:
+  - {id: nat, icon: resource/Amazon-VPC_NAT-Gateway, label: NAT, in: subnet, col: nat}
+  - {id: rt, icon: resource/Amazon-Route-53_Route-Table, label: NAT RT, sub: '0.0.0.0/0 → IGW', in: subnet, col: table, for: [subnet]}
+  - {id: igw, icon: resource/Amazon-VPC_Internet-Gateway, label: IGW, on: vpc, at: [igw, main]}
+edges:
+  - {e: 'nat.* -> igw', trunk: true}

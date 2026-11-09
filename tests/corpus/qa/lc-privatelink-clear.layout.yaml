@@ -1,0 +1,18 @@
+# Good pair of t1-privatelink (line-cross ticket 01): the second gateway endpoint's hand-placed
+# line leaves from its right side and turns up into S3's bottom, clear of the first endpoint
+# in the same column (the original's VHV from its top runs up through it).
+name: privatelink-clear
+cols: [ep, s3col]
+rows: [az1, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+  - {id: vpc, type: vpc, in: region}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: sn, type: private, in: az}
+nodes:
+  - {id: s3ep, icon: resource/Amazon-VPC_Endpoints, label: S3 gateway EP, in: sn, col: ep}
+  - {id: s3, icon: service/Amazon-Simple-Storage-Service, label: S3, in: region, at: [s3col, az1]}
+edges:
+  - {e: 's3ep.1 ..> s3'}
+  - {e: 's3ep.2 ..> s3', shape: HV, from_side: right, to_side: bottom}

@@ -1,0 +1,16 @@
+# line-cross ticket 01: lines that only touch their own end icons where they attach. A pinned
+# headless line ends on the database icon's left side (inside its 2px margin), an arrow stops
+# at the cache's side, and a line leaves the client from under its two-line name.
+name: own-end-touch
+cols: [client, db]
+rows: [top, bottom]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+nodes:
+  - {id: client, icon: resource/Client, label: Client, sub: [web app, two caption lines], in: region, at: [client, top]}
+  - {id: db, icon: service/Amazon-Aurora, label: Aurora, in: region, at: [db, top]}
+  - {id: cache, icon: service/Amazon-ElastiCache, label: Cache, in: region, at: [db, bottom]}
+edges:
+  - {e: 'client -- db', points: [[client.x1, client.cy], [db.x0 + 1, db.cy]]}
+  - {e: 'client -> cache'}

@@ -1,0 +1,18 @@
+# Good pair of t3-ssm-trunk (line-cross ticket 01): the endpoints reach Session Manager as two
+# lines (no trunk), each into its own side, so no stem runs up across its name.
+name: ssm-trunk-clear
+cols: [ec2, endpoint, service]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+  - {id: vpc, type: vpc, in: region}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: subnet, type: private, in: az}
+nodes:
+  - {id: ec2, icon: service/Amazon-EC2, label: EC2, in: subnet, col: ec2}
+  - {id: ep, icon: resource/Amazon-VPC_Endpoints, label: SSM endpoints, in: subnet, col: endpoint}
+  - {id: ssm, icon: resource/AWS-Systems-Manager_Session-Manager, label: Session Manager, sub: IAM authorized sessions, in: region, at: [service, main]}
+edges:
+  - {e: 'ec2.* ..> ep.*', label: 'HTTPS :443'}
+  - {e: 'ep.* <..> ssm'}

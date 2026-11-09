@@ -1,0 +1,17 @@
+# Good pair of t3-dns-trunk (line-cross ticket 01): the outbound ENIs sit between the VGW and
+# the inbound ENIs, so the outbound trunk reaches the VGW without crossing an inbound icon.
+name: dns-trunk-clear
+cols: [vgw, outbound, inbound]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+  - {id: vpc, type: vpc, in: region}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: subnet, type: private, in: az}
+nodes:
+  - {id: vgw, icon: resource/Amazon-VPC_VPN-Gateway, label: VGW, on: vpc, at: [vgw, main]}
+  - {id: inbound, icon: resource/Amazon-Route-53_Resolver, label: Inbound ENI, in: subnet, col: inbound}
+  - {id: outbound, icon: resource/Amazon-Route-53_Resolver, label: Outbound ENI, in: subnet, col: outbound}
+edges:
+  - {e: 'outbound.* ..> vgw', label: 'UDP/TCP :53', trunk: true}

@@ -1058,30 +1058,59 @@ cases:
   # `rule:`의 펼친 edge 번호와 YAML `edges[n]` 번호가 다름, 범례 hop이 표시 이름 대신 node ID.
   # rules.py 미검출: authoring guidance has no draft rule; original QA specs retain the relevant flows.
   # 3 AZ 큰 그림에서 AZ 3 → DB 선이 AZ 2 서버를 지나갑니다(T4 large_3az). 축소본 three_az_writer_9nodes에서는 Endpoint/Aurora reader를 관통합니다.
-  # rules.py 미검출: intermediate icon/text crossings; the B2/F5 diagnostics are separate defects.
+  # line-cross 01: F6 reports each crossing (edge, crossed node); the B2/F5 diagnostics are separate defects.
   - path: qa/t4-three-az-writer.layout.yaml
     rules: [R-flow]
-    what: "9-node reduction: writer traffic crosses Endpoint/Aurora reader icons; rules.py 미검출"
+    what: "9-node reduction: writer traffic crosses Endpoint/Aurora reader icons"
+    bad: {R-flow: node:db.2}   # F6: the orders.* -> db.1 trunk runs over Aurora reader 2 (and Endpoint 2/3, Aurora reader 3); no clean routing alternative (best of the candidates), so selection keeps it; try: move db.2 / edges[0] bend_x
+  - path: qa/lc-three-az-writer-clear.layout.yaml
+    rules: [R-flow]
+    good: [R-flow]
+    what: "good pair of t4-three-az-writer: each order server writes to the Aurora instance in its own AZ; no line over an endpoint or database"
   # NAT trunk가 Route-Table 아이콘을 관통합니다(T3 nat-route-table).
-  # rules.py 미검출: slide LINE OVER ICON has no corresponding rule violation.
+  # line-cross 01: F6 reports the slide LINE OVER ICON as (edge, route table).
   - path: qa/t3-nat-route-table.layout.yaml
     rules: [R-flow]
-    what: "5-node NAT trunk crosses route-table icons on slides; rules.py 미검출"
+    what: "5-node NAT trunk crosses route-table icons on slides"
+    bad: {R-flow: {slide: node:rt.1, slide-no-title: node:rt.1}}   # F6: nat.* -> igw trunk over NAT RT on each AZ's row; a trunk has no routing alternative (ticket 02); try: rt.1 dy / shape
+  - path: qa/lc-nat-route-table-clear.layout.yaml
+    rules: [R-flow]
+    good: [R-flow]
+    what: "good pair of t3-nat-route-table: the route table sits left of the NAT gateway, off the NAT -> IGW trunk"
   # DNS outbound가 inbound 아이콘을 관통합니다(T3 dns-trunk).
-  # rules.py 미검출: intermediate icon crossings; F1 detects the shared segments, not the icon crossing.
+  # line-cross 01: F6 reports the icon crossings; F1 separately detects the shared segments.
   - path: qa/t3-dns-trunk.layout.yaml
     rules: [R-flow]
-    what: "5-node outbound DNS trunk crosses inbound ENIs on slides; rules.py 미검출: icon crossing (F1 separately detects shared ingress segments)"
+    what: "5-node outbound DNS trunk crosses inbound ENIs on slides (F6; F1 separately detects shared ingress segments)"
+    bad: {R-flow: {slide: node:inbound.1, slide-no-title: node:inbound.1}}   # F6: the outbound trunk runs over Inbound ENI on each AZ's row; trunk: no routing alternative (ticket 02)
+  - path: qa/lc-dns-trunk-clear.layout.yaml
+    rules: [R-flow]
+    good: [R-flow]
+    what: "good pair of t3-dns-trunk: the outbound ENIs sit between the VGW and the inbound ENIs; the outbound trunk crosses no icon"
   # SSM trunk가 서비스 라벨을 관통합니다(T3 ssm-trunk).
-  # rules.py 미검출: service-text crossings; F5 concerns another edge's HTTPS label.
+  # line-cross 01: F6 reports a trunk member over its own end's name (own ends are exempt only where they attach).
   - path: qa/t3-ssm-trunk.layout.yaml
     rules: [R-flow]
-    what: "6-node SSM trunk crosses the Session Manager service label on slides; rules.py 미검출"
+    what: "6-node SSM trunk crosses the Session Manager service label on slides"
+    bad: {R-flow: {slide: node:ssm, slide-no-title: node:ssm}}   # F6: edge:4 joins the trunk stem up across Session Manager's own name lines; trunk follower: no routing alternative (ticket 02); try: edges[2] bend_x
+  - path: qa/lc-ssm-trunk-clear.layout.yaml
+    rules: [R-flow]
+    good: [R-flow]
+    what: "good pair of t3-ssm-trunk: the endpoints reach Session Manager as two lines (no trunk), no stem across its name"
+  - path: qa/lc-own-end-touch.layout.yaml
+    rules: [R-flow]
+    good: [R-flow]
+    what: "lines touch their own end icons only where they attach: a pinned headless line ends 1px into the database icon's side, an arrow stops at the cache's side, a line leaves from under the client's three-line name"
   # PrivateLink S3 경로가 다른 endpoint를 관통합니다(T1 privatelink slide).
-  # rules.py 미검출: intermediate icon/text crossings; F1/F3/F5 and FIT are separate diagnostics.
+  # line-cross 01: F6 reports the icon/text crossings; F1/F3/F5 and FIT are separate diagnostics.
   - path: qa/t1-privatelink.layout.yaml
     rules: [R-flow, R-fit]
-    what: "Original PrivateLink: consumer B S3 path crosses another endpoint on a slide; no equivalent reduction; rules.py 미검출: icon/text crossing"
+    what: "Original PrivateLink: consumer B S3 path crosses another endpoint on a slide; no equivalent reduction"
+    bad: {R-flow: {slide: node:s3a, slide-no-title: node:s3a}}   # F6: the hand-placed s3b ..> s3 VHV (shape / bend_y / from_side / to_side) runs up through S3 gateway EP a and across S3's own icon; hand placement is not rerouted; try: from_side / shape, or s3a dx
+  - path: qa/lc-privatelink-clear.layout.yaml
+    rules: [R-flow]
+    good: [R-flow]
+    what: "good pair of t1-privatelink: the second gateway endpoint's hand-placed HV leaves its right side into S3's bottom, clear of the first endpoint in the same column"
   # 복제 라벨이 SQL/요청 선에 더 가깝습니다(T2 repro-badge-replication, T3 cache-label).
   # Smallest submitted reproduction: cache-label has 6 nodes, versus badge-replication's 7.
   - path: qa/t3-cache-label.layout.yaml

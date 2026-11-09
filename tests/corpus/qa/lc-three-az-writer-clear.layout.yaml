@@ -1,0 +1,18 @@
+# Good pair of t4-three-az-writer (line-cross ticket 01): each order server writes to the
+# Aurora instance in its own AZ, so no line passes another AZ's endpoint or database.
+name: three-az-writer-clear
+cols: [order, endpoint, db]
+rows: [az1, az2, az3]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: region, type: region, in: cloud}
+  - {id: vpc, type: vpc, cidr: 10.60.0.0/16, in: region}
+  - {id: az, type: az, label: 'Availability Zone {n}', per: [az1, az2, az3], in: vpc}
+  - {id: appsn, type: private, label: App, in: az}
+  - {id: datasn, type: private, label: Data, in: az}
+nodes:
+  - {id: ep, icon: resource/Amazon-VPC_Endpoints, label: 'Endpoint {n}', col: order, in: appsn}
+  - {id: orders, icon: service/Amazon-EC2, label: 'Order {n}', sub: 'HTTP :9000', col: endpoint, in: appsn}
+  - {id: db, icon: service/Amazon-Aurora, label: 'Aurora {n}', sub: 'PostgreSQL :5432', col: db, in: datasn}
+edges:
+  - {e: 'orders.* -> db.*'}
