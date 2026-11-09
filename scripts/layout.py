@@ -1253,7 +1253,8 @@ F4_KEEP = 2            # verified moves offered
 
 def f4_tip(spec: Spec, drawn, v) -> str:
     """The node moves (rules.f4_moves) that, drawn again from the loaded spec (feedback
-    rounds and text scale included, no candidate selection), leave no F4 with these owners;
+    rounds and text scale included, no candidate selection), leave no F4 on the same
+    arrowhead (edge instance and target), whatever other node it would point at then;
     `no value: <why>` when none does or the run has no loaded spec to draw again."""
     import rules
     moves, why = rules.f4_moves(spec, drawn, v)
@@ -1262,7 +1263,8 @@ def f4_tip(spec: Spec, drawn, v) -> str:
     if HINT_SOURCE is None:
         return ""
     base, source = HINT_SOURCE
-    ident = (v.rule, v.code, frozenset(v.owners))
+    # the same arrowhead: that edge instance into that target, whatever else it points at
+    head = tuple(v.owners[:2])
     kept = []
     with tempfile.TemporaryDirectory() as tmp:
         for mv in moves[:F4_TRIES]:
@@ -1278,7 +1280,7 @@ def f4_tip(spec: Spec, drawn, v) -> str:
                     after = rules.check(b.spec, b.geom, data)
             except Exception:  # noqa: BLE001 — a move that cannot be drawn is not offered
                 continue
-            if not any((w.rule, w.code, frozenset(w.owners)) == ident for w in after):
+            if not any(w.rule == v.rule and w.code == "F4" and tuple(w.owners[:2]) == head for w in after):
                 kept.append(mv.text)
                 if len(kept) == F4_KEEP:
                     break

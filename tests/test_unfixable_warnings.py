@@ -260,3 +260,23 @@ def test_no_value_says_why(tmp_path, capsys):
     warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F3 "))
     assert ("spec hint (not a guarantee): no value: edges[2] draws several lines (a trunk or a `.*` line)"
             in warning), warning
+
+
+def test_f4_move_that_lands_the_arrowhead_on_a_third_node_is_not_offered(tmp_path, capsys):
+    # sides/xy3 plus a node z where s's nearest xy move would put s: that move only trades q
+    # for z (Codex re-review of s5-hints), so it must not be offered
+    import yaml
+    spec = yaml.safe_load((ROOT / "tests/corpus/sides/xy3.layout.yaml").read_text())
+    q = next(n for n in spec["nodes"] if n["id"] == "q")
+    spec["nodes"].append({**q, "id": "z", "label": "Z", "xy": ["q.cx+63", "q.cy"]})
+    spec["nodes"][-1].pop("at", None)
+    source = tmp_path / "xy3z.layout.yaml"
+    source.write_text(yaml.safe_dump(spec))
+    _, _, text = draw(source, tmp_path, capsys)
+    warning = next(line for line in text.splitlines() if line.startswith("warning: unresolved R-flow F4 "))
+    assert "xy: [q.cx+63, q.cy]" not in warning, warning
+    hint = warning.split("spec hint (not a guarantee): ", 1)[1].split(" (each drawn again", 1)[0]
+    for item, key, value in re.findall(r"(nodes\[\d+\]) \S+ \S+: (dx|dy|xy): (\[[^\]]*\]|-?[\d.]+)", hint):
+        _, _, again = draw(applied(source, tmp_path, item, key, value), tmp_path, capsys)
+        assert not any(line.startswith("rule: R-flow F4 edge:0") for line in again.splitlines()), \
+            (item, key, value, again)
