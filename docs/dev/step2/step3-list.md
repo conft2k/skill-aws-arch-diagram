@@ -211,7 +211,7 @@ The baseline has 775 runs. A run counts as changed when its draft bytes differ f
   - R-flow −4, R-border +4, tier-0 160 → 160, check problems −6.
   - Summed runtime 2.13× against the baseline. The other runs on the same loaded machine measured 1.31–1.67×, so this one is the slowest.
 - **Worse:**
-  - All 18 by canvas area, +0.04% to +0.4%:
+  - All 18 by canvas area, +0.067% to +0.343%:
     - `trunk/` eng-egress-tgw, ce-tgw, v-fork slide, v-stem, v-three, x-fork-b;
     - `rt/` longlabel, notstacked, single, nd-single, nd-tgwside, rtsub (3 modes), tmpl-doc;
     - `ports/xnt`;
