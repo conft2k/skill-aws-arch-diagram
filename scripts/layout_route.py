@@ -3135,7 +3135,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         if mine:
             hits = _text_hits(ctx, mine[0].pts)
             if side:
-                none = "an out-and-back: its leg needs room on that side (the try above)"
+                none = (f"a same-side out-and-back: no field of the line takes it off the text, its leg "
+                        f"needs room {side} of both ends")
             elif hits and not near and not clean:
                 tries, none = _piece_tries(ctx, x, want, mine[0].pts, cands[0][3], others_of(x), hits)
         return RouteWarning(f"{base}; try {fix}", edge=e.n, line=e.line, refused=True, shape=want,

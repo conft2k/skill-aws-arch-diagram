@@ -521,7 +521,16 @@ PyYAML is needed for `.yaml`; without it run `uv run --with pyyaml python ...`.
   of the candidates)`) and
   `try bend_y: row.main+76 (= 346; row.main-90 = 180 now), the nearest clear value`; a
   `points` line whose inner piece hits something gets `points: …; try points: move the
-  horizontal piece at y=80 (points 2–3) to y=53`. `SLIDE TOO SMALL` names the note first
+  horizontal piece at y=80 (points 2–3) to y=53`. A line over a caption or a box title
+  (`LINE OVER TEXT …`, best of the candidates or a refused shape) with no such value gets
+  one the engine drew again from your spec and found clean (that warning gone, no new
+  rule violation): the field that moves the piece over the text (`from_offset` /
+  `to_offset` within the end's side for an end piece, `bend_x` / `bend_y` for the middle
+  one), else a move of the text's owner off the line (`nodes[8] rtvpc (VPC RT): dx: 11`,
+  `cols: {id: rtvpc, min_gap_before: 171}`), as `try <change> (<value> now) — drawn again,
+  the line clears '<text>'` (a refusal: `the requested VH is drawn`). With none it says
+  `no value: <why>` (a trunk line, the text's owner is an end of the line, none of the four
+  nearest changes clears it) and keeps the general advice. `SLIDE TOO SMALL` names the note first
   when it is what adds to the overflowing side (`note: {place: lines}` for a pane, shorter
   steps for note lines), and a gap hint (`min_gap_before`) on an auto-scaled drawing adds
   the `text_scale` it was measured at.

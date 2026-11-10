@@ -390,13 +390,22 @@ def test_line_over_text_hint_reads_structured_data_not_the_message(tmp_path):
         layout.HINT_SOURCE = None
 
 
-def test_line_over_text_without_a_value_says_why(tmp_path, capsys):
-    # the slide drawing of the DX document template: the requested VH of tgw -- enid runs
-    # through Dev VPC's header, which starts left of the TGW's column (no gap to widen)
-    source = ROOT / "templates/dx-vpn-tgw.layout.yaml"
-    _, _, text = draw(source, tmp_path, capsys, "--mode", "slide")
+@pytest.mark.parametrize(("case", "mode", "edge", "why", "advice"), [
+    # the requested VH leaves the TGW's bottom through its own caption: no offset within the
+    # side clears it, and the caption's node is the line's own end
+    ("rt/single", "document", "edges[2]", "no from_offset along that side (±24) draws a clean VH; TGW's 'TGW' "
+     "has no move off the line: it is an end of this line", "or drop the hint and let the rule pick"),
+    # a same-side out-and-back: its own advice (room for the leg) follows the reason
+    ("xy/oab2", "document", "edges[1]", "a same-side out-and-back: no field of the line takes it off the text",
+     "or drop bend_y / shape"),
+    # a trunk line: its pieces are shared, and the box header has no gap before it to widen
+    ("lanes/g", "document", "edges[20]", "a trunk line: its pieces are shared with the other instances", ""),
+])
+def test_line_over_text_without_a_value_says_why(tmp_path, capsys, case, mode, edge, why, advice):
+    source = ROOT / f"tests/corpus/{case}.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", mode)
     warning = next(line for line in text.splitlines()
-                   if line.startswith("warning: edges[7] ") and "LINE OVER TEXT" in line)
-    assert "; no value: " in warning and "from_offset along that side (±24)" in warning, warning
-    # the generic advice stays after the reason
-    assert warning.endswith("or drop the hint and let the rule pick"), warning
+                   if line.startswith(f"warning: {edge} ") and "LINE OVER TEXT" in line)
+    assert f"; no value: {why}" in warning, warning
+    assert " — drawn again, " not in warning, warning
+    assert warning.endswith(advice), warning

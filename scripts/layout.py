@@ -1450,7 +1450,11 @@ def line_over_text_tip(spec: Spec, geom: Geometry, w, before) -> str:
 def route_warning_text(spec: Spec, geom: Geometry, w, before) -> str:
     """A router warning as summary() prints it: a LINE OVER TEXT one with its verified value
     (line_over_text_tip) in place of a refusal's generic try, or `no value: <why>` after it."""
-    tip = line_over_text_tip(spec, geom, w, before) if isinstance(w, layout_route.RouteWarning) else ""
+    if not isinstance(w, layout_route.RouteWarning):
+        return w
+    tip = line_over_text_tip(spec, geom, w, before)
+    if not tip and w.hits and not w.searchable and w.why_none and HINT_SOURCE is not None:
+        tip = f"no value: {w.why_none}"     # a same-side out-and-back: its own (pad) advice follows
     if not tip:
         return w
     if tip.startswith("try "):
