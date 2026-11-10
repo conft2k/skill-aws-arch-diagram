@@ -1,0 +1,23 @@
+# Reduced from the stage 5 DX QA (qa-after2 dx-vpn-tgw, redraw 3): VPC RT's long sub line
+# reaches the TGW's attachment line to the second VPC, which leaves 23px right of the
+# TGW's center (from_offset: 23); the router warns LINE OVER TEXT with no value to try.
+name: dx-lot
+mode: slide
+text_scale: 1.5
+cols: [tgw, {id: rtvpc, min_gap_before: 160}, {id: vpc, min_gap_before: 110}]
+rows: [top, main, bot]
+groups:
+  - {id: cloud,  type: cloud}
+  - {id: region, type: region, label: us-east-1, in: cloud}
+  - {id: prodv,  type: vpc, label: App VPC, cidr: 10.1.0.0/16, in: region}
+  - {id: prods,  type: private, label: Private subnet, in: prodv}
+  - {id: devv,   type: vpc, label: Shared services VPC, cidr: 10.2.0.0/16, in: region}
+  - {id: devs,   type: private, label: Private subnet, in: devv}
+nodes:
+  - {id: tgw,  icon: service/AWS-Transit-Gateway, label: TGW, in: region, at: [tgw, main]}
+  - {id: rtvpc, icon: resource/Amazon-Route-53_Route-Table, label: VPC RT, sub: ["연결: App · Shared", "10.0.0.0/8 → DX (VPN 백업)"], in: region, at: [rtvpc, main], for: [enip, enid], via: tgw}
+  - {id: enip, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: prods, at: [vpc, top]}
+  - {id: enid, icon: resource/AWS-Transit-Gateway_Attachment, label: TGW ENI, in: devs, at: [vpc, bot]}
+edges:
+  - {e: "tgw -- enip", verb: VPC attachment, shape: VH}
+  - {e: "tgw -- enid", shape: VH, from_offset: 23}

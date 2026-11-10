@@ -1011,6 +1011,80 @@ def _label_req(spec, e, d, na, nb, ae, be, outer, req, va, vb, oa, ob):
 
 
 # =======================================================================================
+# draw(): structured LINE OVER TEXT warnings
+
+@dataclass(frozen=True)
+class TextOwner:
+    """Whose text a line runs over: a node's label / sub line, or a group's title / CIDR line."""
+    kind: str               # "node" | "group"
+    id: str
+    what: str               # "line" (node) | "title" | "CIDR line" (group)
+    text: str
+
+
+@dataclass(frozen=True)
+class TextHit:
+    """One piece of a polyline over one text box (the router's LINE OVER TEXT)."""
+    piece: int              # segment index in the polyline
+    pieces: int             # its number of segments
+    axis: str               # "h" | "v": the piece's direction
+    at: float               # its fixed coordinate (y of an h piece, x of a v piece)
+    box: Tuple[float, float, float, float]   # the text box as drawn (x0, y0, x1, y1)
+    owner: TextOwner
+
+
+@dataclass(frozen=True)
+class PieceTry:
+    """A move of the hitting piece that the router found clean on this geometry (unverified:
+    layout.py draws it again from the spec): `field` of spec edge `line` set to `value`."""
+    field: str              # from_offset | to_offset | bend_x | bend_y
+    value: object           # float, or the author's Expr moved (bend_x / bend_y)
+    now: str                # the value it has now, as text
+    shown: str              # "<field>: <value>" as the author writes it
+
+
+class RouteWarning(str):
+    """A router warning (its text unchanged, so everything that reads warnings as strings
+    keeps working) with the structured data a verified hint is drawn from: the edge, its
+    spec line, whether it refuses the author's shape, the LINE OVER TEXT hits of the drawn
+    (refused: the requested) polyline and the piece moves the router found clean. `base` and
+    `fix` split a refusal into its reason and its generic try, so a verified value can
+    replace the latter (layout.summary)."""
+    edge: int = -1
+    line: int = -1
+    refused: bool = False
+    shape: str = ""
+    hits: Tuple[TextHit, ...] = ()
+    tries: Tuple[PieceTry, ...] = ()
+    why_none: str = ""       # why no piece move was found
+    searchable: bool = False  # layout.summary looks for a verified value (no value printed yet)
+    base: str = ""
+    fix: str = ""
+
+    def __new__(cls, text: str = "", **kw):
+        s = super().__new__(cls, text)
+        s.__dict__.update(kw)
+        return s
+
+
+def _text_hits(ctx: "_Ctx", pts: Sequence[Pt]) -> Tuple[TextHit, ...]:
+    """Every (piece, text box) pair the router's LINE OVER TEXT test flags on pts."""
+    out = []
+    segs = list(zip(pts, pts[1:]))
+    for k, (p, q) in enumerate(segs):
+        x0, x1 = min(p[0], q[0]), max(p[0], q[0])
+        y0, y1 = min(p[1], q[1]), max(p[1], q[1])
+        for t, b in ctx.text_t:
+            if t[0] <= x1 and x0 <= t[2] and t[1] <= y1 and y0 <= t[3] and CL.seg_hits_box(p, q, t):
+                owner = ctx.text_owner.get(id(b))
+                if owner is None:
+                    continue
+                h = abs(p[1] - q[1]) < 0.5
+                out.append(TextHit(k, len(segs), "h" if h else "v", p[1] if h else p[0], b.t(), owner))
+    return tuple(out)
+
+
+# =======================================================================================
 # draw(): context
 
 class _Ctx:
@@ -1026,6 +1100,7 @@ class _Ctx:
         self.node_icons: List[Box] = []
         self.badges: List[Box] = []          # group badge images
         self.texts: List[Box] = []           # node labels, headers
+        self.text_owner: Dict[int, TextOwner] = {}   # id(box in texts) → whose text it is
         self.headers: List[Tuple[str, Box]] = []
         self.avoid_headers = set()
         self.borders: List[Tuple[str, float, float, float, str]] = []   # (h|v, pos, lo, hi, gid)
@@ -1038,16 +1113,19 @@ class _Ctx:
                                  ((r.x1, r.y1), (r.x0, r.y1)), ((r.x0, r.y1), (r.x0, r.y0))]
             if g.badge:
                 self.badges.append(g.badge)
-            for t in (g.title, g.cidr):
+            for what, t in (("title", g.title), ("CIDR line", g.cidr)):
                 if t:
                     self.texts.append(t.box())
+                    self.text_owner[id(self.texts[-1])] = TextOwner("group", gid, what, t.text)
             marks = [("badge", g.badge.t())] if g.badge else []
             marks += [(what, t.box().t()) for what, t in (("title", g.title), ("CIDR line", g.cidr)) if t]
             if marks:
                 self.headers.append((gid, Box(*CL.header_band(r.x0, r.y0, marks))))
-        for n in geom.nodes.values():
+        for nid, n in geom.nodes.items():
             self.node_icons.append(n.icon)
-            self.texts += [t.box(conservative=True) for t in n.lines]
+            for t in n.lines:
+                self.texts.append(t.box(conservative=True))
+                self.text_owner[id(self.texts[-1])] = TextOwner("node", nid, "line", t.text)
         self.icons = self.node_icons + self.badges
         # obstacle tuples as _line_problems tests them (icons + 1, texts + LINE_CLEAR)
         self.icon_t = [(b.expand(1).t(), b) for b in self.icons]
@@ -1422,6 +1500,66 @@ def _nearest_clear(ctx: _Ctx, x: "_Edge", at: float, make, others, own_ends: boo
             if ok(v) and all(ok(v + o) for o in span):
                 return v
     return None
+
+
+def _piece_tries(ctx: _Ctx, x: "_Edge", shape: str, pts: Sequence[Pt], bend, others,
+                 hits: Sequence[TextHit]) -> Tuple[Tuple[PieceTry, ...], str]:
+    """For a line in `shape` (drawn as pts with `bend`) whose piece runs over text: the spec
+    field that moves the first such piece — from_offset / to_offset for an end piece,
+    bend_x / bend_y for the middle one of three — at the nearest value (CLEAR_REACH, values
+    CLEAR_SPARE either side clean too) at which the whole line is clean here. ((), why)
+    when there is none. Unverified: layout.summary draws it again from the spec."""
+    if not hits:
+        return (), ""
+    e, t = x.e, x.t
+    if t.trunk is not None:
+        return (), "a trunk line: its pieces are shared with the other instances"
+    if shape != t.shape or shape not in (H, V, HV, VH, HVH, VHV) or len(pts) < 2:
+        return (), f"the line is drawn {shape}, not as its own {t.shape}: no field of its own moves that piece"
+    k, n = hits[0].piece, hits[0].pieces
+    pa, pb = pts[0], pts[-1]
+    if n == 1:
+        return (), "a straight line: moving it means moving an end node"
+    if k in (0, n - 1):
+        end = "a" if k == 0 else "b"
+        fixed = e.from_offset if end == "a" else e.to_offset
+        p0, q0 = x.ends(shape, 0.0, 0.0)
+        base = p0 if end == "a" else q0
+        here = pa if end == "a" else pb
+        vertical = hits[0].axis == "v"      # a vertical end piece leaves a top / bottom side
+        i = 0 if vertical else 1
+        now = here[i] - base[i]
+        g = x.A if end == "a" else x.B
+        half = (g.box.x1 - g.box.x0 if i == 0 else g.box.y1 - g.box.y0) / 2
+
+        def make(d, end=end, i=i):
+            if abs(now + d) > half:
+                return None         # an offset past the side's end leaves the icon (box)
+            a, b = list(pa), list(pb)
+            (a if end == "a" else b)[i] += d
+            return _drawn(x, shape, tuple(a), tuple(b), bend, None)[0]
+
+        d = _nearest_clear(ctx, x, 0.0, make, others)
+        if d is None:
+            return (), (f"no {'from' if end == 'a' else 'to'}_offset along that side "
+                        f"(±{M.fmt_num(half)}) draws a clean {shape}")
+        name = "from_offset" if end == "a" else "to_offset"
+        v = round(now + d, 1)
+        return (PieceTry(name, v, M.fmt_num(fixed) if fixed is not None else f"none; port at {M.fmt_num(now)}",
+                         f"{name}: {M.fmt_num(v)}"),), ""
+    if n == 3 and k == 1 and shape in (H, V, HVH, VHV) and isinstance(bend, (int, float)):
+        leg = "bend_x" if shape in (HVH, H) else "bend_y"
+        hint = getattr(e, leg)
+        v = _nearest_clear(ctx, x, bend, lambda v: _drawn(x, shape, pa, pb, v, None)[0], others)
+        if v is None:
+            return (), f"no {leg} within {CLEAR_REACH}px draws a clean {shape}"
+        if isinstance(hint, M.Expr) and hint.kind != "num":
+            return (PieceTry(leg, replace(hint, offset=hint.offset + v - bend),
+                             f"{_expr_text(hint)} = {M.fmt_num(bend)}", f"{leg}: {_with_offset(hint, v - bend)}"),), ""
+        now = (M.fmt_num(bend) if isinstance(hint, M.Expr) else f"{hint} = {M.fmt_num(bend)}" if hint
+               else f"none; the router's {M.fmt_num(bend)}")
+        return (PieceTry(leg, float(v), now, f"{leg}: {M.fmt_num(v)}"),), ""
+    return (), "the piece over the text is not an end piece or a single middle bend"
 
 
 def _with_offset(hint: M.Expr, delta: float) -> str:
@@ -2961,7 +3099,8 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         leg = "bend_x" if want in (HVH, H) else "bend_y" if want in (VHV, V) else None
         hint = getattr(e, leg) if leg else None
         hint = hint if isinstance(hint, M.Expr) else None
-        mine = [build(x, c) for c in _candidates(ctx, x, ports) if c[0] == want]
+        cands = [c for c in _candidates(ctx, x, ports) if c[0] == want]
+        mine = [build(x, c) for c in cands]
         side = x.sides(want)[0] if _same_side(want, *x.sides(want), x.t.dy if want == HVH else x.t.dx) else None
         box = (_nonshared(ctx.spec, e)[2] or [None])[0]
         if not mine and side:
@@ -2973,6 +3112,7 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
             why = "; ".join(_name_prob(ctx, p) for p in probs) or "a cleaner candidate won"
             if hint is not None:
                 why = f"{leg} {_expr_text(hint)} = {M.fmt_num(mine[0].bend)}: {why}"
+        near, clean = "", []
         if side:
             # an out-and-back: its leg needs room on that side, not a gap between the ends
             room = f"give {box} pad_{side}" if box else f"move the ends off the canvas {side} edge"
@@ -2990,7 +3130,17 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         else:
             fix = (f"widen the gap between the ends (min_gap_before / pad) so a {want} has a clean bend, "
                    f"or drop the hint and let the rule pick")
-        return f"{_where(e)}: drew {r.shape} instead of {want}, refusing the requested {asked} — {why}; try {fix}"
+        base = f"{_where(e)}: drew {r.shape} instead of {want}, refusing the requested {asked} — {why}"
+        hits, tries, none = (), (), ""
+        if mine:
+            hits = _text_hits(ctx, mine[0].pts)
+            if side:
+                none = "an out-and-back: its leg needs room on that side (the try above)"
+            elif hits and not near and not clean:
+                tries, none = _piece_tries(ctx, x, want, mine[0].pts, cands[0][3], others_of(x), hits)
+        return RouteWarning(f"{base}; try {fix}", edge=e.n, line=e.line, refused=True, shape=want,
+                            hits=hits, tries=tries, why_none=none, base=base, fix=fix,
+                            searchable=bool(hits) and not side and not near and not clean)
 
     def others_of(x: _Edge) -> List[Tuple[Pt, Pt]]:
         return [seg for n, r in routes.items() if n != x.e.n and _flow(xs[n].e) != _flow(x.e)
@@ -3037,9 +3187,14 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         x = xs[n]
         if r.probs and x.t.shape != P:      # `points` is the spec's own route: check_layout judges it
             tip = bend_try(x, r.shape, r.bend) if r.shape == x.t.shape else ""
-            warns.append(f"{_where(x.e)}: {', '.join(sorted(set(_name_prob(ctx, p) for p in r.probs)))} "
-                         "(best of the candidates)"
-                         + (f"; try {tip}" if tip else ""))
+            base = (f"{_where(x.e)}: {', '.join(sorted(set(_name_prob(ctx, p) for p in r.probs)))} "
+                    "(best of the candidates)")
+            hits = _text_hits(ctx, r.pts)
+            tries, none = _piece_tries(ctx, x, r.shape, r.pts, r.bend, others_of(x), hits) \
+                if hits and not tip else ((), "")
+            warns.append(RouteWarning(base + (f"; try {tip}" if tip else ""), edge=x.e.n, line=x.e.line,
+                                      shape=r.shape, hits=hits, tries=tries, why_none=none, base=base,
+                                      fix=tip, searchable=bool(hits) and not tip))
         elif r.probs and x.e.points:
             # the author's own polyline: name what it hits and the nearest clear piece value
             tip = _points_try(ctx, x, r.pts, others_of(x))

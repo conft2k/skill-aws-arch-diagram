@@ -306,3 +306,97 @@ def test_f4_hint_does_not_read_the_message_text(tmp_path, capsys):
     for item, key, value in moves:
         _, _, again = draw(applied(source, tmp_path, item, key, value), tmp_path, capsys)
         assert not any(line.startswith("rule: R-flow F4 ") for line in again.splitlines()), (item, value)
+
+
+# engine-blockers 03: the router's LINE OVER TEXT warning (best of the candidates, or a refused
+# shape that cites it) carries a value only after drawing it again cleared that warning
+
+def lot_applied(source, tmp_path, warning):
+    """The spec with the warning's `try` applied: an edge field on the warning's own entry, a
+    node's dx / dy, or a track's min_gap_before."""
+    import yaml
+    spec = yaml.safe_load(source.read_text())
+    tip = warning.split("; try ", 1)[1].split(" — drawn again", 1)[0]
+    m = re.match(r"(from_offset|to_offset|bend_x|bend_y): (\S+) \(", tip)
+    if m:
+        idx = int(re.match(r"warning: edges\[(\d+)\]", warning).group(1))
+        spec["edges"][idx][m.group(1)] = yaml.safe_load(m.group(2))
+    elif (m := re.match(r"nodes\[(\d+)\] [^:]*: (dx|dy): (-?[\d.]+) \(", tip)):
+        spec["nodes"][int(m.group(1))][m.group(2)] = float(m.group(3))
+    else:
+        m = re.match(r"(cols|rows): \{id: (\S+), min_gap_before: (-?[\d.]+)\} \(", tip)
+        assert m, tip
+        tracks = spec[m.group(1)]
+        i = next(i for i, t in enumerate(tracks) if (t if isinstance(t, str) else t["id"]) == m.group(2))
+        tracks[i] = {**({} if isinstance(tracks[i], str) else tracks[i]), "id": m.group(2),
+                     "min_gap_before": float(m.group(3))}
+    out = tmp_path / "lot.layout.yaml"
+    out.write_text(yaml.safe_dump(spec, allow_unicode=True))
+    return out
+
+
+@pytest.mark.parametrize(("case", "mode", "edge"), [
+    ("qa/eb03-dx-qa-r3", "slide", "edges[7]"),           # the DX QA stuck case (best of the candidates)
+    ("qa/eb03-dx-line-over-text", "slide", "edges[1]"),  # reduced: the requested VH is refused over it
+])
+def test_line_over_text_value_clears_the_warning_when_applied(tmp_path, capsys, case, mode, edge):
+    source = ROOT / f"tests/corpus/{case}.layout.yaml"
+    _, first, text = draw(source, tmp_path, capsys, "--mode", mode)
+    warning = next(line for line in text.splitlines()
+                   if line.startswith(f"warning: {edge} ") and "LINE OVER TEXT" in line)
+    assert "; try " in warning and " — drawn again, " in warning, warning
+    assert "widen the gap between the ends" not in warning, warning
+    _, _, again = draw(lot_applied(source, tmp_path, warning), tmp_path, capsys, "--mode", mode)
+    left = [line for line in again.splitlines() if line.startswith(f"warning: {edge} ")]
+    assert not any("LINE OVER TEXT" in line or "refusing" in line for line in left), again
+    assert not any(line.startswith("rule: ") for line in again.splitlines()), again
+
+
+def test_line_over_text_hint_leaves_the_draft_alone(tmp_path, capsys):
+    source = ROOT / "tests/corpus/qa/eb03-dx-qa-r3.layout.yaml"
+    _, with_hint, _ = draw(source, tmp_path, capsys, "--mode", "slide")
+    layout_hint = layout.line_over_text_tip
+    try:
+        layout.line_over_text_tip = lambda *a: ""
+        _, without, _ = draw(source, tmp_path, capsys, "--mode", "slide")
+    finally:
+        layout.line_over_text_tip = layout_hint
+    assert with_hint == without
+
+
+def test_line_over_text_hint_reads_structured_data_not_the_message(tmp_path):
+    import copy
+    import tempfile
+    import layout_route
+    import layout_spec
+    source = ROOT / "tests/corpus/qa/eb03-dx-qa-r3.layout.yaml"
+    spec = layout_spec.load(source, mode="slide")
+    loaded = copy.deepcopy(spec)
+    with tempfile.TemporaryDirectory() as tmp:
+        (b, data, *_), _, guard = layout.draw_final(spec, str(source), Path(tmp) / "x.svg")
+    w = next(w for w in b.warnings if isinstance(w, layout_route.RouteWarning) and w.hits)
+    owner = w.hits[0].owner
+    assert (owner.kind, owner.id, owner.text) == ("node", "rtvpc", "10.0.0.0/8 → DX (VPN 백업)")
+    assert w.hits[0].axis == "v" and w.hits[0].piece == 0
+    # the same data under a message that says nothing: the same verified value
+    blank = layout_route.RouteWarning("edges[7] x -- y: nothing", **w.__dict__)
+    layout.HINT_SOURCE = (loaded, str(source))
+    try:
+        before = guard.check(b.spec, b.geom, data)
+        assert layout.line_over_text_tip(b.spec, b.geom, blank, before) == \
+            layout.line_over_text_tip(b.spec, b.geom, w, before)
+        assert layout.line_over_text_tip(b.spec, b.geom, blank, before).startswith("try nodes[8] rtvpc")
+    finally:
+        layout.HINT_SOURCE = None
+
+
+def test_line_over_text_without_a_value_says_why(tmp_path, capsys):
+    # the slide drawing of the DX document template: the requested VH of tgw -- enid runs
+    # through Dev VPC's header, which starts left of the TGW's column (no gap to widen)
+    source = ROOT / "templates/dx-vpn-tgw.layout.yaml"
+    _, _, text = draw(source, tmp_path, capsys, "--mode", "slide")
+    warning = next(line for line in text.splitlines()
+                   if line.startswith("warning: edges[7] ") and "LINE OVER TEXT" in line)
+    assert "; no value: " in warning and "from_offset along that side (±24)" in warning, warning
+    # the generic advice stays after the reason
+    assert warning.endswith("or drop the hint and let the rule pick"), warning

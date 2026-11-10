@@ -1094,6 +1094,15 @@ cases:
     rules: [R-flow]
     good: [R-flow]
     what: "good pair of t3-dns-trunk: the outbound ENIs sit between the VGW and the inbound ENIs; the outbound trunk crosses no icon"
+  - path: qa/eb03-dx-qa-r3.layout.yaml
+    modes: [slide, slide-no-title]
+    rules: [R-flow, R-rt, R-border, R-fit]
+    good: [R-flow, R-rt, R-border, R-fit]
+    what: "stage 5 DX QA stuck case (engine-blockers 03): tgw -- enid (VH, from_offset 23) runs over VPC RT's long sub line; the router's LINE OVER TEXT warning carries a value verified by drawing it again"
+  - path: qa/eb03-dx-line-over-text.layout.yaml
+    rules: [R-flow, R-rt, R-border]
+    good: [R-flow, R-rt, R-border]
+    what: "reduced DX QA case (engine-blockers 03): the requested VH of tgw -- enid is refused over VPC RT's sub line; the refusal carries a verified value instead of 'widen the gap'"
   # SSM trunk가 서비스 라벨을 관통합니다(T3 ssm-trunk).
   # line-cross 01: F6 reports a trunk member over its own end's name (own ends are exempt only where they attach).
   # line-cross 02: the channel move (wider endpoint → service gap, stem bend searched along both members) clears the

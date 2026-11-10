@@ -1291,6 +1291,173 @@ def f4_tip(spec: Spec, drawn, v) -> str:
             f"{rules._display(spec, v.owners[1][5:]) if len(v.owners) > 1 else 'its target'} only)")
 
 
+LOT_TRIES = 4          # spec changes drawn again per router LINE OVER TEXT warning (nearest first)
+LOT_SPARE = 3          # px past the router's text clearance a text owner's move adds
+
+
+@dataclasses.dataclass
+class _LotMove:
+    """One spec change for a router LINE OVER TEXT warning: shown as `shown (now)`, made on
+    a copy of the loaded spec by apply(spec)."""
+    cost: float
+    shown: str
+    now: str
+    apply: object
+
+
+def _lot_moves(spec: Spec, geom: Geometry, w) -> Tuple[List[_LotMove], str]:
+    """The changes to draw again for router warning w (a layout_route.RouteWarning), from its
+    structured data only: the router's clean piece move first (from_offset / to_offset /
+    bend_x / bend_y on w's spec line), then moves of the first hit's text owner off the
+    piece, nearest first — the node's dx / dy (not an end of the line, not placed by xy or
+    a flow stack on that axis) and the min_gap_before of a column (row) between the piece
+    and the text, which moves the text (or the line) away by the overlap. Also why the
+    text owner has no move ("" when it has one)."""
+    out: List[_LotMove] = []
+    for t in w.tries:
+        def put(trial, t=t):
+            for e in trial.edges:
+                if e.line == w.line:
+                    setattr(e, t.field, t.value)
+        out.append(_LotMove(0.0, t.shown, t.now, put))
+    if not w.hits:
+        return out, ""
+    h = w.hits[0]
+    clear = K.LINE_CLEAR + LOT_SPARE
+    k = 0 if h.axis == "v" else 1
+    # every text the same piece runs over (a header's title and CIDR line) moves off it
+    same = [o for o in w.hits if o.piece == h.piece]
+    lo = min(o.box[k] for o in same)
+    hi = max(o.box[k + 2] for o in same)
+    gn = geom.nodes.get(h.owner.id) if h.owner.kind == "node" else None
+    if gn is not None:
+        # a node moves whole: its icon and every line of its caption clear the piece
+        boxes = [gn.icon.t()] + [t.box(conservative=True).t() for t in gn.lines]
+        lo, hi = min(b[k] for b in boxes), max(b[k + 2] for b in boxes)
+    # the text moves past the piece one way or the other: + toward higher coordinates
+    shifts = sorted((h.at + clear - lo, h.at - clear - hi), key=abs)
+    owner = h.owner
+    e = spec.edges[w.edge] if 0 <= w.edge < len(spec.edges) else None
+    ends = {e.a, e.b} if e is not None else set()
+    node = spec.nodes.get(owner.id) if owner.kind == "node" else None
+    stacked = {i for ids in spec.flow_stacks().values() for i in ids}
+    if node is not None and owner.id not in ends and node.xy is None and not (k == 1 and owner.id in stacked):
+        a = "dx" if k == 0 else "dy"
+        now = getattr(node, a)
+        for sh in shifts:
+            val = float(math.ceil(now + sh) if sh > 0 else math.floor(now + sh))
+
+            def put(trial, src=node.src, a=a, val=val):
+                for o in trial.nodes.values():      # the spec entry: every instance it draws
+                    if o.src == src:
+                        setattr(o, a, val)
+            out.append(_LotMove(abs(sh), f"{M.node_ref(spec, owner.id)}: {a}: {M.fmt_num(val)}",
+                                M.fmt_num(now), put))
+    # a wider gap before a track between the piece and the text's middle moves every track
+    # from it on: the text when the piece is before it, the piece's end when it is after
+    tracks = spec.cols if k == 0 else spec.rows
+    pos = geom.cols if k == 0 else geom.rows
+    mid = (lo + hi) / 2
+    if owner.kind == "group" and owner.id in geom.groups:
+        # a header sits at its box's start: the box's first track carries it
+        r = geom.groups[owner.id].rect
+        inside = sorted(c for c in pos.values() if (r.x0 if k == 0 else r.y0) < c < (r.x1 if k == 0 else r.y1))
+        mid = inside[0] if inside else mid
+    need = h.at + clear - lo if h.at < mid else hi + clear - h.at
+    span = (h.at, mid + 0.5) if h.at < mid else (mid + 0.5, h.at)
+    for i, tr in enumerate(tracks):
+        if i == 0 or tr.id not in pos or tracks[i - 1].id not in pos:
+            continue
+        c = pos[tr.id]
+        if not span[0] < c <= span[1]:
+            continue
+        gap = c - pos[tracks[i - 1].id]
+        val = float(math.ceil(gap + need))
+
+        def put(trial, tid=tr.id, val=val):
+            trial.track(tid).min_gap_before = val
+        out.append(_LotMove(need + 0.5 * abs(c - mid) / max(1.0, hi - lo),
+                            f"{'cols' if k == 0 else 'rows'}: {{id: {tr.id}, min_gap_before: {M.fmt_num(val)}}}",
+                            f"gap {M.fmt_num(gap)}", put))
+    out[len(w.tries):] = sorted(out[len(w.tries):], key=lambda m: m.cost)
+    why = ""
+    if len(out) == len(w.tries):
+        whose = (f"{M.node_name(spec, owner.id)}'s {owner.text!r}" if owner.kind == "node"
+                 else f"{M.group_name(spec, owner.id)}'s header {owner.text!r}")
+        mover = ("it is an end of this line" if owner.id in ends else
+                 "it is placed by xy" if node.xy is not None else
+                 "a flow column sets its y" if k == 1 and owner.id in stacked else "") if node is not None else ""
+        why = (f"{whose} has no move off the line: {mover + ', and ' if mover else ''}no "
+               f"{'column' if k == 0 else 'row'} lies between the line and the text to widen")
+    return out, why
+
+
+def _lot_left(w, tb) -> str:
+    """What of router warning w the redraw tb still shows (by spec line and text owner), or ""."""
+    owners = {h.owner for h in w.hits}
+    for t in tb.warnings:
+        if not isinstance(t, layout_route.RouteWarning) or t.line != w.line:
+            continue
+        if w.refused and t.refused:
+            return f"still refuses the requested {t.shape}"
+        left = owners & {h.owner for h in t.hits}
+        if left:
+            o = next(iter(left))
+            return f"still over {o.text!r}"
+    return ""
+
+
+def line_over_text_tip(spec: Spec, geom: Geometry, w, before) -> str:
+    """For a router LINE OVER TEXT warning (layout_route.RouteWarning with hits): the first
+    of its spec changes (_lot_moves) that, drawn again from the loaded spec the way main()
+    draws it (feedback rounds, repairs and selection included), leaves no such warning on
+    the same spec line over the same text (a refusal: no refusal) and adds no tier-0
+    identity to `before` (this drawing's violations), as `try <change> (<now> now) …`;
+    `no value: <why>` when none does; "" with no loaded spec to draw from."""
+    if HINT_SOURCE is None or not w.searchable:
+        return ""
+    base, source = HINT_SOURCE
+    moves, owner_why = _lot_moves(spec, geom, w)
+    if not moves:
+        return f"no value: {'; '.join(t for t in (w.why_none, owner_why) if t) or 'nothing to move'}"
+    held = tier0_identities(before or ())
+    whys = []
+    text = w.hits[0].owner.text
+    with tempfile.TemporaryDirectory() as tmp:
+        for mv in moves[:LOT_TRIES]:
+            trial = copy.deepcopy(base)
+            try:
+                mv.apply(trial)
+                (tb, tdata, *_), _, guard = draw_final(trial, source, Path(tmp) / "lot.svg")
+                after = guard.check(tb.spec, tb.geom, tdata)
+            except Exception:  # noqa: BLE001 — a change that cannot be drawn is not offered
+                whys.append(f"{mv.shown}: cannot be drawn")
+                continue
+            left = _lot_left(w, tb)
+            new = tier0_identities(after or ()) - held
+            if left:
+                whys.append(f"{mv.shown}: {left}")
+            elif new:
+                whys.append(f"{mv.shown}: adds {', '.join(sorted(f'{r} {c}' for r, c, _ in new))}")
+            else:
+                got = (f"the requested {w.shape} is drawn" if w.refused else f"the line clears {text!r}")
+                return f"try {mv.shown} ({mv.now} now) — drawn again, {got}"
+    first = "".join(f"{t}; " for t in (w.why_none if not w.tries else "", owner_why) if t)
+    return (f"no value: {first}none of the {min(len(moves), LOT_TRIES)} nearest changes clears it when drawn "
+            f"again ({'; '.join(whys[:2])}{', …' if len(whys) > 2 else ''})")
+
+
+def route_warning_text(spec: Spec, geom: Geometry, w, before) -> str:
+    """A router warning as summary() prints it: a LINE OVER TEXT one with its verified value
+    (line_over_text_tip) in place of a refusal's generic try, or `no value: <why>` after it."""
+    tip = line_over_text_tip(spec, geom, w, before) if isinstance(w, layout_route.RouteWarning) else ""
+    if not tip:
+        return w
+    if tip.startswith("try "):
+        return f"{w.base}; {tip}"
+    return f"{w.base}; {tip}" + (f"; try {w.fix}" if w.fix else "")
+
+
 def unfixable_warnings(spec: Spec, geom: Geometry, violations, problems: Sequence[Problem],
                        draft: Optional[bytes] = None) -> List[str]:
     """Reuse spec-fix guidance for each enabled violation in the written draft.
@@ -1491,10 +1658,12 @@ def summary(spec: Spec, b: Build, out_path: Path, svg: Optional[bytes] = None,
     for n in spec.nodes.values():
         if n.icon_query and n.template is None or (n.icon_query and n.instance == 1):
             lines.append(f"  alias {n.icon_query!r} → {n.icon} ({n.src})")
+    violations = rule_guard.check(spec, g, data) if rule_guard is not None else None
     for w in spec.warnings + g.warnings + b.warnings:
+        if rule_guard is not None and violations is not None:
+            w = route_warning_text(spec, g, w, violations)
         lines.append(f"warning: {named_warning(spec, w)}")
     if rule_guard is not None:
-        violations = rule_guard.check(spec, g, data)
         if violations is not None:
             lines.extend(unfixable_warnings(spec, g, violations, rule_guard.problems(data), data))
     return lines
@@ -2593,6 +2762,57 @@ def select_drawing(default, source: str, scratch: Path, rule_guard: RuleGuard, o
     return best, lines + hard_placement_warnings(best[0], after) + trunk_tries
 
 
+def draw_final(spec: Spec, source: str, scratch: Path, no_check: bool = False):
+    """The drawing main() writes for `spec`: the default build with its feedback rounds, a
+    guarded repair when the check still has problems, then rule-checked selection.
+    Returns (result, selection lines, rule guard); result as render_readable's."""
+    rule_guard = RuleGuard()
+    default_guard = RuleGuard(protect=False, build_cache={}, ignore_codes=PRE_SELECTION_IGNORED)
+    rule_guard.build_cache = default_guard.build_cache
+    default = render_readable(spec, source, scratch, no_check, default_guard)
+    actual = drawn_text(default[0].spec, default[1])[0][0]
+    if math.isfinite(actual):
+        rule_guard.min_text_size = actual * MIN_TEXT_RETENTION
+    rule_guard._checked = default_guard._checked
+    rule_guard._problems = default_guard._problems
+    if default_guard.error is not None:
+        rule_guard.error = default_guard.error
+    result = default
+    # A completed default already used the feedback/text-scale budgets.
+    # Only unresolved check problems warrant further guarded repairs.
+    if not no_check and default[3]:
+        candidate = render_readable(default[0].spec, source, scratch, False,
+                                    rule_guard, default)
+        db, dd, _, dp, *_ = default
+        cb, cd, _, cp, *_ = candidate
+        before = rule_guard.check(db.spec, db.geom, dd)
+        after = rule_guard.check(cb.spec, cb.geom, cd)
+        if before is None or after is None:
+            if len(cp) <= len(dp) and rule_guard.admits(db, dd, cb, cd):
+                result = candidate
+        else:
+            improves = (len(after) < len(before) or
+                        (len(after) == len(before) and len(cp) < len(dp)))
+            try:
+                import rules
+                old_score = rules.score(before, dp, db.geom, db.spec, shape_misses(db))
+                new_score = rules.score(after, cp, cb.geom, cb.spec, shape_misses(cb))
+            except Exception as error:  # noqa: BLE001 — keep the chosen draft
+                rule_guard.failed(error)
+            else:
+                if (improves and len(cp) <= len(dp)
+                        and not rule_guard.adds(Counter(v.rule for v in before),
+                                               Counter(v.rule for v in after))
+                        and new_score < old_score and rule_guard.admits(db, dd, cb, cd)):
+                    result = candidate
+    if no_check:
+        selection = ["selection: default kept (--no-check)"]
+    else:
+        rule_guard.selection = True
+        result, selection = select_drawing(result, source, scratch, rule_guard, spec)
+    return result, selection, rule_guard
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("spec", type=Path, help="<name>.layout.yaml (or .json)")
@@ -2621,53 +2841,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     source = str(a.spec)
 
-    rule_guard = RuleGuard()
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            scratch = Path(tmp) / "round.svg"
-            default_guard = RuleGuard(protect=False, build_cache={}, ignore_codes=PRE_SELECTION_IGNORED)
-            rule_guard.build_cache = default_guard.build_cache
-            default = render_readable(spec, source, scratch, a.no_check, default_guard)
-            actual = drawn_text(default[0].spec, default[1])[0][0]
-            if math.isfinite(actual):
-                rule_guard.min_text_size = actual * MIN_TEXT_RETENTION
-            rule_guard._checked = default_guard._checked
-            rule_guard._problems = default_guard._problems
-            if default_guard.error is not None:
-                rule_guard.error = default_guard.error
-            result = default
-            # A completed default already used the feedback/text-scale budgets.
-            # Only unresolved check problems warrant further guarded repairs.
-            if not a.no_check and default[3]:
-                candidate = render_readable(default[0].spec, source, scratch, False,
-                                            rule_guard, default)
-                db, dd, _, dp, *_ = default
-                cb, cd, _, cp, *_ = candidate
-                before = rule_guard.check(db.spec, db.geom, dd)
-                after = rule_guard.check(cb.spec, cb.geom, cd)
-                if before is None or after is None:
-                    if len(cp) <= len(dp) and rule_guard.admits(db, dd, cb, cd):
-                        result = candidate
-                else:
-                    improves = (len(after) < len(before) or
-                                (len(after) == len(before) and len(cp) < len(dp)))
-                    try:
-                        import rules
-                        old_score = rules.score(before, dp, db.geom, db.spec, shape_misses(db))
-                        new_score = rules.score(after, cp, cb.geom, cb.spec, shape_misses(cb))
-                    except Exception as error:  # noqa: BLE001 — keep the chosen draft
-                        rule_guard.failed(error)
-                    else:
-                        if (improves and len(cp) <= len(dp)
-                                and not rule_guard.adds(Counter(v.rule for v in before),
-                                                       Counter(v.rule for v in after))
-                                and new_score < old_score and rule_guard.admits(db, dd, cb, cd)):
-                            result = candidate
-            if a.no_check:
-                selection = ["selection: default kept (--no-check)"]
-            else:
-                rule_guard.selection = True
-                result, selection = select_drawing(result, source, scratch, rule_guard, spec)
+            result, selection, rule_guard = draw_final(spec, source, Path(tmp) / "round.svg", a.no_check)
             b, data, fixed, _, rnd, used, skipped = result
     except M.LayoutError as e:
         print("\n".join(e.problems))
