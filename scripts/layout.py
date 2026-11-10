@@ -1433,8 +1433,12 @@ def line_over_text_tip(spec: Spec, geom: Geometry, w, before) -> str:
             except Exception:  # noqa: BLE001 — a change that cannot be drawn is not offered
                 whys.append(f"{mv.shown}: cannot be drawn")
                 continue
+            if after is None:
+                # no rule result: "no new tier-0 violation" is not confirmed, so not offered
+                whys.append(f"{mv.shown}: its rule check failed ({guard.error or 'no result'})")
+                continue
             left = _lot_left(w, tb)
-            new = tier0_identities(after or ()) - held
+            new = tier0_identities(after) - held
             if left:
                 whys.append(f"{mv.shown}: {left}")
             elif new:

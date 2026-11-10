@@ -26,7 +26,7 @@
     - `base`, `fix`
   - 값과 판정은 이 데이터에서만 나온다. 테스트 `test_line_over_text_hint_reads_structured_data_not_the_message`는 문자열을 바꾼 경고로도 같은 값이 나오는지 확인한다.
 - [x] 테스트: 전체 suite green(아래).
-- [ ] Codex review: 이 문서 뒤.
+- [x] Codex review 1차: 차단 2건. 아래 "리뷰 수정"에서 고쳤다. 다시 독립 리뷰를 받는다.
 
 ## 동작
 
@@ -97,3 +97,25 @@ trunk 선의 piece 이동도 시험해 봤다(trunk 제외를 끄고 4개 사례
 - 힌트가 draft를 바꾸지 않는다.
 - 구조화 데이터만 읽는다.
 - no value 이유 3종(끝 node의 caption, out-and-back, trunk).
+
+## 리뷰 수정 (Codex 1차 차단 2건)
+
+브랜치를 main `3411f8a`(eb01: overlay group trunk) 위로 rebase했다. 충돌은 없었다.
+
+1. **숫자 bend 후보가 `cannot be drawn`으로 떨어졌다.** `_piece_tries`가 author 식이 없는 `bend_x` / `bend_y` 값을 float로 넣었다. spec의 bend field는 `Expr`를 기대하므로 다시 그리는 중에 `AttributeError`가 났다. 이제 `Expr("num", offset=v)`로 넣는다(`scripts/layout_route.py` `_piece_tries`). 리뷰어의 5-node `middle` spec은 이제 `try bend_x: 129 (none; the router's 271 now) — drawn again, the requested HVH is drawn`을 낸다. 이 값을 YAML에 적용하면 경고가 사라지고 `Layout OK`가 나온다.
+2. **후보의 rule check가 실패해도 값을 냈다.** `RuleGuard.check`는 실패하면 `None`을 돌려준다. 그런데 `after or ()`가 이것을 위반 0건으로 읽었다. 이제 rule 결과가 없는 후보는 채택하지 않는다. 대신 `<change>: its rule check failed (<error>)`를 이유로 남기고, 결국 `no value: …`가 된다(`scripts/layout.py` `line_over_text_tip`).
+
+새 테스트(`tests/test_unfixable_warnings.py`) 2개는 수정 전에 실패하고 수정 후에 통과한다.
+
+- `test_numeric_bend_value_is_drawn_again_and_clears_the_warning`: `middle` spec에 값이 나오고, 적용하면 `Layout OK`다.
+- `test_line_over_text_value_is_not_offered_when_its_rule_check_fails`: `qa/eb03-dx-qa-r3` slide에서 후보 redraw의 `rules.check`만 실패시키면, `drawn again` 없이 `no value`와 `its rule check failed`가 나온다.
+
+`tests/corpus/MANIFEST.yaml`에 주석을 달았다. `qa/eb03-dx-qa-r3`는 역사적 QA 재현이고, Region 안 VPN 배치는 따라 할 템플릿이 아니다(2026-11-10부터 Site-to-Site VPN은 Direct Connect처럼 AWS Cloud 밖에 둔다).
+
+corpus 기준(main-c3aa9ef) 대비 결과(`fix.json`, `fix.log`, `fix-drafts/`):
+
+- **0 better, 804 same, 0 worse, 17 uncompared, 0 changed drafts**, check problem delta +0, violation delta 전부 +0, summed runtime 1.101×
+- uncompared 17개: eb03 새 사례 5 run, eb01 새 사례 4개의 12 run
+- rebase 전 draft(`eb03-drafts/`, 793개)와는 모두 byte-identical이다. eb01 새 사례 12개 draft는 main `3411f8a`에서 그린 것과 byte-identical이다.
+
+전체 테스트: **971 passed, 1 xfailed, 2853 subtests passed**.

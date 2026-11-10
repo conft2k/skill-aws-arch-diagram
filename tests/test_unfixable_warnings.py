@@ -352,6 +352,59 @@ def test_line_over_text_value_clears_the_warning_when_applied(tmp_path, capsys, 
     assert not any(line.startswith("rule: ") for line in again.splitlines()), again
 
 
+def test_numeric_bend_value_is_drawn_again_and_clears_the_warning(tmp_path, capsys):
+    # a plain-number bend_x (no author hint): the redraw sets it as the spec's Expr("num"), so
+    # it is verified and offered, not dropped as "cannot be drawn" (eb03 review)
+    import yaml
+    source = tmp_path / "middle.layout.yaml"
+    source.write_text(yaml.safe_dump({
+        "name": "middle", "mode": "document", "text_scale": "off", "cols": ["c"], "rows": ["r"],
+        "nodes": [{"id": "a", "icon": "service/AWS-Lambda", "label": "A", "xy": [100, 100]},
+                  {"id": "b", "icon": "service/AWS-Lambda", "label": "B", "xy": [450, 350]},
+                  {"id": "m1", "icon": "service/AWS-Lambda", "label": "Text text text", "xy": [194, 290]},
+                  {"id": "m3", "icon": "service/AWS-Lambda", "label": "Text text text", "xy": [340, 245]},
+                  {"id": "m4", "icon": "service/AWS-Lambda", "label": "MMMMMMMM", "xy": [286, 125]}],
+        "edges": [{"e": "a -> b", "shape": "HVH"}]}))
+    _, _, text = draw(source, tmp_path, capsys)
+    warning = next(line for line in text.splitlines()
+                   if line.startswith("warning: edges[0] ") and "LINE OVER TEXT" in line)
+    assert re.search(r"; try bend_x: \d+ \(none; the router's \d+ now\) — drawn again, "
+                     r"the requested HVH is drawn$", warning), warning
+    assert "cannot be drawn" not in warning, warning
+    _, _, again = draw(lot_applied(source, tmp_path, warning), tmp_path, capsys)
+    assert not any(line.startswith("warning: edges[0] ") for line in again.splitlines()), again
+    assert not any(line.startswith("rule: ") for line in again.splitlines()), again
+    assert "Layout OK" in again, again
+
+
+def test_line_over_text_value_is_not_offered_when_its_rule_check_fails(tmp_path, capsys, monkeypatch):
+    # the candidates' redraws get no rule result: "no new tier-0 violation" is unconfirmed,
+    # so no value is offered (a missing result is not an empty one)
+    source = ROOT / "tests/corpus/qa/eb03-dx-qa-r3.layout.yaml"
+    real_check, real_tip = rules.check, layout.line_over_text_tip
+    inside = []
+
+    def check(*a, **kw):
+        if inside:
+            raise RuntimeError("checker down for a candidate")
+        return real_check(*a, **kw)
+
+    def tip(*a, **kw):
+        inside.append(1)
+        try:
+            return real_tip(*a, **kw)
+        finally:
+            inside.pop()
+
+    monkeypatch.setattr(rules, "check", check)
+    monkeypatch.setattr(layout, "line_over_text_tip", tip)
+    _, _, text = draw(source, tmp_path, capsys, "--mode", "slide")
+    warning = next(line for line in text.splitlines()
+                   if line.startswith("warning: edges[7] ") and "LINE OVER TEXT" in line)
+    assert " — drawn again, " not in warning, warning
+    assert "; no value: " in warning and "its rule check failed (RuntimeError(" in warning, warning
+
+
 def test_line_over_text_hint_leaves_the_draft_alone(tmp_path, capsys):
     source = ROOT / "tests/corpus/qa/eb03-dx-qa-r3.layout.yaml"
     _, with_hint, _ = draw(source, tmp_path, capsys, "--mode", "slide")

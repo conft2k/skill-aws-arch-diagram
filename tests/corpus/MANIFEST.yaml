@@ -1094,6 +1094,8 @@ cases:
     rules: [R-flow]
     good: [R-flow]
     what: "good pair of t3-dns-trunk: the outbound ENIs sit between the VGW and the inbound ENIs; the outbound trunk crosses no icon"
+  # Historical QA reproduction, not a template to copy: its Site-to-Site VPN sits inside the Region.
+  # The current rule (since 2026-11-10) draws Site-to-Site VPN outside the AWS Cloud like Direct Connect.
   - path: qa/eb03-dx-qa-r3.layout.yaml
     modes: [slide, slide-no-title]
     rules: [R-flow, R-rt, R-border, R-fit]

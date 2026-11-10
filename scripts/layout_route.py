@@ -1038,7 +1038,7 @@ class PieceTry:
     """A move of the hitting piece that the router found clean on this geometry (unverified:
     layout.py draws it again from the spec): `field` of spec edge `line` set to `value`."""
     field: str              # from_offset | to_offset | bend_x | bend_y
-    value: object           # float, or the author's Expr moved (bend_x / bend_y)
+    value: object           # float (offsets), or an Expr (bend_x / bend_y: a number or the author's Expr moved)
     now: str                # the value it has now, as text
     shown: str              # "<field>: <value>" as the author writes it
 
@@ -1558,7 +1558,8 @@ def _piece_tries(ctx: _Ctx, x: "_Edge", shape: str, pts: Sequence[Pt], bend, oth
                              f"{_expr_text(hint)} = {M.fmt_num(bend)}", f"{leg}: {_with_offset(hint, v - bend)}"),), ""
         now = (M.fmt_num(bend) if isinstance(hint, M.Expr) else f"{hint} = {M.fmt_num(bend)}" if hint
                else f"none; the router's {M.fmt_num(bend)}")
-        return (PieceTry(leg, float(v), now, f"{leg}: {M.fmt_num(v)}"),), ""
+        # the spec's bend fields hold an Expr (or "gap"): a plain number is Expr("num")
+        return (PieceTry(leg, M.Expr("num", offset=float(v)), now, f"{leg}: {M.fmt_num(v)}"),), ""
     return (), "the piece over the text is not an end piece or a single middle bend"
 
 
