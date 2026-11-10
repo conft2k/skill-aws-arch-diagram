@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human (2026-11-10: implemented on branch eb03, awaiting Codex review). Evidence: [ticket 03 results](../results/03-line-over-text-try.md). The DX QA case prints `try nodes[8] rtvpc (VPC RT): dx: 11 (0 now)` and applying it clears the warning; of the 30 corpus router warnings 5 now carry a verified value (all clear when applied), 2 keep their author-bend value, 23 say `no value: <why>`; drafts byte-identical (0 changed of 804).
 
-- [ ] The DX QA stuck case (`tgw -- enid`, `shape: VH, from_offset: 23` hitting the "Dev VPC" header; reproduce from `~/.cache/skill-design/improve/stage5/qa-after*/dx*/`) prints a value, and applying it clears the warning; reduced reproduction in the corpus.
-- [ ] Across the corpus, list router LINE OVER TEXT warnings before / after: how many get a verified value, how many `no value` and why; every printed value is checked by applying it.
-- [ ] Drafts are byte-identical (hints only change messages); runtime within 1.5× of main-c3aa9ef summed.
-- [ ] No message parsing: values come from the structured data (as the F4/F5/F6 hints do since b50655b).
+- [x] The DX QA stuck case (`tgw -- enid`, `shape: VH, from_offset: 23` hitting the "Dev VPC" header; reproduce from `~/.cache/skill-design/improve/stage5/qa-after*/dx*/`) prints a value, and applying it clears the warning; reduced reproduction in the corpus.
+- [x] Across the corpus, list router LINE OVER TEXT warnings before / after: how many get a verified value, how many `no value` and why; every printed value is checked by applying it.
+- [x] Drafts are byte-identical (hints only change messages); runtime within 1.5× of main-c3aa9ef summed.
+- [x] No message parsing: values come from the structured data (as the F4/F5/F6 hints do since b50655b).
 - [ ] Tests green; Codex review 0 blocking.
