@@ -188,6 +188,12 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
   - 티켓 03 뒤 남은 F6: nat-route-table rt.2(2 mode)와 three-az-writer slide 2 mode의 11건, 합 13건. 선이 돌아갈 빈 통로가 없으므로 통로 자리를 만드는 geometry 이동이 필요합니다. merge-vfan과 sgw-ret의 관통도 남아 있습니다.
   - nat-route-table slide-no-title의 작은 결함 2건: AZ1 outbound 응답선이 이름 아래에 붙고, VGW 옆 점선 stem의 일부가 실선처럼 보입니다.
   - HVHV 세로 우회와 여러 작성자 배치 필드 보존에 대한 엔진 테스트 보강.
+- **5단계 템플릿 수정(s5-tpl2)에서 나온 남은 일.**
+  - tgw-reference-architecture 예제(문서·slide)는 아직 `service/AWS-Site-to-Site-VPN`을 AWS Cloud 밖에 그립니다. 검사기의 `OUTSIDE_CLOUD` 목록이 이 아이콘을 Cloud 밖에 두도록 허용하므로 잡히지 않습니다. 템플릿처럼 Region 안의 `resource/Amazon-VPC_VPN-Connection`으로 바꾸고, 목록에서 VPN을 빼서 검사가 잡게 해야 합니다.
+  - `LINE OVER TEXT` 경고에는 시도할 값(`try:`)이 없습니다(DX QA 2차에서 유일하게 남은 막힘).
+  - dx-vpn-tgw 문서 spec을 slide로 돌리면 shape 거부 경고 3건(HV/VH → HVH)이 나옵니다. 규칙 위반은 없고, 그래서 slide에는 `-slide` 쌍을 권합니다.
+  - cloudfront-vpc-origin: 빈 ALB subnet 공간이 크고 ALB와 두 subnet의 관계가 암시적입니다(Codex 판정 minor).
+  - dx-vpn-tgw 판정 minor: attachment 선 두 개가 같은 높이로 나란히 지나 잠깐 한 줄처럼 보이고, 아래쪽 선이 TGW 아이콘이 아니라 라벨 아래에서 끝납니다.
 - **gwlb slide의 corpus worse 2건은 면적만 늘어난 것(+5.7%)으로 사용자가 예외로 받았습니다.** 화살촉-테두리 검사가 생기면 다시 판정합니다.
 
 ## 알려진 문제 (막는 문제 아님)
