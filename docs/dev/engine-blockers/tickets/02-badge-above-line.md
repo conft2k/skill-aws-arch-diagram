@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** wontfix (2026-11-10: dropped after the one fix round; see [results](../results/02-badge-above-line.md) and docs/dev/backlog.md)
 
 - [ ] `templates/multi-account-egress.layout.yaml` badge 3 and the QA spec `~/.cache/skill-design/improve/stage5/qa-after/multi-account/arch.r07.layout.yaml` badges 3 and 4 sit above their lines in document and slide; a reduced reproduction of each is in the corpus.
 - [ ] A case where above is truly blocked prints the warning; the corpus tags it.

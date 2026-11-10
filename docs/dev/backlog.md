@@ -190,10 +190,15 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
   - HVHV 세로 우회와 여러 작성자 배치 필드 보존에 대한 엔진 테스트 보강.
 - **5단계 템플릿 수정(s5-tpl2)에서 나온 남은 일.**
   - ~~tgw 예제의 VPN을 Region 안으로~~: 사용자 결정(2026-11-10)으로 취소. Site-to-Site VPN은 Cloud 밖에 그립니다. 거꾸로 DX 템플릿을 Cloud 밖으로 되돌리는 일은 [engine-blockers 티켓 04](engine-blockers/tickets/04-vpn-outside-cloud.md)입니다.
-  - `LINE OVER TEXT` 경고에는 시도할 값(`try:`)이 없습니다(DX QA 2차에서 유일하게 남은 막힘).
+  - ~~`LINE OVER TEXT` 경고에는 시도할 값(`try:`)이 없습니다~~: engine-blockers 티켓 03에서 해결. 다시 그려 확인한 값을 내고, 없으면 `no value: <이유>`를 냅니다.
   - ~~dx-vpn-tgw 문서 spec을 slide로 돌리면 shape 거부 경고 3건(HV/VH → HVH)이 나옵니다~~: engine-blockers 티켓 04(VPN을 Cloud 밖 Direct Connect 열로) 뒤 해소. slide 제목 있음·없음 모두 경고 0건, `Layout OK`입니다. slide에는 여전히 글자가 더 큰 `-slide` 쌍을 권합니다.
   - cloudfront-vpc-origin: 빈 ALB subnet 공간이 크고 ALB와 두 subnet의 관계가 암시적입니다(Codex 판정 minor).
   - dx-vpn-tgw 판정 minor: attachment 선 두 개가 같은 높이로 나란히 지나 잠깐 한 줄처럼 보이고, 아래쪽 선이 TGW 아이콘이 아니라 라벨 아래에서 끝납니다.
+- **큰 배율에서 단계 번호가 선 아래로 가는 문제 (engine-blockers 티켓 02, 버림 2026-11-10).** `text_scale`이 크면 그룹 제목이 선 위 자리를 막아 번호가 선 아래로 갑니다(multi-account 템플릿 번호 3, QA r07 번호 3·4). 시도 결과와 막힌 이유는 [결과 문서](engine-blockers/results/02-badge-above-line.md)에 있습니다. 다시 할 때 풀어야 할 것은 다음과 같습니다.
+  - 그룹별 배지 자리(막힌 그룹과 twin만)는 효과가 있었습니다. Codex 그림 판정 46쌍 중 30쌍이 나아졌습니다.
+  - 배지 자리 때문에 바뀌는 자동 배율 단계 선택: 글자 크기를 지키면 tier-0 비용이 오르고(`bench/latest3-egress` slide-no-title 297→516), 비용을 지키면 글자가 작아집니다(7개 그림, 최대 0.8px). 어느 쪽을 우선할지 기준부터 정해야 합니다.
+  - `rt/hub` document: 배지 자리를 넣으면 VPC B→Hub 선이 VPC A subnet 안을 지나갑니다. 다른 그룹을 관통하는 선을 검사기가 잡지 못합니다.
+  - 배지 경고에 막은 테두리 이름 대기, F6 channel 폭 정수 올림(소수 폭에서 생기는 LINE HUGS BORDER)은 따로 떼어 가져올 수 있습니다.
 - **gwlb slide의 corpus worse 2건은 면적만 늘어난 것(+5.7%)으로 사용자가 예외로 받았습니다.** 화살촉-테두리 검사가 생기면 다시 판정합니다.
 
 ## 알려진 문제 (막는 문제 아님)
