@@ -87,7 +87,7 @@ cp ${CLAUDE_SKILL_DIR}/templates/dx-vpn-tgw.layout.yaml /path/to/scratchpad/arch
 | Template (`templates/`) | What it draws | Pick it for |
 |---|---|---|
 | `multi-account-egress.layout.yaml` | AWS Cloud > Organization > accounts > a Region box in each: two workload accounts' App VPCs attached to a TGW shared from the Network account, egress through its Egress VPC (TGW ENI → NAT → IGW → Internet), 4 steps | multi-account, shared TGW (AWS RAM), centralized egress per account |
-| `dx-vpn-tgw.layout.yaml` (document) + `dx-vpn-tgw-slide.layout.yaml` (slide) | on-premises → Direct Connect (transit VIF) → DX gateway, and CGW → Internet → a Site-to-Site VPN connection in the Region as the backup, into one TGW with two route tables (sub-captions say which attachments each is associated with and which propagate) and two VPCs with private subnets | hybrid DX + VPN, a TGW with several route tables |
+| `dx-vpn-tgw.layout.yaml` (document) + `dx-vpn-tgw-slide.layout.yaml` (slide) | on-premises → Direct Connect (transit VIF) → DX gateway, and CGW → Internet → Site-to-Site VPN (outside the Cloud, in the Direct Connect column) as the backup, into one TGW with two route tables (sub-captions say which attachments each is associated with and which propagate) and two VPCs with private subnets | hybrid DX + VPN, a TGW with several route tables |
 | `cloudfront-vpc-origin.layout.yaml` | Users → CloudFront (VPC origin) → internal ALB in private subnets → an ECS service of one task per AZ; the IGW a VPC origin requires on the VPC border with no line, 3 steps | CloudFront in front of a private origin, ALB + ECS/Fargate |
 
 Otherwise copy the closest example spec.
@@ -344,11 +344,13 @@ Go through this checklist:
       their lines draw (Spoke RT between the spoke VPCs and the TGW, Firewall RT between
       the TGW and the inspection VPC) — next to the TGW only when it is the TGW's only
       table.
-- [ ] A Site-to-Site VPN path is CGW → Internet → VPN connection → TGW/VGW, with the
-      Internet icon outside the AWS Cloud and the VPN connection
-      (`resource/Amazon-VPC_VPN-Connection`) in the Region beside its TGW/VGW; a Direct Connect path is customer
+- [ ] A Site-to-Site VPN path is CGW → Internet → Site-to-Site VPN → TGW/VGW, with the
+      Internet and VPN icons outside the AWS Cloud; a Direct Connect path is customer
       router → Direct Connect (the DX location, outside the AWS Cloud) → DX gateway
       (inside the Cloud, outside the Regions) and does not pass the Internet icon.
+      Site-to-Site VPN follows the same placement as Direct Connect: both are AWS services
+      built for the external connection, so both sit outside the Cloud (an exception to
+      "regional resources go in the Region"), in one column when both exist.
 - [ ] Technically sound (guide, "Technical correctness"): each hop carries the protocol
       really on it (no "TCP :443" after TLS termination; GENEVE only GWLB ⇄ appliances);
       route captions include return routes; global services (Route 53, CloudFront)

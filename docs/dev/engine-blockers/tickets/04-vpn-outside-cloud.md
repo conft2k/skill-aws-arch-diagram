@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** implemented (2026-11-10); awaiting independent Codex review and PNG judge. Evidence: [ticket 04 results](../results/04-vpn-outside-cloud.md). Per the user's follow-up, Site-to-Site VPN follows the same placement as Direct Connect (the `edge` column outside the Cloud).
 
-- [ ] `templates/dx-vpn-tgw.layout.yaml` and `templates/dx-vpn-tgw-slide.layout.yaml` draw `service/AWS-Site-to-Site-VPN` outside the AWS Cloud between the Internet and the TGW, keep "VPN attachment" readable on the VPN → TGW line or caption, and still pass every rule in the modes they list (tests/test_templates.py).
-- [ ] references/diagram_guide.md, references/layout_spec.md, SKILL.md and the template header comments say: VPN outside the Cloud, with the reason; no doc says "VPN connection in the Region"; the "Older examples" sentence is gone.
-- [ ] GLOSSARY or the guide records the exception once, so reviewers and judges can cite it.
+- [x] `templates/dx-vpn-tgw.layout.yaml` and `templates/dx-vpn-tgw-slide.layout.yaml` draw `service/AWS-Site-to-Site-VPN` outside the AWS Cloud between the Internet and the TGW, keep "VPN attachment" readable on the VPN → TGW line or caption, and still pass every rule in the modes they list (tests/test_templates.py).
+- [x] references/diagram_guide.md, references/layout_spec.md, SKILL.md and the template header comments say: VPN outside the Cloud, with the reason; no doc says "VPN connection in the Region"; the "Older examples" sentence is gone.
+- [x] GLOSSARY or the guide records the exception once, so reviewers and judges can cite it.
 - [ ] Corpus vs main-c3aa9ef: only the two DX templates change; tests green; Codex review 0 blocking; Codex PNG judge on both templates (told the convention) not worse and 0 misread blocking.

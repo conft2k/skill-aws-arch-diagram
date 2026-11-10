@@ -130,6 +130,10 @@ _Avoid_: spreading, push apart
 Selection's answer to a line over node on the crossed node's own row or column, where there is no gap to widen: the line also tries the step-around shapes, which leave its source through the other pair of sides, run a lane off the row (or column) and turn into the target's facing side. A trunk's members step together and merge on one leg. It is adopted on the same test as the channel move. A line the author placed is drawn as written; a probe without its placement is reported as a `try:` value.
 _Avoid_: reroute, detour (a detour is the router's U-shape out of one side of both ends)
 
+**Outside the Cloud**:
+The house placement for the icons drawn between the on-premises group and the AWS Cloud box, never inside it: the Internet, Direct Connect and Site-to-Site VPN. Site-to-Site VPN follows the same placement as Direct Connect: both are AWS services built for the external connection, so both are drawn outside the AWS Cloud, in one column when both exist. This is a deliberate exception to "regional resources go in the Region"; a VPN icon outside the Cloud is correct, one inside is the error (the loader rejects it, and check_layout.py reports OUTSIDE CLOUD). `references/diagram_guide.md` (Technical correctness) gives the rule.
+_Avoid_: external zone, edge band
+
 **Tier**:
 The rank of a rule when drawings are compared. Tier 0 means a reader misreads the diagram; tier 2 means fit and size. Tier 0 counts before tier 2.
 _Avoid_: severity, priority

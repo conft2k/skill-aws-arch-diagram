@@ -443,9 +443,11 @@ CIRCLED = re.compile("[\u2460-\u2473\u2776-\u2793]")
 BARE_CIDR = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
 CIDR_IN = re.compile(r"\d{1,3}(\.\d{1,3}){3}/\d{1,2}")
 CIDR_COLOR = K.TEXT_CIDR.fill.lower()
-# Things that are not in AWS: they sit between the on-premises group and the AWS Cloud box,
-# never inside it (a Direct Connect location is a colocation facility, the Internet is the
-# Internet, and a Site-to-Site VPN's IPsec runs over it). Checked on drafts (bundle: refs).
+# Things drawn between the on-premises group and the AWS Cloud box, never inside it: the Internet
+# is not in AWS, and Direct Connect (a colocation facility) and Site-to-Site VPN are AWS services
+# built for the external connection, so both sit outside the Cloud (an exception to "regional
+# resources go in the Region"; references/diagram_guide.md, Technical correctness). Checked on
+# drafts (bundle: refs).
 OUTSIDE_CLOUD = ("service/AWS-Direct-Connect", "resource/Internet", "service/AWS-Site-to-Site-VPN")
 ICON_SETS = ("service", "resource")
 # A node label's baseline sits NODE_LABEL_DY below its icon's bottom (the guide's skeleton), and

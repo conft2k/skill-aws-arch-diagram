@@ -2077,7 +2077,9 @@ class _Loader:
                 inside = [g for g in chain if sp.groups[g].type in cloud_types]
                 if inside:
                     warned.add(node.src)
-                    self.err(node.src, f"{node.icon} is not in AWS; put it outside the AWS Cloud group "
+                    why = ("is not in AWS" if node.icon == "resource/Internet" else
+                           "is drawn outside the AWS Cloud (an AWS service built for the external connection)")
+                    self.err(node.src, f"{node.icon} {why}; put it outside the AWS Cloud group "
                                        f"({inside[0]!r}), between on-premises and the Cloud")
             if node.template is not None and (node.icon in LB_ICONS or node.icon.startswith(LB_PREFIX)) \
                     and ("lb", node.src) not in warned:

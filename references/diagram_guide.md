@@ -324,34 +324,34 @@ the name of an AWS service or resource — "Site-to-Site VPN", "Direct Connect",
 "PrivateLink", "VPC peering" — and `find_icon.py` finds its icon, put that icon on the
 path as a node (with its label below, the same size `S` as every node) and keep only
 the protocol on the connector ("IPsec", "GENEVE :6081"). Place it where the reader
-expects it on the path: a Site-to-Site VPN connection is a regional AWS resource, so
-it sits **in the Region** beside the TGW or VGW it attaches to, drawn as
-`resource/Amazon-VPC_VPN-Connection`; the customer gateway and the Internet it runs over
-stay outside the AWS Cloud box (see below). Don't add a duplicate when
+expects it on the path: Site-to-Site VPN follows the same placement as Direct Connect —
+both are AWS services built for the external connection, so both icons sit **outside the
+AWS Cloud box**, between the on-premises group and the Cloud border (see below and
+"Technical correctness"). Don't add a duplicate when
 another node already is that service (a GWLBe is the PrivateLink endpoint). A TGW
 peering is drawn the way the AWS docs draw it: the peering connection icon
 (`resource/Amazon-VPC_Peering-Connection`) on the TGW–TGW line, labeled "TGW peering".
 Only a connection with no icon in the bundle stays a connector label.
 
 **Show what a hybrid connection runs over.** A Site-to-Site VPN is IPsec over the
-public Internet, so its path is customer gateway → `resource/Internet` → the VPN
-connection (`resource/Amazon-VPC_VPN-Connection`, in the Region) → TGW/VGW, with the
-Internet icon **outside the AWS Cloud box**, between the on-premises group and the Cloud
-border, and "IPsec" on the customer gateway → Internet segment
-(`templates/dx-vpn-tgw.layout.yaml`). Older examples draw `service/AWS-Site-to-Site-VPN`
-outside the Cloud instead (the loader rejects that icon inside); that reads as a VPN
-service outside AWS, so draw new diagrams with the connection in the Region. Leave room
-between the on-premises group and the Cloud border for the Internet icon and its label, and pull the Cloud and Region borders in so they
+public Internet, so its path is customer gateway → `resource/Internet` →
+`service/AWS-Site-to-Site-VPN` → TGW/VGW, with the Internet and VPN icons both
+**outside the AWS Cloud box**, between the on-premises group and the Cloud border, and
+"IPsec" on the Internet → VPN segment. Leave 220–280px between the on-premises group and
+the Cloud border for those two hops (enough for both icons, their labels and the
+"IPsec" label with 8px around each), and pull the Cloud and Region borders in so they
 hug their contents rather than leaving the space empty inside. A Direct
 Connect path is private and never passes the Internet icon: customer router →
-`service/AWS-Direct-Connect` — the DX location, a colocation facility that is **not in
-AWS**, so the icon sits **outside the AWS Cloud box**, between the on-premises group and
-the Cloud border, with "private VIF" (or "transit VIF") as its sub-caption → the Direct
-Connect gateway, which is an AWS resource: inside the AWS Cloud, outside every Region (a
-global resource), on the same line → VGW / TGW. Leave 140–180px between the on-premises
-group and the Cloud border for the DX icon and its label. check_layout.py reports
-OUTSIDE CLOUD for a DX, Internet or VPN icon drawn inside the Cloud. When both exist, draw them as two separate paths so the difference is
-visible.
+`service/AWS-Direct-Connect` — the DX location, a colocation facility — with the icon
+**outside the AWS Cloud box**, between the on-premises group and the Cloud border, and
+"private VIF" (or "transit VIF") as its sub-caption → the Direct Connect gateway, an AWS
+resource: inside the AWS Cloud, outside every Region (a global resource), on the same
+line → VGW / TGW. Leave 140–180px between the on-premises group and the Cloud border for
+the DX icon and its label. When both exist, draw them as two separate paths so the
+difference is visible, with the VPN icon in the same outside-the-Cloud column as the
+Direct Connect icon (`templates/dx-vpn-tgw.layout.yaml`: Direct Connect on the DX path,
+Site-to-Site VPN on the Internet path). check_layout.py reports OUTSIDE CLOUD for a DX,
+Internet or VPN icon drawn inside the Cloud.
 
 **Never invent or hand-draw a service icon.** If a service isn't in the bundle,
 use the closest category icon or a plain labeled rounded rect — don't approximate the
@@ -576,8 +576,9 @@ draft path copies an example, or start from `docs/examples/specs/example.layout.
   visible with what the grammar already has:
   - **Label each attachment type once** with a 12px `#545B64` connector label on one of
     its lines — "VPC attachment" on one spoke, "VPN attachment" on the VPN line (above it,
-    beside a step badge when one sits on the same piece; when that spot reads as another
-    node's caption, name it in the VPN connection's sub-caption instead). A peering attachment is named by the peering
+    beside a step badge when one sits on the same piece; when that spot crowds another
+    line or reads as another node's caption, put it on another line of the same type:
+    `templates/dx-vpn-tgw.layout.yaml` names "VPC attachment" on the Dev VPC line). A peering attachment is named by the peering
     connection icon's sub-caption ("peering attachment"): as a connector label
     check_layout.py reads it as the peering service written as text.
   - **Draw each TGW route table as a node** (`resource/Amazon-Route-53_Route-Table`,
@@ -903,6 +904,15 @@ check every hop and caption against how the services actually behave:
   "지표 · 경보" / "로그". An NLB access log needs a TLS listener; RDS Multi-AZ standby
   replicates synchronously and serves no reads; TGW peering is static-routed.
 - **Global vs regional placement.** See "Global services sit outside the Region".
+- **Site-to-Site VPN follows the same placement as Direct Connect: outside the AWS
+  Cloud.** Both are AWS services built for the external connection between on-premises
+  and AWS, so the house convention draws `service/AWS-Site-to-Site-VPN`, like
+  `service/AWS-Direct-Connect`, between the on-premises group and the AWS Cloud box, in
+  the same column as the Direct Connect icon when both exist. This is a deliberate
+  exception to "regional resources go in the Region" (a VPN connection is a regional
+  resource): a VPN icon outside the Cloud is correct here, not a placement error, and
+  one inside the Cloud or the Region is the error (the loader rejects it). Draw no
+  separate `resource/Amazon-VPC_VPN-Connection` node in the Region for the same VPN.
 
 ## Common diagram types & which layers to draw
 

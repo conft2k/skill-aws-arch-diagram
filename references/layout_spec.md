@@ -252,9 +252,11 @@ two workload accounts and a Network account this way.
   `row:` alone on a flow row (`at: [col, flowrow]` pins one node of that row to a grid column:
   alb Route 53; `at: [flowcol, row]` pins one to a grid row).
 - `in: <group>` for containment; leave it out for things outside AWS (Users, Internet,
-  Client) — the loader rejects Internet, Direct Connect and the `service/AWS-Site-to-Site-VPN`
-  icon in the Cloud. The VPN connection itself is regional: draw it in the Region beside its
-  TGW or VGW as `resource/Amazon-VPC_VPN-Connection` (`templates/dx-vpn-tgw.layout.yaml`).
+  Client) — the loader rejects Internet, Direct Connect and Site-to-Site VPN in the Cloud.
+  Site-to-Site VPN follows the same placement as Direct Connect (outside the AWS Cloud): both
+  are AWS services built for the external connection, an exception to "regional resources go
+  in the Region"; with both, put the two icons in one column between on-premises and the
+  Cloud (`templates/dx-vpn-tgw.layout.yaml`).
 - `on: <vpc>` puts an IGW or VGW on that VPC's border: its column left of the VPC's
   columns → left border, right of them → right border. Only left/right borders, and not
   inside a template.
@@ -401,8 +403,9 @@ two workload accounts and a Network account this way.
   (last) on the other side, and warns either way — widen that side (`min_gap_before`,
   `pad`, `min_w`). Ask for `below` / `left` only when the PNG shows the auto label read as
   another node's caption (an attachment label right under a route table's sub-caption), and
-  check every mode again; often the cleaner fix is to name the attachment in the end node's
-  sub-caption instead (`templates/dx-vpn-tgw.layout.yaml`: the VPN connection's "VPN attachment").
+  check every mode again; often the cleaner fix is to put the label on another line of the
+  same attachment type (`templates/dx-vpn-tgw.layout.yaml`: "VPC attachment" on the Dev VPC
+  line, clear of the DXGW line beside the Prod VPC one).
 - The shape is picked by rule (straight when the ends share a row or column, else HVH /
   VHV / HV / VH by which sides are free; headless spokes from one node up — or down — to
   both its left and its right are all VHV, so a hub's two sides mirror; a spoke forced to

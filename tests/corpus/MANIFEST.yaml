@@ -1347,11 +1347,11 @@ examples:
     modes: [slide, slide-no-title]
     rules: [R-flow, R-label, R-rt, R-border, R-fit]
     good: [R-flow, R-label, R-rt, R-border, R-fit]
-    what: "Starter template, slide twin of dx-vpn-tgw: router → Direct Connect (transit VIF) → DX gateway and CGW → Internet → Site-to-Site VPN connection in the Region, into one TGW; each route table on its own column inside the bracket of its attachment lines; Prod / Dev VPCs with private subnets (TGW ENIs); text_scale 1.5"
+    what: "Starter template, slide twin of dx-vpn-tgw: router → Direct Connect (transit VIF) → DX gateway and CGW → Internet → Site-to-Site VPN, both services outside the Cloud in one column, into one TGW; each route table on its own column inside the bracket of its attachment lines; Prod / Dev VPCs with private subnets (TGW ENIs); text_scale 1.5"
   - path: ../../templates/dx-vpn-tgw.layout.yaml
     rules: [R-flow, R-label, R-rt, R-border, R-fit]
     good: [R-flow, R-label, R-rt, R-border, R-fit]
-    what: "Starter template (document): router → Direct Connect (transit VIF) → DX gateway and CGW → Internet → Site-to-Site VPN connection in the Region, into one TGW; On-prem RT above the VPN connection inside the DXGW / VPN bracket, VPC RT between the Prod / Dev VPCs (private subnets, TGW ENIs) inside theirs; text_scale 1.5"
+    what: "Starter template (document): router → Direct Connect (transit VIF) → DX gateway on a row above the Region and CGW → Internet → Site-to-Site VPN, both services outside the Cloud in one column, into one TGW; On-prem RT under the DX gateway inside the DXGW / VPN bracket, VPC RT between the Prod / Dev VPCs (private subnets, TGW ENIs) inside theirs; text_scale 1.5"
   - path: ../../templates/multi-account-egress.layout.yaml
     rules: [R-flow, R-label, R-twin, R-border, R-fit]
     good: [R-flow, R-label, R-twin, R-border, R-fit]
