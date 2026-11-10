@@ -189,7 +189,7 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
   - nat-route-table slide-no-title의 작은 결함 2건: AZ1 outbound 응답선이 이름 아래에 붙고, VGW 옆 점선 stem의 일부가 실선처럼 보입니다.
   - HVHV 세로 우회와 여러 작성자 배치 필드 보존에 대한 엔진 테스트 보강.
 - **5단계 템플릿 수정(s5-tpl2)에서 나온 남은 일.**
-  - tgw-reference-architecture 예제(문서·slide)는 아직 `service/AWS-Site-to-Site-VPN`을 AWS Cloud 밖에 그립니다. 검사기의 `OUTSIDE_CLOUD` 목록이 이 아이콘을 Cloud 밖에 두도록 허용하므로 잡히지 않습니다. 템플릿처럼 Region 안의 `resource/Amazon-VPC_VPN-Connection`으로 바꾸고, 목록에서 VPN을 빼서 검사가 잡게 해야 합니다.
+  - ~~tgw 예제의 VPN을 Region 안으로~~: 사용자 결정(2026-11-10)으로 취소. Site-to-Site VPN은 Cloud 밖에 그립니다. 거꾸로 DX 템플릿을 Cloud 밖으로 되돌리는 일은 [engine-blockers 티켓 04](engine-blockers/tickets/04-vpn-outside-cloud.md)입니다.
   - `LINE OVER TEXT` 경고에는 시도할 값(`try:`)이 없습니다(DX QA 2차에서 유일하게 남은 막힘).
   - dx-vpn-tgw 문서 spec을 slide로 돌리면 shape 거부 경고 3건(HV/VH → HVH)이 나옵니다. 규칙 위반은 없고, 그래서 slide에는 `-slide` 쌍을 권합니다.
   - cloudfront-vpc-origin: 빈 ALB subnet 공간이 크고 ALB와 두 subnet의 관계가 암시적입니다(Codex 판정 minor).
