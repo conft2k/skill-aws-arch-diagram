@@ -191,7 +191,7 @@ T4 한계 시험, 새 spec 16개 × document·slide)에서 나온 차단 결함 
 - **5단계 템플릿 수정(s5-tpl2)에서 나온 남은 일.**
   - ~~tgw 예제의 VPN을 Region 안으로~~: 사용자 결정(2026-11-10)으로 취소. Site-to-Site VPN은 Cloud 밖에 그립니다. 거꾸로 DX 템플릿을 Cloud 밖으로 되돌리는 일은 [engine-blockers 티켓 04](engine-blockers/tickets/04-vpn-outside-cloud.md)입니다.
   - `LINE OVER TEXT` 경고에는 시도할 값(`try:`)이 없습니다(DX QA 2차에서 유일하게 남은 막힘).
-  - dx-vpn-tgw 문서 spec을 slide로 돌리면 shape 거부 경고 3건(HV/VH → HVH)이 나옵니다. 규칙 위반은 없고, 그래서 slide에는 `-slide` 쌍을 권합니다.
+  - ~~dx-vpn-tgw 문서 spec을 slide로 돌리면 shape 거부 경고 3건(HV/VH → HVH)이 나옵니다~~: engine-blockers 티켓 04(VPN을 Cloud 밖 Direct Connect 열로) 뒤 해소. slide 제목 있음·없음 모두 경고 0건, `Layout OK`입니다. slide에는 여전히 글자가 더 큰 `-slide` 쌍을 권합니다.
   - cloudfront-vpc-origin: 빈 ALB subnet 공간이 크고 ALB와 두 subnet의 관계가 암시적입니다(Codex 판정 minor).
   - dx-vpn-tgw 판정 minor: attachment 선 두 개가 같은 높이로 나란히 지나 잠깐 한 줄처럼 보이고, 아래쪽 선이 TGW 아이콘이 아니라 라벨 아래에서 끝납니다.
 - **gwlb slide의 corpus worse 2건은 면적만 늘어난 것(+5.7%)으로 사용자가 예외로 받았습니다.** 화살촉-테두리 검사가 생기면 다시 판정합니다.

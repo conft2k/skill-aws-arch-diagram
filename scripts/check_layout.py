@@ -1154,8 +1154,10 @@ def run_checks(root):
             x0, y0, x1, y1 = i["box"]
             for r in clouds:
                 if r[0] <= x0 and x1 <= r[0] + r[2] and r[1] <= y0 and y1 <= r[1] + r[3]:
+                    why = ("it isn't in AWS" if i["ref"] == "resource/Internet" else
+                           "it is drawn outside the AWS Cloud (an AWS service built for the external connection)")
                     add("OUTSIDE CLOUD", f"OUTSIDE CLOUD   {i['ref']} at ({x0:g},{y0:g}) is inside the AWS Cloud box — "
-                        "it isn't in AWS; place it between the on-premises group and the Cloud", [i], i=i, r=r)
+                        f"{why}; place it between the on-premises group and the Cloud", [i], i=i, r=r)
                     break
     for t in texts:
         if not (t["title"] and t["fs"] in TITLE_SIZES):

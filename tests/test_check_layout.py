@@ -870,5 +870,35 @@ class SegmentInteriorTests(unittest.TestCase):
         self.assertFalse(CL.seg_hits_box((5, -1), (5, 11), (0, 5, 10, 5)))
 
 
+class OutsideCloudReason(unittest.TestCase):
+    """OUTSIDE CLOUD names the right reason per icon: the Internet is not in AWS, while
+    Direct Connect and Site-to-Site VPN are AWS services drawn outside the Cloud because
+    they are built for the external connection."""
+    CLOUD = ('<g id="group:cloud"><rect x="100" y="40" width="460" height="240" fill="none" '
+             'stroke="#232F3E"/><image href="bundle:group/AWS-Cloud-logo_32" x="100" y="40" '
+             'width="24" height="24"/></g>')
+
+    def msgs(self, ref):
+        icon = f'<image href="bundle:{ref}" x="300" y="140" width="48" height="48"/>'
+        return [i.msg for i in CL.run_checks(svg(self.CLOUD, icon)) if i.kind == "OUTSIDE CLOUD"]
+
+    def test_internet_is_not_in_aws(self):
+        self.assertEqual(self.msgs("resource/Internet"), [
+            "OUTSIDE CLOUD   resource/Internet at (300,140) is inside the AWS Cloud box — it isn't in AWS; "
+            "place it between the on-premises group and the Cloud"])
+
+    def test_dx_and_vpn_are_aws_services_for_the_external_connection(self):
+        for ref in ("service/AWS-Direct-Connect", "service/AWS-Site-to-Site-VPN"):
+            with self.subTest(ref=ref):
+                self.assertEqual(self.msgs(ref), [
+                    f"OUTSIDE CLOUD   {ref} at (300,140) is inside the AWS Cloud box — it is drawn outside the "
+                    "AWS Cloud (an AWS service built for the external connection); place it between the "
+                    "on-premises group and the Cloud"])
+
+    def test_outside_the_box_is_not_flagged(self):
+        icon = '<image href="bundle:service/AWS-Site-to-Site-VPN" x="20" y="140" width="48" height="48"/>'
+        self.assertEqual([i for i in CL.run_checks(svg(self.CLOUD, icon)) if i.kind == "OUTSIDE CLOUD"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

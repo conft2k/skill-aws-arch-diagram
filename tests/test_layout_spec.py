@@ -669,6 +669,14 @@ ERRORS = [
     ("Internet inside the AWS Cloud", node_in_cloud,
      ["nodes[2] inet: resource/Internet is not in AWS; put it outside the AWS Cloud group ('cloud'), "
       "between on-premises and the Cloud"]),
+    ("Direct Connect inside the AWS Cloud",
+     lambda d: (node_in_cloud(d), d["nodes"][2].update(icon="service/AWS-Direct-Connect")),
+     ["nodes[2] inet: service/AWS-Direct-Connect is drawn outside the AWS Cloud (an AWS service built for the "
+      "external connection); put it outside the AWS Cloud group ('cloud'), between on-premises and the Cloud"]),
+    ("Site-to-Site VPN inside the AWS Cloud",
+     lambda d: (node_in_cloud(d), d["nodes"][2].update(icon="service/AWS-Site-to-Site-VPN")),
+     ["nodes[2] inet: service/AWS-Site-to-Site-VPN is drawn outside the AWS Cloud (an AWS service built for the "
+      "external connection); put it outside the AWS Cloud group ('cloud'), between on-premises and the Cloud"]),
     ("service name in a connector label", lambda d: d["edges"][1].update(label="TGW"),
      ["edges[1] inet -> igw: label 'TGW' names 'TGW', which has an official icon (service/AWS-Transit-Gateway); "
       "draw it as a node (SERVICE AS TEXT)"]),
