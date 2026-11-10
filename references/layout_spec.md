@@ -335,7 +335,14 @@ two workload accounts and a Network account this way.
   one-to-many. Each pair is its own line, each labelled — unless `trunk: true`, which
   merges many-to-one into one stem (nfw `nat.* -> igw`) or forks one-to-many from one
   stem (gwlb `igw -> gwlbe.*`; into group boxes, nlb-mtls `nlb -> besg.*`), label and
-  badge drawn once. Whatever shape its lines take, a trunk's shared end leaves (enters)
+  badge drawn once. A trunk onto (or out of) one group meets it at one point, the group's
+  center on its facing side (row / column center), as one HVH (VHV) stem — also when the
+  group is an overlay whose rows cover the other ends' (`task.* -> aurora` with Aurora an
+  overlay over `db.*`; `svc -> db.*` out of an ECS service overlay over `task.*`). Without
+  `trunk` each instance runs straight into the overlay at its own row, which reads as
+  "AZ 1 task → writer only". When the trunk cannot form (a `shape: H` / `V`, or other ends
+  on both sides of the group), each instance keeps its own line and the engine warns
+  `trunk: true not drawn, each instance keeps its own line — <why>`. Whatever shape its lines take, a trunk's shared end leaves (enters)
   one port: two VH from a source whose facing side is taken run down one stem
   (serverless `sfn -> reserve.*`), with no `from_offset: 0`. A branch always reaches the
   stem: when the first instance has to take another shape (an HV into the TGW's bottom),
@@ -374,7 +381,10 @@ two workload accounts and a Network account this way.
   order of their other ends; on a tie (two other ends on one row) the nearer one takes
   the point toward the side both come from, and of every order the one whose routes
   cross least wins, so no two of them cross beside the border; a `to_offset`
-  (`from_offset`) sets an end's own.
+  (`from_offset`) moves an end's own point that far along the side and keeps it for the
+  end: from that point on a box group, and from the center of an overlay group (`over:`),
+  which spans its members' rows (`to_offset: 0` is the overlay's center, not the other
+  end's row).
 - `label`: protocol and port, 12px squid ink (`"HTTPS :443"`). `verb`: a verb or
   attachment type, 12px grey (`DNS 조회`, `VPC attachment`). The loader rejects either one
   when it names a service with an official icon (SERVICE AS TEXT) — make it a node.
@@ -401,7 +411,10 @@ two workload accounts and a Network account this way.
   `to_side` (`left|right|top|bottom`), `from_offset` / `to_offset` (px along the side),
   `points: [[x, y], …]` (the whole polyline, ends included; `e:` still names the ends).
   A side must leave along the shape's end piece (`HVH`: `left` / `right`, `VHV`: `top` /
-  `bottom`, `HV`: horizontal then vertical); the loader rejects a mismatch.
+  `bottom`, `HV`: horizontal then vertical); the loader rejects a mismatch. A `shape: HVH`
+  (`VHV`) whose two ports come out level has no leg: it is drawn straight and warned about
+  (`refusing the requested shape: HVH, drawn H — its ends are level`); move
+  one end with `from_offset` / `to_offset`, or drop `shape`.
   The same side at both ends of a `HVH` / `VHV` (`from_side: right, to_side: right`)
   draws an out-and-back on that side without `bend_x`: the leg sits at the nearest spot
   past both end segments that clears the labels along it, ≥ 12 from parallel borders and

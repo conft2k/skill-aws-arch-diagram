@@ -1869,6 +1869,91 @@ class TrunkFork(unittest.TestCase):
         self.assertEqual(len(set(pts)), 2, pts)
 
 
+class OverlayGroupTrunk(unittest.TestCase):
+    """A trunk onto (out of) an overlay group (engine-blockers 01, stage 5 cf-vpc-origin QA):
+    the overlay's range covers the other ends' rows, so each instance alone would run
+    straight into it at its own AZ row and read as "AZ 1 task -> writer only". With
+    `trunk: true` the instances take HVH and meet at one point, the group's center on that
+    side; a forced straight shape cannot form the trunk and is warned about."""
+    CORPUS = ROOT / "tests" / "corpus" / "qa"
+
+    def spec(self, name, **edge):
+        yaml, loader = layout_spec._yaml_loader()
+        d = yaml.load((self.CORPUS / f"{name}.layout.yaml").read_text(encoding="utf-8"), Loader=loader)
+        d["edges"][-1].update(edge)
+        d["edges"][-1] = {k: v for k, v in d["edges"][-1].items() if v is not None}
+        return d
+
+    @staticmethod
+    def drawn(data):
+        """({edge n: (points, marker-end)}, {group id: (x, y, w, h)}) of a draft."""
+        lines, rects = {}, {}
+        for g in ET.fromstring(data).iter(NS + "g"):
+            gid = g.get("id") or ""
+            if re.fullmatch(r"edge:\d+", gid):
+                pl, = [c for c in g if c.tag in (NS + "polyline", NS + "line")]
+                if pl.tag == NS + "line":
+                    pts = [(float(pl.get("x1")), float(pl.get("y1"))), (float(pl.get("x2")), float(pl.get("y2")))]
+                else:
+                    pts = [tuple(map(float, q.split(","))) for q in pl.get("points").split()]
+                lines[int(gid.split(":")[1])] = (pts, pl.get("marker-end"))
+            elif gid.startswith("group:"):
+                r = next(c for c in g if c.tag == NS + "rect")
+                rects[gid[6:]] = tuple(float(r.get(k)) for k in ("x", "y", "width", "height"))
+        return lines, rects
+
+    @staticmethod
+    def on(q, path):
+        return any(min(a[0], c[0]) - 0.5 <= q[0] <= max(a[0], c[0]) + 0.5
+                   and min(a[1], c[1]) - 0.5 <= q[1] <= max(a[1], c[1]) + 0.5 for a, c in zip(path, path[1:]))
+
+    def test_merge_meets_the_group_center(self):
+        for offset in (0, None):            # to_offset: 0 is the center, as no offset is
+            rc, text, data = run_main(self.spec("ov-trunk-to-group", to_offset=offset))
+            self.assertEqual((rc, check_status(text)), (0, "Layout OK"), text)
+            self.assertNotIn("trunk: true not drawn", text)
+            self.assertNotIn("instead of", text)
+            ls, rects = self.drawn(data)
+            x, y, w, h = rects["aurora"]
+            (lead, ml), (foll, mf) = ls[0], ls[1]
+            self.assertEqual(len(lead), 4)                       # HVH
+            self.assertAlmostEqual(lead[-1][1], y + h / 2)       # one point: the cluster's center
+            self.assertTrue(self.on(foll[-1], lead), ls)         # the AZ 2 stem joins it
+            self.assertIsNotNone(ml)
+            self.assertIsNone(mf)                                # one arrowhead
+
+    def test_fork_leaves_the_group_center(self):
+        rc, text, data = run_main(self.spec("ov-trunk-from-group"))
+        self.assertEqual((rc, check_status(text)), (0, "Layout OK"), text)
+        self.assertNotIn("instead of", text)
+        ls, rects = self.drawn(data)
+        x, y, w, h = rects["svc"]
+        lead, foll = ls[1][0], ls[2][0]
+        self.assertAlmostEqual(lead[0][1], y + h / 2)
+        self.assertTrue(self.on(foll[0], lead), ls)
+
+    def test_forced_straight_shape_is_warned(self):
+        rc, text, data = run_main(self.spec("ov-trunk-straight"))
+        self.assertIn("trunk: true not drawn, each instance keeps its own line — shape: H draws each "
+                      "instance straight into aurora", text)
+        self.assertEqual(len(self.drawn(data)[0]), 2)
+
+    def test_single_overlay_line_unchanged(self):
+        """Without trunk an overlay end still takes the other end's row (each AZ's line)."""
+        rc, text, data = run_main(self.spec("ov-trunk-to-group", trunk=None, to_offset=None))
+        ls, _ = self.drawn(data)
+        self.assertEqual([len(p) for p, _ in ls.values()], [2, 2])
+        self.assertNotEqual(ls[0][0][-1][1], ls[1][0][-1][1])
+
+    def test_level_bent_shape_is_warned(self):
+        d = {"name": "lvl", "mode": "document", "cols": ["a", "b"], "rows": ["r1"],
+             "nodes": [{"id": "a", "icon": "service/Amazon-EC2", "label": "A", "at": ["a", "r1"]},
+                       {"id": "b", "icon": "service/Amazon-EC2", "label": "B", "at": ["b", "r1"]}],
+             "edges": [{"e": "a -> b", "shape": "HVH"}]}
+        rc, text, _ = run_main(d)
+        self.assertIn("refusing the requested shape: HVH, drawn H — its ends are level", text)
+
+
 class FallbackPorts(unittest.TestCase):
     """Two edges that both fall back to a shape out of a side neither planned leave from
     ports of their own (review x-fork-b: centralized-egress with `tgw -> enib.*` and the TGW

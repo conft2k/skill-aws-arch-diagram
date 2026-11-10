@@ -1205,6 +1205,25 @@ cases:
   - path: qa/ex-bedrock-dx-caption-bend.layout.yaml
     rules: [R-border, R-fit]
     what: "4-node bedrock-dx repro: from_side right HVH bends ~2px past the rendered all-caps PC caption; HVH label run before the bend pushes dx 181.6 past the On-premises border; rules.py 미검출"
+  # engine-blockers 01 (stage 5 cf-vpc-origin QA): a trunk onto / out of an overlay group meets it at one point.
+  - path: qa/ov-trunk-to-group.layout.yaml
+    rules: [R-flow, R-label, R-border]
+    good: [R-flow, R-label, R-border]
+    what: "task.* -> aurora (overlay over db.*) with trunk: true, to_offset: 0: one HVH stem from both AZs' tasks into the cluster's center, label once"
+    from: "stage5 qa-after cf-vpc-origin redraw 6"
+  - path: qa/ov-trunk-from-group.layout.yaml
+    rules: [R-flow, R-label, R-border]
+    good: [R-flow, R-label, R-border]
+    what: "mirror: svc (overlay over task.*) -> db.* with trunk: true, shape: HVH, from_offset: 0: one stem out of the service's center forking to both AZs' DBs"
+    from: "stage5 qa-after cf-vpc-origin redraw 4"
+  - path: qa/ov-trunk-straight.layout.yaml
+    rules: [R-flow]
+    what: "task.* -> aurora with trunk: true and shape: H: no trunk can form; the engine warns and draws one straight line per AZ"
+    match: "trunk: true not drawn, each instance keeps its own line — shape: H draws each instance straight into aurora"
+  - path: qa/hvh-level.layout.yaml
+    rules: [R-flow]
+    what: "a -> b on one row with shape: HVH: the bend has no leg; the engine warns that it refused the requested HVH and drew H"
+    match: "refusing the requested shape: HVH, drawn H — its ends are level"
 examples:
   # alb(8.4pt)와 nlb(8.9pt)는 하한은 넘지만 10pt 목표에 못 미칩니다.
   - path: ../../docs/examples/specs/alb-reference-architecture.layout.yaml

@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** implemented; awaiting independent review (Codex review, PNG judge). Evidence: [ticket 01 results](../results/01-overlay-group-trunk.md). Corpus vs main-c3aa9ef: 0 worse, 0 changed drafts; an offset is measured from the center on an overlay end only (on every group end it made the nfw example slide worse).
 
-- [ ] The reproduction (`task.* -> aurora` with `trunk: true, to_offset: 0`, and the mirror `svc -> db.*` with `trunk: true, shape: HVH, from_offset: 0`) is in the corpus; both draw one shared line meeting the group at one point, in document, slide and slide-no-title.
-- [ ] A case where the trunk cannot form (e.g. no room for a bend) prints the warning, and the corpus tags it.
-- [ ] Single-line overlay edges already in the corpus (`lanes/*`, `bench/*pipeline` `proxy -> aurora`, `sides/ov3` `mon -> asg`) are byte-identical unless they set one of the four options.
-- [ ] references/layout_spec.md (edges section) documents trunk and offsets at an overlay group end.
+- [x] The reproduction (`task.* -> aurora` with `trunk: true, to_offset: 0`, and the mirror `svc -> db.*` with `trunk: true, shape: HVH, from_offset: 0`) is in the corpus; both draw one shared line meeting the group at one point, in document, slide and slide-no-title.
+- [x] A case where the trunk cannot form (e.g. no room for a bend) prints the warning, and the corpus tags it.
+- [x] Single-line overlay edges already in the corpus (`lanes/*`, `bench/*pipeline` `proxy -> aurora`, `sides/ov3` `mon -> asg`) are byte-identical unless they set one of the four options.
+- [x] references/layout_spec.md (edges section) documents trunk and offsets at an overlay group end.
 - [ ] Corpus vs main-c3aa9ef: 0 worse apart from listed intended changes; tests green; Codex review 0 blocking; Codex PNG judge on the changed drawings not worse.

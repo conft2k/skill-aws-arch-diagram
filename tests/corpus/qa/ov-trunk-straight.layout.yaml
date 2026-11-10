@@ -1,0 +1,16 @@
+name: ov-trunk-straight
+mode: document
+cols: [task, db]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: appsn, type: private, label: App subnet, in: az}
+  - {id: dbsn, type: private, label: DB subnet, in: az}
+  - {id: aurora, type: generic, label: Aurora, over: [db.*], dash: "6,4"}
+nodes:
+  - {id: task, icon: resource/Amazon-Elastic-Container-Service_Task, label: ECS task, in: appsn, col: task}
+  - {id: db, icon: resource/Amazon-Aurora-Instance, label: Aurora, in: dbsn, col: db}
+edges:
+  - {e: "task.* -> aurora", trunk: true, shape: H}

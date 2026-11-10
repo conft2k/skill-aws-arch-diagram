@@ -1,0 +1,19 @@
+name: ov-trunk-from-group
+mode: document
+cols: [alb, task, db]
+rows: [az1, main, az2]
+groups:
+  - {id: cloud, type: cloud}
+  - {id: vpc, type: vpc, label: VPC, in: cloud}
+  - {id: az, type: az, in: vpc, per: [az1, az2]}
+  - {id: albsn, type: private, label: ALB subnet, in: az, span: {cols: [alb, alb]}}
+  - {id: appsn, type: private, label: App subnet, in: az}
+  - {id: dbsn, type: private, label: DB subnet, in: az}
+  - {id: svc, type: generic, label: ECS service, over: [task.*], dash: "6,4"}
+nodes:
+  - {id: alb, icon: resource/Elastic-Load-Balancing_Application-Load-Balancer, label: Internal ALB, in: vpc, at: [alb, main]}
+  - {id: task, icon: resource/Amazon-Elastic-Container-Service_Task, label: ECS task, in: appsn, col: task}
+  - {id: db, icon: resource/Amazon-Aurora-Instance, label: Aurora, in: dbsn, col: db}
+edges:
+  - {e: "alb -> svc", label: "HTTP :8080"}
+  - {e: "svc -> db.*", trunk: true, shape: HVH, from_offset: 0, label: "PostgreSQL :5432"}

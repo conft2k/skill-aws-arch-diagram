@@ -167,6 +167,8 @@ class _Topo:
     trunk: Optional[str] = None                # merge | fork (first instance and the others)
     first: Optional[int] = None                # n of the trunk's first instance
     note: str = ""                             # why (for warnings / tests)
+    pin: Optional[str] = None                  # a | b: the trunk's shared group end (meets at its center)
+    trunk_why: str = ""                        # a trunk onto (out of) one group that cannot form: why
 
 
 def _indices(spec: Spec):
@@ -334,19 +336,28 @@ def _topology(spec: Spec) -> Dict[int, _Topo]:
                 t.shape, t.note = VHV, f"rule 5: fan of spokes to both sides (topology; not {t.shape})"
         else:
             t.shape, t.note = VHV, "rule 6 (position unknown)"
-    for e in spec.edges:
-        t = out[e.n]
-        t.side_a, t.side_b = _sides(e, t.shape, t.dx, t.dy)
     # trunks: instances of one spec line marked trunk (or fork: bus, phase 2 → a trunk fork)
     lines: Dict[int, List[Edge]] = {}
     for e in spec.edges:
         if e.trunk or e.fork:
             lines.setdefault(e.line, []).append(e)
+    why: Dict[int, str] = {}
+    for es in lines.values():
+        if len(es) >= 2:
+            why.update(_group_trunk(spec, sorted(es, key=lambda e: e.k), out))
+    for e in spec.edges:
+        t = out[e.n]
+        t.side_a, t.side_b = _sides(e, t.shape, t.dx, t.dy)
     for es in lines.values():
         if len(es) < 2:
             continue
         es = sorted(es, key=lambda e: e.k)
         if len({out[e.n].shape for e in es}) != 1 or out[es[0].n].shape not in (HVH, VHV):
+            if es[0].line in why or _group_end(spec, es) is None:
+                continue
+            got = sorted({out[e.n].shape for e in es})
+            out[es[0].n].trunk_why = (f"its instances take {' / '.join(got)}" if len(got) > 1 else
+                                      f"each instance is drawn {got[0]} on its own")
             continue
         if len({(e.b, e.b_kind) for e in es}) == 1:
             kind = "merge"
@@ -354,9 +365,58 @@ def _topology(spec: Spec) -> Dict[int, _Topo]:
             kind = "fork"
         else:
             continue
+        shared = _group_end(spec, es)
         for e in es:
             out[e.n].trunk, out[e.n].first = kind, es[0].n
+            out[e.n].pin = shared
+    for es in lines.values():
+        if es and es[0].line in why:
+            out[min(es, key=lambda e: e.k).n].trunk_why = why[es[0].line]
     return out
+
+
+def _group_end(spec: Spec, es: Sequence[Edge]) -> Optional[str]:
+    """"a" / "b": the end the instances of one trunk line share, when it is a group (an
+    overlay such as an Aurora cluster over db.*); None otherwise."""
+    for end in ("b", "a"):
+        ids = {(getattr(e, end), getattr(e, end + "_kind")) for e in es}
+        if len(ids) == 1 and next(iter(ids))[1] == "group":
+            return end
+    return None
+
+
+def _group_trunk(spec: Spec, es: Sequence[Edge], out: Dict[int, _Topo]) -> Dict[int, str]:
+    """A trunk onto (out of) one group whose range covers the other ends' rows (columns):
+    each instance alone runs straight into the group at its own row (`task.* -> aurora`,
+    two lines side by side), so the line takes the bent shape whose legs meet at one point
+    on the group (HVH; VHV for columns), all on one side of it. A shape the spec forces
+    straight, or other ends on both sides of the group, cannot form one: {line: why}."""
+    end = _group_end(spec, es)
+    if end is None:
+        return {}
+    gid = getattr(es[0], end)
+    ts = [out[e.n] for e in es]
+    straight = [t for t in ts if t.shape in (H, V)]
+    if not straight:
+        return {}
+    forced = next((e for e in es if e.shape in (H, V)), None)
+    if forced is not None:
+        return {es[0].line: f"shape: {forced.shape} draws each instance straight into {gid} at its own "
+                            f"{'row' if forced.shape == H else 'column'}; drop shape (or write "
+                            f"{HVH if forced.shape == H else VHV})"}
+    horiz = straight[0].shape == H
+    if any(t.shape != straight[0].shape for t in straight):
+        return {es[0].line: f"its instances run straight into {gid} both across and along it"}
+    if any(s and (s in HORIZ) != horiz for e in es for s in (e.from_side, e.to_side)):
+        return {es[0].line: f"from_side / to_side need a {HVH if horiz else VHV} into {gid} "
+                            f"({'left / right' if horiz else 'top / bottom'} sides)"}
+    d = {t.dx if horiz else t.dy for t in ts}
+    if len(d) != 1 or d & {0, None}:
+        return {es[0].line: f"the other ends are not all on one side of {gid} (they share its "
+                            f"{'columns' if horiz else 'rows'} or lie on both sides)"}
+    for t in straight:
+        t.shape, t.note = (HVH if horiz else VHV), "trunk onto a group"
+    return {}
 
 
 def _column_blocked(spec: Spec, e: Edge, A: _End, B: _End, ri) -> bool:
@@ -1252,6 +1312,14 @@ class _Edge:
         self.dx, self.dy = dx, dy
         self.off_a = e.from_offset or 0.0
         self.off_b = e.to_offset or 0.0
+        # a group end measured from the group's center (its row / column center) instead of
+        # the other end's coordinate: a trunk's shared group end, where every instance meets
+        # at one point, and an overlay end with from_offset / to_offset (0 is the center:
+        # an overlay spans its members' rows, so the other end's row is no reference)
+        def pinned(eid, kind, off, end):
+            return kind == "group" and (t.pin == end or (off is not None and spec.groups[eid].overlay))
+        self.pin_a = pinned(e.a, e.a_kind, e.from_offset, "a")
+        self.pin_b = pinned(e.b, e.b_kind, e.to_offset, "b")
         follower = t.trunk is not None and t.first != e.n
         self.hs = e.head_start and not (t.trunk == "fork" and follower)
         self.he = e.head_end and not (t.trunk == "merge" and follower)
@@ -1266,12 +1334,19 @@ class _Edge:
             return sa or d[0], sb or d[1]
         return _sides(Edge(e.n, e.a, e.b, e.op), shape, self.dx, self.dy)
 
+    def port(self, end: str, side: str, off: float = 0.0) -> Pt:
+        """Where `end` meets its endpoint on `side` (_port), off px along the side; a
+        pinned group end (pin_a / pin_b) from the group's center on that side."""
+        g, other = (self.A, self.B) if end == "a" else (self.B, self.A)
+        if self.pin_a if end == "a" else self.pin_b:
+            toward = g.rowc if side in HORIZ else g.colc
+        else:
+            toward = other.cy if side in HORIZ else other.cx
+        return _port(g, side, toward, off)
+
     def ends(self, shape: str, oa: float, ob: float) -> Tuple[Pt, Pt]:
         sa, sb = self.sides(shape)
-        A, B = self.A, self.B
-        pa = _port(A, sa, B.cy if sa in HORIZ else B.cx, oa)
-        pb = _port(B, sb, A.cy if sb in HORIZ else A.cx, ob)
-        return pa, pb
+        return self.port("a", sa, oa), self.port("b", sb, ob)
 
     def aligned(self) -> bool:
         """A straight H / V whose two ends really share the line (no colspan jog)."""
@@ -1603,8 +1678,8 @@ def _steps(ctx: _Ctx, x: _Edge, ports: Dict[Tuple[int, str], float]):
         sb = (_hside if shape == VHVH else _vside)(-d)
         firsts = VERT if shape == VHVH else HORIZ
         for sa in firsts:
-            pa = _port(A, sa, B.cx if shape == VHVH else B.cy, _end_off(ctx, x, "a", sa, ports))
-            pb = _port(B, sb, A.cy if shape == VHVH else A.cx, _end_off(ctx, x, "b", sb, ports))
+            pa = x.port("a", sa, _end_off(ctx, x, "a", sa, ports))
+            pb = x.port("b", sb, _end_off(ctx, x, "b", sb, ports))
             sgn = 1 if sa in ("bottom", "right") else -1
             # the lane: beyond the source's port, running from the source to the target
             near = pa[i] + sgn * min_a
@@ -1821,8 +1896,8 @@ def _detours(ctx: _Ctx, x: _Edge, ports: Optional[Dict[Tuple[int, str], float]] 
     ports = ports or {}
     pairs = (("top", "top", VHV, 1), ("bottom", "bottom", VHV, 1), ("left", "left", HVH, 0), ("right", "right", HVH, 0))
     for sa, sb, shape, i in pairs:
-        pa = _port(A, sa, B.cy if sa in HORIZ else B.cx, _end_off(ctx, x, "a", sa, ports))
-        pb = _port(B, sb, A.cy if sb in HORIZ else A.cx, _end_off(ctx, x, "b", sb, ports))
+        pa = x.port("a", sa, _end_off(ctx, x, "a", sa, ports))
+        pb = x.port("b", sb, _end_off(ctx, x, "b", sb, ports))
         sgn = -1 if sa in ("top", "left") else 1
         edge = min(pa[i], pb[i]) if sgn < 0 else max(pa[i], pb[i])
         for k in range(3, 16):
@@ -2493,7 +2568,7 @@ def _group_ports(ctx: _Ctx, xs: Dict[int, _Edge], ends: Dict[Tuple[int, str], se
                 first[(e.line, end)].append((n, end))
                 continue
             toward = other.cy if side in HORIZ else other.cx
-            p = _port(g, side, toward)
+            p = x.port(end, side)
             coord = p[1] if side in HORIZ else p[0]
             facing = abs(coord - toward) < 0.5 and t.shape in (H, V)
             out_by = abs((other.cx - p[0]) if side in HORIZ else (other.cy - p[1]))
@@ -2690,6 +2765,10 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
         if e.fork and e.n in xs:
             warns.append(f"{_where(e)}: fork: {e.fork} is phase 2; drawn as a trunk fork")
             break
+    for e in spec.edges:
+        if topo[e.n].trunk_why and e.n in xs:
+            warns.append(f"{_where(e)}: trunk: true not drawn, each instance keeps its own line — "
+                         f"{topo[e.n].trunk_why}")
     ports = _assign_ports(ctx, xs)
     ctx.side_use = _side_use(xs, ports)
     routes: Dict[int, _Route] = {}
@@ -2743,7 +2822,12 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
             if r.shape == t.shape:
                 return 0
             return r.shape.startswith("U") + _conflicts(x, r.pts, drawn)
-        ranked = [((r.quality == 3, r.shape != t.shape, _u_taken(ctx, x, c[0], c[1], c[2]), last(r), r.quality), i, r)
+        # a trunk onto (out of) one group: a detour leaves the trunk for lines of their own,
+        # so it ranks with the unclean candidates, after its own shape (whose gap layout.py's
+        # feedback widens when that line is unclean)
+        def dirty(r: _Route) -> bool:
+            return r.quality == 3 or (t.pin is not None and r.shape.startswith("U"))
+        ranked = [((dirty(r), r.shape != t.shape, _u_taken(ctx, x, c[0], c[1], c[2]), last(r), r.quality), i, r)
                   for i, (c, r) in enumerate((c, build(x, c)) for c in _candidates(ctx, x, ports))]
         ranked.sort(key=lambda it: (it[0], it[1]))
         clean = [r for q, _, r in ranked if not q[0]]
@@ -2971,6 +3055,16 @@ def draw(spec: Spec, geom: Geometry, skip: Optional[Dict[int, int]] = None,
                 warns.append(refused(x, r))
             else:
                 warns.append(f"{_where(x.e)}: drew {r.shape} instead of {x.t.shape} (re-solve may be needed)")
+        elif (r.shape == x.t.shape in (HVH, VHV) and x.e.shape == r.shape and len(r.pts) == 2
+              and not (x.t.trunk and x.t.first != n)):
+            # the requested bent shape between two level ends collapses to a straight line
+            flat = H if abs(r.pts[0][1] - r.pts[1][1]) < 0.5 else V
+            axis = "y" if flat == H else "x"
+            # (worded without "drew X instead of": layout.py's feedback widens gaps for those,
+            # and no gap gives level ends a leg)
+            warns.append(f"{_where(x.e)}: refusing the requested shape: {r.shape}, drawn {flat} — its ends are "
+                         f"level ({axis} = {M.fmt_num(r.pts[0][1 if flat == H else 0])}), so the bend has no leg; "
+                         f"try from_offset / to_offset on one end, or drop shape")
     # elements: lines (Edge.n order), then labels, then badges
     els: List[Element] = []
     all_lines = [s for r in routes.values() for s in zip(r.pts, r.pts[1:])]
